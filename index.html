@@ -25,31 +25,90 @@
     html, body {
       width: 100%; height: 100%;
       background: #1F3971;
-      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
     }
 
-    /* Loading screen shown while redirecting */
-    #loader {
+    #screen {
       position: fixed; inset: 0;
-      background: #1F3971;
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
-      gap: 18px; z-index: 10;
+      gap: 20px; padding: 32px;
+      text-align: center;
     }
-    #loader svg { width: 64px; height: 64px; }
-    #loader p { color: rgba(255,255,255,0.7); font-family: -apple-system, sans-serif; font-size: 16px; }
+
+    #screen svg { width: 72px; height: 72px; }
+
+    #title {
+      color: white;
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+    }
+
+    #subtitle {
+      color: rgba(255,255,255,0.6);
+      font-size: 15px;
+      line-height: 1.5;
+      max-width: 280px;
+    }
+
+    .btn {
+      display: inline-block;
+      background: white;
+      color: #1F3971;
+      font-size: 16px;
+      font-weight: 700;
+      padding: 14px 32px;
+      border-radius: 14px;
+      text-decoration: none;
+      border: none;
+      cursor: pointer;
+      margin-top: 4px;
+    }
+
+    .btn-ghost {
+      background: rgba(255,255,255,0.15);
+      color: white;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 12px 24px;
+      border-radius: 12px;
+      border: none;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-block;
+    }
+
+    #install-hint {
+      color: rgba(255,255,255,0.5);
+      font-size: 13px;
+      margin-top: 8px;
+    }
+
+    /* Loading state */
+    #loading { display: none; color: rgba(255,255,255,0.6); font-size: 15px; }
   </style>
 </head>
 <body>
 
-  <!-- Loading splash shown briefly before redirect -->
-  <div id="loader">
+  <div id="screen">
     <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
       <rect width="64" height="64" rx="16" fill="white" fill-opacity="0.15"/>
       <path d="M16 24l16-8 16 8v16l-16 8-16-8V24z" stroke="white" stroke-width="2.5" stroke-linejoin="round"/>
       <path d="M16 24l16 8 16-8M32 32v16" stroke="white" stroke-width="2.5" stroke-linejoin="round"/>
     </svg>
-    <p>Loading PO Manager…</p>
+
+    <div id="title">PO Manager</div>
+    <div id="subtitle">Panoramic Building purchase order management</div>
+
+    <!-- Shown in browser mode -->
+    <div id="install-ui">
+      <button class="btn" onclick="openApp()">Open App</button>
+      <div id="install-hint">To install: tap ⋮ → Add to Home Screen</div>
+    </div>
+
+    <!-- Shown while redirecting (standalone mode) -->
+    <div id="loading">Loading…</div>
   </div>
 
   <script>
@@ -58,8 +117,20 @@
       navigator.serviceWorker.register('./sw.js');
     }
 
-    // Redirect directly to the GAS app — avoids iframe auth redirect issues in standalone PWA mode
-    window.location.replace('https://script.google.com/a/macros/panoramicbuildingllc.com/s/AKfycbzIFAUROq_34cldhXfRL-lGijntH2Y3hqykYZ5Br0zub70BZAA5MHzpe61ZL-JEDhDJeg/exec');
+    var GAS_URL = 'https://script.google.com/a/macros/panoramicbuildingllc.com/s/AKfycbzIFAUROq_34cldhXfRL-lGijntH2Y3hqykYZ5Br0zub70BZAA5MHzpe61ZL-JEDhDJeg/exec';
+
+    var isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+
+    if (isStandalone) {
+      // Opened from home screen — redirect straight to app, no URL bar
+      document.getElementById('install-ui').style.display = 'none';
+      document.getElementById('loading').style.display = 'block';
+      window.location.replace(GAS_URL);
+    }
+
+    function openApp() {
+      window.location.href = GAS_URL;
+    }
   </script>
 
 </body>
