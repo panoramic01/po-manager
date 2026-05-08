@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>PO Manager</title>
+
+  <!-- Web App Manifest (enables standalone mode on Android) -->
+  <link rel="manifest" href="manifest.json">
+
+  <!-- iOS PWA — hides Safari URL bar when added to home screen -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="PO Manager">
+  <link rel="apple-touch-icon" href="icon.svg">
+
+  <!-- Android / Chrome -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1a5c38">
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      width: 100%; height: 100%;
+      background: #1a5c38;
+      overflow: hidden;
+    }
+
+    /* Loading screen shown while iframe loads */
+    #loader {
+      position: fixed; inset: 0;
+      background: #1a5c38;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 18px; z-index: 10;
+      transition: opacity 0.4s;
+    }
+    #loader svg { width: 64px; height: 64px; }
+    #loader p { color: rgba(255,255,255,0.7); font-family: -apple-system, sans-serif; font-size: 16px; }
+
+    iframe {
+      position: fixed; inset: 0;
+      width: 100%; height: 100%;
+      border: none;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Loading splash -->
+  <div id="loader">
+    <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="64" height="64" rx="16" fill="white" fill-opacity="0.15"/>
+      <path d="M16 24l16-8 16 8v16l-16 8-16-8V24z" stroke="white" stroke-width="2.5" stroke-linejoin="round"/>
+      <path d="M16 24l16 8 16-8M32 32v16" stroke="white" stroke-width="2.5" stroke-linejoin="round"/>
+    </svg>
+    <p>Loading PO Manager…</p>
+  </div>
+
+  <!-- The actual app in an iframe -->
+  <iframe
+    id="app"
+    src="https://script.google.com/macros/s/AKfycbzIFAUROq_34cldhXfRL-lGijntH2Y3hqykYZ5Br0zub70BZAA5MHzpe61ZL-JEDhDJeg/exec"
+    allow="camera; microphone; clipboard-write"
+    onload="document.getElementById('loader').style.opacity='0'; setTimeout(function(){document.getElementById('loader').style.display='none'},400)">
+  </iframe>
+
+</body>
+</html>
