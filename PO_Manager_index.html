@@ -1,0 +1,1112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>PO Manager</title>
+
+  <!-- PWA / Add to Home Screen — hides the browser URL bar on iOS & Android -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="PO Manager">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1a5c38">
+  <style>
+    /* ── Reset ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 16px; background: #f0f4f0; color: #1a1a1a; -webkit-tap-highlight-color: transparent; }
+
+    /* ── Header ── */
+    .app-header {
+      background: linear-gradient(135deg, #1a5c38 0%, #2d7a50 100%);
+      color: white; padding: 16px 20px 14px;
+      position: sticky; top: 0; z-index: 90;
+      display: flex; align-items: center; justify-content: space-between;
+      box-shadow: 0 2px 8px rgba(0,0,0,.18);
+    }
+    .app-header h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.3px; }
+    .app-header p  { font-size: 13px; opacity: 0.65; margin-top: 2px; }
+    .refresh-btn { background: rgba(255,255,255,0.2); border: none; color: white; border-radius: 10px; padding: 10px 16px; font-size: 14px; font-weight: 600; cursor: pointer; min-height: 44px; }
+    .refresh-btn:active { opacity: 0.7; }
+
+    /* ── Bottom Nav ── */
+    .bottom-nav {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: white; border-top: 1px solid #e8e8e8;
+      display: flex; z-index: 90;
+      padding-bottom: env(safe-area-inset-bottom);
+      box-shadow: 0 -2px 12px rgba(0,0,0,.08);
+    }
+    .nav-btn {
+      flex: 1; padding: 12px 4px 14px;
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+      font-size: 11px; font-weight: 600; color: #aaa;
+      background: none; border: none; cursor: pointer; transition: color 0.15s;
+      min-height: 60px;
+    }
+    .nav-btn.active { color: #1a5c38; }
+    .nav-btn svg { width: 26px; height: 26px; stroke-width: 2; }
+
+    /* ── Content ── */
+    .content { padding: 14px 14px 100px; max-width: 640px; margin: 0 auto; }
+    .tab { display: none; }
+    .tab.active { display: block; }
+
+    /* ── Cards ── */
+    .card { background: white; border-radius: 16px; padding: 20px; margin-bottom: 14px; box-shadow: 0 1px 4px rgba(0,0,0,.07); }
+    .card-title { font-size: 16px; font-weight: 700; color: #555; margin-bottom: 18px; }
+
+    /* ── Stats Grid ── */
+    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+    .stat-card { background: white; border-radius: 14px; padding: 16px 8px; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,.07); }
+    .stat-num   { font-size: 32px; font-weight: 800; line-height: 1; }
+    .stat-label { font-size: 10px; color: #aaa; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 5px; }
+    .c-red   { color: #c62828; }
+    .c-amber { color: #e65100; }
+    .c-green { color: #2e7d32; }
+    .c-blue  { color: #1565c0; }
+    .c-teal  { color: #00695c; }
+    .c-gray  { color: #999; }
+
+    /* ── Section Headers ── */
+    .sec-head { font-size: 14px; font-weight: 700; padding: 9px 14px; border-radius: 8px; margin: 18px 0 10px; }
+    .sh-green  { background: #e8f5e9; color: #2e7d32; }
+    .sh-blue   { background: #e3f2fd; color: #1565c0; }
+    .sh-red    { background: #fbe9e7; color: #bf360c; }
+    .sh-amber  { background: #fff8e1; color: #e65100; }
+    .sh-teal   { background: #e0f2f1; color: #00695c; }
+    .sh-indigo { background: #e8eaf6; color: #283593; }
+
+    /* ── PO Items ── */
+    .po-item {
+      background: white; border-radius: 14px; padding: 15px 16px;
+      margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.06);
+      border-left: 4px solid #e0e0e0;
+    }
+    .po-item.delivery { border-left-color: #2e7d32; }
+    .po-item.pickup   { border-left-color: #1565c0; }
+    .po-item.overdue  { border-left-color: #c62828; }
+    .po-item.missing  { border-left-color: #e65100; }
+    .po-item.reconcile{ border-left-color: #00695c; }
+    .po-item.complete { border-left-color: #ccc; }
+    .po-item.ordered  { border-left-color: #5c6bc0; }
+    .po-num  { font-size: 14px; font-weight: 700; color: #1a5c38; font-family: monospace; }
+    .po-main { font-size: 19px; font-weight: 700; margin: 5px 0 4px; }
+    .po-sub  { font-size: 15px; color: #888; }
+    .po-note { font-size: 14px; color: #777; margin-top: 10px; padding-top: 10px; border-top: 1px solid #f0f0f0; font-style: italic; }
+    .po-actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; align-items: center; }
+    .po-amount { font-size: 16px; font-family: monospace; font-weight: 700; color: #2e7d32; }
+
+    /* ── Badges ── */
+    .badge { display: inline-block; padding: 5px 12px; border-radius: 10px; font-size: 13px; font-weight: 700; white-space: nowrap; }
+    .bd-red    { background: #ffcdd2; color: #b71c1c; }
+    .bd-green  { background: #c8e6c9; color: #1b5e20; }
+    .bd-blue   { background: #bbdefb; color: #0d47a1; }
+    .bd-amber  { background: #fff3e0; color: #bf360c; }
+    .bd-teal   { background: #b2dfdb; color: #004d40; }
+    .bd-indigo { background: #e8eaf6; color: #283593; }
+    .bd-gray   { background: #f5f5f5; color: #757575; }
+    .bd-purple { background: #ede7f6; color: #4527a0; }
+
+    /* ── Buttons ── */
+    .btn { padding: 13px 20px; border-radius: 12px; border: none; font-size: 16px; font-weight: 600; cursor: pointer; transition: opacity 0.15s; min-height: 48px; }
+    .btn:active { opacity: 0.75; }
+    .btn-primary   { background: #1a5c38; color: white; width: 100%; padding: 18px; font-size: 18px; border-radius: 14px; }
+    .btn-secondary { background: #f0f4f0; color: #333; }
+    .btn-sm        { padding: 9px 16px; font-size: 14px; border-radius: 9px; font-weight: 700; min-height: 40px; }
+    .btn-edit      { background: #e3f2fd; color: #1565c0; }
+    .btn-receive   { background: #e8f5e9; color: #2e7d32; }
+    .btn-lookup    { background: #1a5c38; color: white; white-space: nowrap; min-height: 54px; padding: 0 22px; font-size: 17px; }
+
+    /* ── Forms ── */
+    .form-group { margin-bottom: 20px; }
+    .form-label { display: block; font-size: 15px; font-weight: 700; color: #444; margin-bottom: 9px; }
+    .form-control {
+      width: 100%; padding: 15px 16px; border: 2px solid #e0e0e0;
+      border-radius: 12px; font-size: 17px; background: white;
+      appearance: none; -webkit-appearance: none; transition: border-color 0.15s;
+      min-height: 54px;
+    }
+    .form-control:focus { outline: none; border-color: #1a5c38; }
+    textarea.form-control { resize: vertical; min-height: 90px; }
+    select.form-control {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M5 7L0 2h10z' fill='%23888'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px;
+    }
+
+    /* ── Search ── */
+    .search-row { display: flex; gap: 8px; margin-bottom: 12px; }
+    .search-input {
+      flex: 1; padding: 15px 16px; border: 2px solid #e0e0e0;
+      border-radius: 12px; font-size: 17px; background: white; min-height: 54px;
+    }
+    .search-input:focus { outline: none; border-color: #1a5c38; }
+
+    /* ── Filter Chips ── */
+    .chip-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 14px; -webkit-overflow-scrolling: touch; }
+    .chip-row::-webkit-scrollbar { display: none; }
+    .chip {
+      padding: 10px 18px; border-radius: 22px; font-size: 15px; font-weight: 700;
+      white-space: nowrap; border: none; cursor: pointer; min-height: 42px;
+      background: white; color: #666; box-shadow: 0 1px 3px rgba(0,0,0,.12);
+    }
+    .chip.active { background: #1a5c38; color: white; }
+
+    /* ── Loading / Empty ── */
+    .loading { text-align: center; padding: 50px 20px; }
+    .spinner { width: 36px; height: 36px; border: 3px solid #e0e0e0; border-top-color: #1a5c38; border-radius: 50%; animation: spin 0.75s linear infinite; margin: 0 auto 14px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading p { color: #aaa; font-size: 15px; }
+    .empty { text-align: center; color: #bbb; padding: 24px 16px; font-size: 14px; font-style: italic; }
+
+    /* ── Toast ── */
+    .toast {
+      position: fixed; bottom: 88px; left: 50%; transform: translateX(-50%) translateY(10px);
+      background: #1a1a2e; color: white; padding: 11px 20px; border-radius: 22px;
+      font-size: 13px; font-weight: 500; z-index: 999; opacity: 0; transition: all 0.25s;
+      white-space: nowrap; pointer-events: none; max-width: 90vw;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* ── Modal ── */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 200;
+      display: none; align-items: flex-end; justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: white; border-radius: 24px 24px 0 0;
+      padding: 8px 20px 48px; width: 100%; max-width: 640px; max-height: 92vh;
+      overflow-y: auto; -webkit-overflow-scrolling: touch;
+    }
+    .modal-handle { width: 44px; height: 5px; background: #ddd; border-radius: 3px; margin: 14px auto 20px; }
+    .modal-title  { font-size: 20px; font-weight: 700; margin-bottom: 20px; }
+    .modal-actions{ display: flex; gap: 10px; margin-top: 6px; }
+
+    /* ── Receive info box ── */
+    .info-box { background: #f0faf4; border: 1.5px solid #a5d6b7; border-radius: 10px; padding: 14px; margin-bottom: 16px; }
+
+    /* ── Camera / Photo UI ── */
+    .photo-zone { border: 2px dashed #c8e6c9; border-radius: 14px; padding: 24px 16px; text-align: center; background: #f9fdf9; }
+    .photo-zone.has-photo { border-style: solid; border-color: #a5d6b7; padding: 10px; }
+    .btn-camera { background: #1a5c38; color: white; border: none; border-radius: 12px; padding: 14px 24px; font-size: 16px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 10px; min-height: 52px; }
+    .btn-camera:active { opacity: 0.8; }
+    .btn-retake { background: #f0f0f0; color: #333; border: none; border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 10px; min-height: 44px; }
+    .photo-preview-img { width: 100%; border-radius: 8px; display: block; max-height: 280px; object-fit: cover; }
+    .photo-status { font-size: 12px; margin-top: 8px; font-weight: 600; }
+    .photo-status.uploading { color: #e65100; }
+    .photo-status.done      { color: #2e7d32; }
+    .photo-status.error     { color: #c62828; }
+    .upload-bar-wrap { height: 4px; background: #e0e0e0; border-radius: 2px; margin-top: 8px; overflow: hidden; }
+    .upload-bar { height: 100%; background: #1a5c38; border-radius: 2px; width: 0%; transition: width 0.3s; }
+
+    /* ── Utility ── */
+    .row-between { display: flex; justify-content: space-between; align-items: flex-start; }
+
+    /* ── Mobile layout fixes ── */
+    html, body { width: 100%; min-height: 100vh; overflow-x: hidden; }
+    .content   { padding: 8px 6px 100px !important; max-width: 100% !important; }
+
+    /* ── Document link buttons ── */
+    .doc-links { display: flex; gap: 8px; margin-bottom: 18px; }
+    .doc-link {
+      flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 11px 10px; border-radius: 10px; font-size: 13px; font-weight: 700;
+      text-decoration: none; border: 1.5px solid;
+    }
+    .doc-link-invoice  { background: #fff8e1; color: #e65100; border-color: #ffe082; }
+    .doc-link-issued   { background: #e8f5e9; color: #2e7d32; border-color: #a5d6a7; }
+    .doc-link-disabled { background: #f5f5f5; color: #bbb; border-color: #e0e0e0; pointer-events: none; }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<header class="app-header">
+  <div>
+    <h1>📦 PO Manager</h1>
+    <p>Panoramic Building <span style="font-size:10px;opacity:0.5">v12</span></p>
+  </div>
+  <button class="refresh-btn" onclick="refreshData()">↻ Refresh</button>
+</header>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Edit Modal -->
+<div class="modal-overlay" id="edit-modal" onclick="maybeCloseModal(event)">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="edit-modal-title">Edit PO</div>
+    <div id="edit-modal-body"></div>
+  </div>
+</div>
+
+<!-- Content -->
+<main class="content">
+
+  <!-- ══ DASHBOARD ══ -->
+  <div class="tab active" id="tab-dashboard">
+    <div class="loading" id="dash-loading">
+      <div class="spinner"></div>
+      <p>Loading POs…</p>
+    </div>
+    <div id="dash-content" style="display:none"></div>
+  </div>
+
+  <!-- ══ CREATE PO ══ -->
+  <div class="tab" id="tab-create">
+
+    <!-- Form -->
+    <div class="card" id="create-form-card">
+      <div class="card-title">New Purchase Order</div>
+
+      <div class="form-group">
+        <label class="form-label">Builder</label>
+        <input type="text" class="form-control" id="c-builder" placeholder="e.g. Craftsmen, Timberbrook">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Job Reference *</label>
+        <input type="text" class="form-control" id="c-job" placeholder="e.g. Wilson, Lot 56, Summer Clean">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Vendor *</label>
+        <select class="form-control" id="c-vendor">
+          <option value="">— Select Vendor —</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Vendor Invoice #</label>
+        <input type="text" class="form-control" id="c-invoice" placeholder="Optional">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Status</label>
+        <select class="form-control" id="c-status"></select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Invoice Total ($)</label>
+        <input type="number" class="form-control" id="c-total" placeholder="0.00" step="0.01" min="0">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notes</label>
+        <textarea class="form-control" id="c-notes" placeholder="Details about this order…"></textarea>
+      </div>
+      <button class="btn btn-primary" id="create-btn" onclick="submitCreate()">Create PO</button>
+    </div>
+
+    <!-- Success screen (shown after PO is created) -->
+    <div id="create-success-card" style="display:none">
+      <div class="card" style="text-align:center;padding:32px 20px">
+        <div style="font-size:56px;margin-bottom:12px">✅</div>
+        <div style="font-size:13px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:6px">PO Created</div>
+        <div id="success-po-num" style="font-size:36px;font-weight:800;color:#1a5c38;font-family:monospace;letter-spacing:1px;margin-bottom:20px"></div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <button class="btn btn-primary" onclick="showCreateForm()">+ Create Another PO</button>
+          <button class="btn btn-secondary" style="width:100%;padding:14px;font-size:15px;border-radius:12px"
+                  onclick="showTab('dashboard', document.querySelectorAll('.nav-btn')[0])">← Back to Dashboard</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ══ RECEIVE PO ══ -->
+  <div class="tab" id="tab-receive">
+    <div class="card">
+      <div class="card-title">Log Received Materials</div>
+
+      <div class="form-group">
+        <label class="form-label">PO Number</label>
+        <div style="display:flex;gap:8px">
+          <input type="text" class="form-control" id="r-ponum"
+                 placeholder="e.g. 26-02-954" style="flex:1"
+                 onkeydown="if(event.key==='Enter') lookupPO()">
+          <button class="btn btn-lookup" onclick="lookupPO()">Look Up</button>
+        </div>
+      </div>
+
+      <div id="r-info" style="display:none">
+        <div class="info-box" id="r-details"></div>
+
+        <div class="form-group">
+          <label class="form-label">Photo of Received Note</label>
+
+          <!-- Hidden file input — capture="environment" opens rear camera on mobile -->
+          <input type="file" id="photo-input" accept="image/*" capture="environment"
+                 style="display:none" onchange="handlePhoto(this)">
+
+          <!-- Initial state: just the camera button -->
+          <div class="photo-zone" id="photo-zone">
+            <button type="button" class="btn-camera" onclick="document.getElementById('photo-input').click()">
+              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
+                <circle cx="12" cy="13" r="3" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/>
+              </svg>
+              Take Photo
+            </button>
+            <p style="font-size:11px;color:#aaa;margin-top:8px">Or tap to choose from your gallery</p>
+          </div>
+
+          <!-- Preview + upload progress (shown after photo is taken) -->
+          <div id="photo-preview-area" style="display:none">
+            <div class="photo-zone has-photo">
+              <img id="photo-preview-img" class="photo-preview-img" alt="Received note photo">
+              <div class="upload-bar-wrap"><div class="upload-bar" id="upload-bar"></div></div>
+              <div class="photo-status" id="photo-status"></div>
+              <button type="button" class="btn-retake" onclick="retakePhoto()">↩ Retake Photo</button>
+            </div>
+          </div>
+
+          <!-- Hidden field that stores the final Drive URL -->
+          <input type="hidden" id="r-note">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Additional Notes</label>
+          <textarea class="form-control" id="r-notes" placeholder="Anything else to record…"></textarea>
+        </div>
+        <button class="btn btn-primary" id="receive-btn" onclick="submitReceive()">✓ Update PO</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SEARCH ══ -->
+  <div class="tab" id="tab-search">
+    <div class="search-row">
+      <input type="text" class="search-input" id="s-input"
+             placeholder="PO #, job, vendor, builder, notes…"
+             oninput="runSearch()">
+    </div>
+    <div class="chip-row">
+      <button class="chip active" onclick="setChip('all',this)">All</button>
+      <button class="chip" onclick="setChip('Pending Pickup',this)">Pickup</button>
+      <button class="chip" onclick="setChip('Pending Delivery',this)">Delivery</button>
+      <button class="chip" onclick="setChip('Ready to Reconcile',this)">Reconcile</button>
+      <button class="chip" onclick="setChip('Complete',this)">Complete</button>
+    </div>
+    <div id="s-results"></div>
+  </div>
+
+</main>
+
+<!-- Bottom Nav -->
+<nav class="bottom-nav">
+  <button class="nav-btn active" onclick="showTab('dashboard',this)">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+    Dashboard
+  </button>
+  <button class="nav-btn" onclick="showTab('create',this)">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+    New PO
+  </button>
+  <button class="nav-btn" onclick="showTab('receive',this)">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+    Receive
+  </button>
+  <button class="nav-btn" onclick="showTab('search',this)">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+    Search
+  </button>
+</nav>
+
+<!-- ══════════════════ JAVASCRIPT ══════════════════ -->
+<script>
+// ── State ────────────────────────────────────────────────────────────────────
+var G = {
+  pos:        [],
+  config:     { statusOptions: [], vendorOptions: [] },
+  filter:     'all',
+  receivePO:  null,
+  editRow:    null
+};
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+  google.script.run
+    .withSuccessHandler(function(cfg) {
+      G.config = cfg;
+      fillSelects();
+      loadData();
+    })
+    .withFailureHandler(function(e) {
+      showToast('❌ Could not load config');
+      console.error(e);
+    })
+    .getConfig();
+});
+
+function fillSelects() {
+  // vendor selects
+  ['c-vendor'].forEach(function(id) {
+    var el = document.getElementById(id);
+    G.config.vendorOptions.forEach(function(v) {
+      el.insertAdjacentHTML('beforeend','<option value="'+esc(v)+'">'+esc(v)+'</option>');
+    });
+  });
+  // status selects
+  ['c-status'].forEach(function(id) {
+    var el = document.getElementById(id);
+    G.config.statusOptions.forEach(function(s) {
+      el.insertAdjacentHTML('beforeend','<option value="'+esc(s)+'">'+esc(s)+'</option>');
+    });
+  });
+  document.getElementById('c-status').value = 'Pending Pickup';
+}
+
+function loadData() {
+  document.getElementById('dash-loading').style.display = 'block';
+  document.getElementById('dash-content').style.display  = 'none';
+
+  google.script.run
+    .withSuccessHandler(function(pos) {
+      G.pos = pos || [];
+      renderDashboard();
+      runSearch();
+      document.getElementById('dash-loading').style.display = 'none';
+      document.getElementById('dash-content').style.display  = 'block';
+    })
+    .withFailureHandler(function(e) {
+      document.getElementById('dash-loading').innerHTML =
+        '<p style="color:#c62828;font-size:14px">⚠️ Error loading data.<br>Please refresh.</p>';
+      console.error(e);
+    })
+    .getSheetData();
+}
+
+function refreshData() { loadData(); showToast('Refreshing…'); }
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+function renderDashboard() {
+  var now = today();
+
+  var buckets = {
+    todayDel:[], todayPick:[],
+    upcomingDel:[], upcomingPick:[],
+    overdueDel:[], overduePick:[],
+    missingDel:[], missingPick:[],
+    reconcile:[], ordered:[]
+  };
+
+  var openCount = 0;
+
+  G.pos.forEach(function(po) {
+    var sl = po.status.toLowerCase();
+    var isPD  = sl === 'pending delivery';
+    var isPP  = sl === 'pending pickup';
+    var isRTR = sl === 'ready to reconcile';
+    var isOrd = sl === 'ordered' || sl === 'being made' || sl === 'currently picking up';
+
+    if (isRTR) { buckets.reconcile.push(po); return; }
+    if (isOrd) { buckets.ordered.push(po); return; }
+    if (!isPD && !isPP) return;
+
+    openCount++;
+    var dd = po.deliveryDate ? parseMMDDYYYY(po.deliveryDate) : null;
+
+    if (!dd) {
+      isPD ? buckets.missingDel.push(po) : buckets.missingPick.push(po);
+    } else if (sameDay(dd, now)) {
+      isPD ? buckets.todayDel.push(po) : buckets.todayPick.push(po);
+    } else if (dd < now) {
+      isPD ? buckets.overdueDel.push(po) : buckets.overduePick.push(po);
+    } else if (dd <= addDays(now, 7)) {
+      isPD ? buckets.upcomingDel.push(po) : buckets.upcomingPick.push(po);
+    } else {
+      isPD ? buckets.missingDel.push(po) : buckets.missingPick.push(po);
+    }
+  });
+
+  var todayTotal   = buckets.todayDel.length + buckets.todayPick.length;
+  var overdueTotal = buckets.overdueDel.length + buckets.overduePick.length;
+  var missingTotal = buckets.missingDel.length + buckets.missingPick.length;
+
+  var h = '';
+
+  // Stats
+  h += '<div class="stats-grid">';
+  h += stat(todayTotal,             'Today',     todayTotal   > 0 ? 'c-green' : 'c-gray');
+  h += stat(overdueTotal,           'Overdue',   overdueTotal > 0 ? 'c-red'   : 'c-green');
+  h += stat(missingTotal,           'No Date',   missingTotal > 0 ? 'c-amber' : 'c-green');
+  h += stat(buckets.reconcile.length,'Reconcile',buckets.reconcile.length > 0 ? 'c-teal' : 'c-gray');
+  h += stat(openCount,              'Open POs',  'c-gray');
+  h += stat(G.pos.length,           'Total POs', 'c-gray');
+  h += '</div>';
+
+  // Overdue
+  var overdueAll = buckets.overdueDel.concat(buckets.overduePick)
+                    .sort(function(a,b){ return parseMMDDYYYY(a.deliveryDate)-parseMMDDYYYY(b.deliveryDate); });
+  if (overdueAll.length) {
+    h += secHead('🔴 Overdue (' + overdueAll.length + ')', 'sh-red');
+    overdueAll.forEach(function(po){ h += poCard(po,'overdue'); });
+  }
+
+  // Today
+  if (todayTotal) {
+    h += secHead('🚚 Today (' + todayTotal + ')', 'sh-green');
+    buckets.todayDel.forEach(function(po){ h += poCard(po,'delivery'); });
+    buckets.todayPick.forEach(function(po){ h += poCard(po,'pickup'); });
+  }
+
+  // This week
+  var weekAll = buckets.upcomingDel.concat(buckets.upcomingPick)
+                  .sort(function(a,b){ return parseMMDDYYYY(a.deliveryDate)-parseMMDDYYYY(b.deliveryDate); });
+  if (weekAll.length) {
+    h += secHead('📅 This Week (' + weekAll.length + ')', 'sh-blue');
+    weekAll.forEach(function(po){
+      h += poCard(po, po.status.toLowerCase()==='pending delivery' ? 'delivery' : 'pickup');
+    });
+  }
+
+  // Ready to reconcile
+  if (buckets.reconcile.length) {
+    h += secHead('📋 Ready to Reconcile (' + buckets.reconcile.length + ')', 'sh-teal');
+    buckets.reconcile.slice(0,12).forEach(function(po){ h += poCard(po,'reconcile'); });
+    if (buckets.reconcile.length > 12) h += more(buckets.reconcile.length - 12);
+  }
+
+  // Ordered / in progress
+  if (buckets.ordered.length) {
+    h += secHead('🏭 Ordered / In Progress (' + buckets.ordered.length + ')', 'sh-indigo');
+    buckets.ordered.slice(0,8).forEach(function(po){ h += poCard(po,'ordered'); });
+    if (buckets.ordered.length > 8) h += more(buckets.ordered.length - 8);
+  }
+
+  // Missing date
+  var missingAll = buckets.missingDel.concat(buckets.missingPick);
+  if (missingAll.length) {
+    h += secHead('🟡 Needs a Date (' + missingAll.length + ')', 'sh-amber');
+    missingAll.slice(0,8).forEach(function(po){ h += poCard(po,'missing'); });
+    if (missingAll.length > 8) h += more(missingAll.length - 8);
+  }
+
+  if (!overdueAll.length && !todayTotal && !weekAll.length &&
+      !buckets.reconcile.length && !missingAll.length && !buckets.ordered.length) {
+    h += '<div class="empty">✅ All clear — no open POs need attention.</div>';
+  }
+
+  document.getElementById('dash-content').innerHTML = h;
+}
+
+function stat(val, lbl, cls) {
+  return '<div class="stat-card"><div class="stat-num '+cls+'">'+val+'</div><div class="stat-label">'+lbl+'</div></div>';
+}
+function secHead(t, cls) { return '<div class="sec-head '+cls+'">'+t+'</div>'; }
+function more(n) { return '<p style="text-align:center;color:#aaa;font-size:12px;padding:6px 0">+'+n+' more — use Search tab</p>'; }
+
+function poCard(po, type) {
+  var amt   = po.invoiceTotal && parseFloat(po.invoiceTotal) > 0
+              ? '<span class="po-amount">$'+fmtCurrency(po.invoiceTotal)+'</span>' : '';
+  var dateStr = po.deliveryDate ? ' · '+po.deliveryDate : '';
+  var statusBadge = badge(po.status);
+
+  return '<div class="po-item '+type+'">' +
+    '<div class="row-between">' +
+      '<span class="po-num">'+po.poNum+'</span>' + amt +
+    '</div>' +
+    '<div class="po-main">'+(po.jobRef||'—')+'</div>' +
+    '<div class="po-sub">'+(po.vendor||'—')+(po.builder?' · '+po.builder:'')+dateStr+'</div>' +
+    (po.notes ? '<div class="po-note">'+esc(po.notes)+'</div>' : '') +
+    '<div class="po-actions">' +
+      statusBadge +
+      '<button class="btn btn-sm btn-edit"    onclick="openEdit(\''+po.poNum+'\')">Edit</button>' +
+      '<button class="btn btn-sm btn-receive" onclick="quickReceive(\''+po.poNum+'\')">Receive</button>' +
+      (po.invoiceLink  ? '<a href="'+esc(po.invoiceLink)+'"  target="_blank" class="btn btn-sm" style="background:#fff8e1;color:#e65100;text-decoration:none">Invoice</a>'   : '') +
+      (po.issuedPOLink ? '<a href="'+esc(po.issuedPOLink)+'" target="_blank" class="btn btn-sm" style="background:#e8f5e9;color:#2e7d32;text-decoration:none">Issued PO</a>' : '') +
+    '</div>' +
+  '</div>';
+}
+
+function badge(status) {
+  var map = {
+    'Pending Pickup'       : 'bd-blue',
+    'Pending Delivery'     : 'bd-green',
+    'Ready to Reconcile'   : 'bd-teal',
+    'Complete'             : 'bd-gray',
+    'Ordered'              : 'bd-indigo',
+    'Being made'           : 'bd-amber',
+    'Currently Picking Up' : 'bd-purple',
+    'Draft'                : 'bd-gray'
+  };
+  var cls = map[status] || 'bd-gray';
+  return '<span class="badge '+cls+'">'+esc(status)+'</span>';
+}
+
+// ── Create PO ─────────────────────────────────────────────────────────────────
+function submitCreate() {
+  var job    = trim('c-job');
+  var vendor = val('c-vendor');
+  if (!job || !vendor) { showToast('⚠️ Job Reference and Vendor are required'); return; }
+
+  setBtnState('create-btn', 'Creating…', true);
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      setBtnState('create-btn', 'Create PO', false);
+      if (res.success) {
+        clearCreate();
+        loadData();
+        // Show success screen with PO number
+        document.getElementById('success-po-num').textContent = res.poNumber;
+        document.getElementById('create-form-card').style.display    = 'none';
+        document.getElementById('create-success-card').style.display = 'block';
+      } else {
+        showToast('❌ ' + res.error);
+      }
+    })
+    .withFailureHandler(function() {
+      setBtnState('create-btn', 'Create PO', false);
+      showToast('❌ Error creating PO');
+    })
+    .createPO({
+      builder:       trim('c-builder'),
+      jobRef:        job,
+      vendor:        vendor,
+      vendorInvoice: trim('c-invoice'),
+      status:        val('c-status'),
+      invoiceTotal:  val('c-total'),
+      notes:         trim('c-notes')
+    });
+}
+
+function clearCreate() {
+  ['c-builder','c-job','c-invoice','c-total','c-notes'].forEach(function(id){ document.getElementById(id).value=''; });
+  document.getElementById('c-vendor').value = '';
+  document.getElementById('c-status').value = 'Pending Pickup';
+}
+
+function showCreateForm() {
+  document.getElementById('create-form-card').style.display    = 'block';
+  document.getElementById('create-success-card').style.display = 'none';
+}
+
+// ── Receive PO ────────────────────────────────────────────────────────────────
+function lookupPO() {
+  var poNum = trim('r-ponum');
+  if (!poNum) { showToast('Enter a PO number first'); return; }
+
+  var found = G.pos.find(function(p){ return p.poNum === poNum; });
+  if (found) {
+    showReceiveInfo(found);
+  } else {
+    google.script.run
+      .withSuccessHandler(function(p) {
+        p ? showReceiveInfo(p) : showToast('⚠️ PO '+poNum+' not found');
+      })
+      .withFailureHandler(function(){ showToast('❌ Lookup failed'); })
+      .findPOByNumber(poNum);
+  }
+}
+
+function showReceiveInfo(po) {
+  G.receivePO = po;
+  document.getElementById('r-details').innerHTML =
+    '<div class="po-num">'+po.poNum+'</div>' +
+    '<div class="po-main" style="margin:4px 0">'+(po.jobRef||'—')+'</div>' +
+    '<div class="po-sub">'+(po.vendor||'—')+(po.builder?' · '+po.builder:'')+'</div>' +
+    (po.notes ? '<div class="po-note">'+esc(po.notes)+'</div>' : '');
+
+  document.getElementById('r-note').value   = po.receivedNote || '';
+  document.getElementById('r-notes').value  = '';
+  document.getElementById('r-info').style.display = 'block';
+}
+
+function quickReceive(poNum) {
+  showTab('receive', document.querySelectorAll('.nav-btn')[2]);
+  document.getElementById('r-ponum').value = poNum;
+  document.getElementById('r-info').style.display = 'none';
+  lookupPO();
+}
+
+function submitReceive() {
+  if (!G.receivePO) { showToast('Look up a PO first'); return; }
+
+  setBtnState('receive-btn', 'Saving…', true);
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      setBtnState('receive-btn', '✓ Update PO', false);
+      if (res.success) {
+        showToast('✅ ' + G.receivePO.poNum + ' updated!');
+        document.getElementById('r-ponum').value = '';
+        document.getElementById('r-info').style.display = 'none';
+        G.receivePO = null;
+        loadData();
+      } else {
+        showToast('❌ ' + res.error);
+      }
+    })
+    .withFailureHandler(function() {
+      setBtnState('receive-btn', '✓ Update PO', false);
+      showToast('❌ Error updating PO');
+    })
+    .updatePO(G.receivePO.rowIndex, {
+      status:       'Ready to Reconcile',
+      receivedNote: trim('r-note'),
+      notes:        trim('r-notes') || G.receivePO.notes
+    });
+}
+
+// ── Search ───────────────────────────────────────────────────────────────────
+function setChip(filter, el) {
+  G.filter = filter;
+  document.querySelectorAll('.chip-row .chip').forEach(function(c){ c.classList.remove('active'); });
+  el.classList.add('active');
+  runSearch();
+}
+
+function runSearch() {
+  var q = (document.getElementById('s-input').value || '').toLowerCase().trim();
+
+  var results = G.pos.filter(function(po) {
+    if (G.filter !== 'all' && po.status !== G.filter) return false;
+    if (!q) return true;
+    return (po.poNum+' '+po.jobRef+' '+po.vendor+' '+po.builder+' '+po.notes+' '+po.vendorInvoice)
+             .toLowerCase().includes(q);
+  });
+
+  // sort: most recent first (by rowIndex desc)
+  results.sort(function(a,b){ return b.rowIndex - a.rowIndex; });
+
+  var h = '';
+  if (results.length === 0) {
+    h = '<div class="empty">No POs match your search.</div>';
+  } else {
+    h += '<p style="font-size:11px;color:#aaa;margin-bottom:8px">'+results.length+' result'+(results.length!==1?'s':'')+'</p>';
+    results.slice(0,60).forEach(function(po){
+      h += poCard(po, typeClass(po.status));
+    });
+    if (results.length > 60) h += '<div class="empty">Showing first 60 — refine your search.</div>';
+  }
+
+  document.getElementById('s-results').innerHTML = h;
+}
+
+function typeClass(status) {
+  var m = {
+    'Pending Delivery':'delivery','Pending Pickup':'pickup',
+    'Ready to Reconcile':'reconcile','Complete':'complete',
+    'Ordered':'ordered','Being made':'ordered','Currently Picking Up':'pickup'
+  };
+  return m[status] || 'pickup';
+}
+
+// ── Edit Modal ────────────────────────────────────────────────────────────────
+function openEdit(poNum) {
+  var po = G.pos.find(function(p){ return p.poNum === poNum; });
+  if (!po) return;
+  G.editRow = po.rowIndex;
+
+  var statusOpts = G.config.statusOptions.map(function(s){
+    return '<option value="'+esc(s)+'"'+(s===po.status?' selected':'')+'>'+esc(s)+'</option>';
+  }).join('');
+
+  var vendorOpts = G.config.vendorOptions.map(function(v){
+    return '<option value="'+esc(v)+'"'+(v===po.vendor?' selected':'')+'>'+esc(v)+'</option>';
+  }).join('');
+
+  document.getElementById('edit-modal-title').textContent = poNum;
+
+  // Build document link buttons
+  var invoiceBtn = po.invoiceLink
+    ? '<a href="'+esc(po.invoiceLink)+'" target="_blank" class="doc-link doc-link-invoice">📄 Invoice</a>'
+    : '<span class="doc-link doc-link-disabled">📄 No Invoice</span>';
+
+  var issuedBtn = po.issuedPOLink
+    ? '<a href="'+esc(po.issuedPOLink)+'" target="_blank" class="doc-link doc-link-issued">📋 Issued PO</a>'
+    : '<span class="doc-link doc-link-disabled">📋 No Issued PO</span>';
+
+  var issuedField =
+    '<div class="form-group">' +
+      '<label class="form-label">' + (po.issuedPOLink ? '📋 Update Issued PO' : '📋 Add Issued PO') + '</label>' +
+      '<input type="url" class="form-control" id="e-issued" value="'+esc(po.issuedPOLink)+'" placeholder="Paste link, or upload file below…" style="margin-bottom:10px">' +
+      '<input type="file" id="e-issued-file" accept="image/*,.pdf" style="display:none" onchange="handleIssuedFile(this)">' +
+      '<button type="button" class="btn-camera" style="width:100%;justify-content:center" onclick="document.getElementById(\'e-issued-file\').click()">' +
+        '<svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>' +
+        ' Upload from Phone' +
+      '</button>' +
+      '<p id="e-issued-status" class="photo-status" style="margin-top:8px"></p>' +
+    '</div>';
+
+  document.getElementById('edit-modal-body').innerHTML =
+    '<div class="doc-links">' + invoiceBtn + issuedBtn + '</div>' +
+    fg('Builder',         '<input type="text"   class="form-control" id="e-builder"  value="'+esc(po.builder)+'">') +
+    fg('Job Reference',   '<input type="text"   class="form-control" id="e-job"      value="'+esc(po.jobRef)+'">') +
+    fg('Vendor',          '<select class="form-control" id="e-vendor"><option value="">—</option>'+vendorOpts+'</select>') +
+    fg('Vendor Invoice #','<input type="text"   class="form-control" id="e-vinvoice" value="'+esc(po.vendorInvoice)+'">') +
+    fg('Status',          '<select class="form-control" id="e-status">'+statusOpts+'</select>') +
+    fg('Invoice Total ($)','<input type="number" class="form-control" id="e-total"   value="'+esc(po.invoiceTotal)+'" step="0.01" min="0">') +
+    fg('Delivery / Pickup Date','<input type="text" class="form-control" id="e-date" value="'+esc(po.deliveryDate)+'" placeholder="MM/DD/YYYY">') +
+    issuedField +
+    fg('Notes',           '<textarea class="form-control" id="e-notes" rows="3">'+esc(po.notes)+'</textarea>') +
+    '<div class="modal-actions">' +
+      '<button class="btn btn-primary" style="flex:1" onclick="submitEdit()">Save</button>' +
+      '<button class="btn btn-secondary" style="flex:0 0 auto" onclick="closeEdit()">Cancel</button>' +
+    '</div>';
+
+  document.getElementById('edit-modal').classList.add('open');
+}
+
+function fg(label, input) {
+  return '<div class="form-group"><label class="form-label">'+label+'</label>'+input+'</div>';
+}
+
+function closeEdit() { document.getElementById('edit-modal').classList.remove('open'); }
+
+function maybeCloseModal(e) { if (e.target===document.getElementById('edit-modal')) closeEdit(); }
+
+function submitEdit() {
+  if (!G.editRow) return;
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res.success) {
+        closeEdit();
+        showToast('✅ PO updated!');
+        loadData();
+      } else {
+        showToast('❌ ' + (res.error||'Save failed'));
+      }
+    })
+    .withFailureHandler(function(){ showToast('❌ Error saving changes'); })
+    .updatePO(G.editRow, {
+      builder:       trim('e-builder'),
+      jobRef:        trim('e-job'),
+      vendor:        val('e-vendor'),
+      vendorInvoice: trim('e-vinvoice'),
+      status:        val('e-status'),
+      invoiceTotal:  val('e-total'),
+      deliveryDate:  trim('e-date'),
+      issuedPO:      trim('e-issued'),
+      notes:         trim('e-notes')
+    });
+}
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+function showTab(name, btn) {
+  document.querySelectorAll('.tab').forEach(function(t){ t.classList.remove('active'); });
+  document.querySelectorAll('.nav-btn').forEach(function(b){ b.classList.remove('active'); });
+  document.getElementById('tab-'+name).classList.add('active');
+  btn.classList.add('active');
+  if (name === 'search') runSearch();
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+function showToast(msg) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(function(){ t.classList.remove('show'); }, 3000);
+}
+
+function setBtnState(id, label, disabled) {
+  var el = document.getElementById(id);
+  el.textContent = label;
+  el.disabled = disabled;
+}
+
+function val(id) { return (document.getElementById(id)||{}).value||''; }
+function trim(id){ return val(id).trim(); }
+
+function esc(s) {
+  if (!s) return '';
+  return s.toString()
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function today() { var d=new Date(); d.setHours(0,0,0,0); return d; }
+function addDays(d, n) { var r=new Date(d); r.setDate(r.getDate()+n); return r; }
+function sameDay(a, b) { return a.getTime()===b.getTime(); }
+
+function parseMMDDYYYY(s) {
+  if (!s) return null;
+  var m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (!m) return null;
+  var d = new Date(+m[3] < 100 ? 2000 + (+m[3]) : +m[3], +m[1]-1, +m[2]);
+  d.setHours(0,0,0,0);
+  return isNaN(d)?null:d;
+}
+
+function fmtCurrency(n) {
+  var v = parseFloat(n);
+  if (isNaN(v)) return n;
+  return v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+
+// ── Photo Capture & Upload ────────────────────────────────────────────────────
+
+/**
+ * Called when the user picks/takes a photo.
+ * 1. Shows the preview immediately.
+ * 2. Compresses the image via Canvas (keeps file size small for the GAS payload).
+ * 3. Uploads the base64 to Drive via savePhotoToDrive().
+ * 4. Stores the returned URL in the hidden #r-note input.
+ */
+function handlePhoto(input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+
+  // Reset any previous upload
+  setPhotoStatus('', '');
+  document.getElementById('r-note').value = '';
+
+  // Show preview zone
+  document.getElementById('photo-zone').style.display         = 'none';
+  document.getElementById('photo-preview-area').style.display = 'block';
+
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    // Show the preview image immediately
+    var previewImg = document.getElementById('photo-preview-img');
+    previewImg.src = e.target.result;
+
+    // Compress via canvas before uploading
+    var img = new Image();
+    img.onload = function() {
+      var MAX_W = 1600, MAX_H = 1600, QUALITY = 0.82;
+      var w = img.width, h = img.height;
+
+      if (w > MAX_W) { h = Math.round(h * MAX_W / w); w = MAX_W; }
+      if (h > MAX_H) { w = Math.round(w * MAX_H / h); h = MAX_H; }
+
+      var canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+
+      var dataUrl  = canvas.toDataURL('image/jpeg', QUALITY);
+      var base64   = dataUrl.split(',')[1];
+      var mimeType = 'image/jpeg';
+      var filename = 'PO-' + (G.receivePO ? G.receivePO.poNum : 'received') +
+                     '-' + new Date().toISOString().slice(0,19).replace(/[T:]/g,'-') + '.jpg';
+
+      animateBar();
+      setPhotoStatus('Uploading…', 'uploading');
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          stopBar();
+          if (res.success) {
+            document.getElementById('r-note').value = res.url;
+            setPhotoStatus('✅ Photo uploaded to Drive', 'done');
+          } else {
+            setPhotoStatus('❌ Upload failed: ' + res.error, 'error');
+          }
+        })
+        .withFailureHandler(function(err) {
+          stopBar();
+          setPhotoStatus('❌ Upload error — check connection', 'error');
+          console.error(err);
+        })
+        .savePhotoToDrive(base64, mimeType, filename);
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+/**
+ * Handles file upload for the Issued PO field in the Edit modal.
+ * Accepts images (compressed via canvas) and PDFs (uploaded raw).
+ * On success, populates #e-issued with the Drive URL.
+ */
+function handleIssuedFile(input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+
+  var statusEl = document.getElementById('e-issued-status');
+  statusEl.textContent = 'Uploading…';
+  statusEl.className   = 'photo-status uploading';
+
+  var poNum = document.getElementById('edit-modal-title').textContent || 'issued';
+  var ext   = file.name.split('.').pop() || 'bin';
+  var filename = 'IssuedPO-' + poNum + '-' + new Date().toISOString().slice(0,19).replace(/[T:]/g,'-') + '.' + ext;
+
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var dataUrl = e.target.result;
+
+    function uploadBase64(b64, mime) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res.success) {
+            document.getElementById('e-issued').value = res.url;
+            statusEl.textContent = '✅ Uploaded — link filled in above';
+            statusEl.className   = 'photo-status done';
+          } else {
+            statusEl.textContent = '❌ Upload failed: ' + res.error;
+            statusEl.className   = 'photo-status error';
+          }
+        })
+        .withFailureHandler(function(err) {
+          statusEl.textContent = '❌ Upload error — check connection';
+          statusEl.className   = 'photo-status error';
+        })
+        .savePhotoToDrive(b64, mime, filename);
+    }
+
+    // Images: compress via canvas first; everything else (PDF etc) upload raw
+    if (file.type.startsWith('image/')) {
+      var img = new Image();
+      img.onload = function() {
+        var MAX = 1600, QUALITY = 0.82;
+        var w = img.width, h = img.height;
+        if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
+        if (h > MAX) { w = Math.round(w * MAX / h); h = MAX; }
+        var canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        var compressed = canvas.toDataURL('image/jpeg', QUALITY);
+        uploadBase64(compressed.split(',')[1], 'image/jpeg');
+      };
+      img.src = dataUrl;
+    } else {
+      uploadBase64(dataUrl.split(',')[1], file.type || 'application/octet-stream');
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+function retakePhoto() {
+  // Reset everything so the user can pick again
+  document.getElementById('photo-zone').style.display         = 'block';
+  document.getElementById('photo-preview-area').style.display = 'none';
+  document.getElementById('photo-input').value                = '';
+  document.getElementById('r-note').value                     = '';
+  setPhotoStatus('', '');
+  stopBar();
+}
+
+function setPhotoStatus(msg, cls) {
+  var el = document.getElementById('photo-status');
+  el.textContent  = msg;
+  el.className    = 'photo-status' + (cls ? ' ' + cls : '');
+}
+
+// Animates the upload bar while waiting for the server
+var _barTimer = null;
+function animateBar() {
+  var bar = document.getElementById('upload-bar');
+  var pct = 0;
+  bar.style.width = '0%';
+  _barTimer = setInterval(function() {
+    // Creep toward 90% (the last 10% waits for the real response)
+    pct = pct < 90 ? pct + (90 - pct) * 0.04 : pct;
+    bar.style.width = pct + '%';
+  }, 120);
+}
+function stopBar() {
+  clearInterval(_barTimer);
+  var bar = document.getElementById('upload-bar');
+  bar.style.width = '100%';
+  setTimeout(function(){ bar.style.width = '0%'; }, 1200);
+}
+
+// Reset photo UI whenever the user looks up a new PO
+var _origShowReceiveInfo = showReceiveInfo;
+showReceiveInfo = function(po) {
+  retakePhoto();
+  _origShowReceiveInfo(po);
+};
+</script>
+</body>
+</html>
