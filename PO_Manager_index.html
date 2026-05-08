@@ -58,7 +58,11 @@
 
     /* ── Stats Grid ── */
     .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
-    .stat-card { background: white; border-radius: 14px; padding: 16px 8px; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,.07); }
+    .stat-card { background: white; border-radius: 14px; padding: 16px 8px; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,.07); cursor: pointer; border: 2px solid transparent; transition: border-color 0.15s, box-shadow 0.15s; }
+    .stat-card:active { opacity: 0.8; }
+    .stat-card.active { border-color: #1F3971; box-shadow: 0 0 0 3px rgba(31,57,113,0.15); }
+    .dash-filter-bar { display: flex; align-items: center; justify-content: space-between; background: #1F3971; color: white; border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; font-size: 14px; font-weight: 600; }
+    .dash-filter-bar button { background: rgba(255,255,255,0.2); border: none; color: white; border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 600; cursor: pointer; }
     .stat-num   { font-size: 32px; font-weight: 800; line-height: 1; }
     .stat-label { font-size: 10px; color: #A2A092; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 5px; }
     .c-red   { color: #c62828; }
@@ -225,7 +229,7 @@
 <header class="app-header">
   <div>
     <h1>📦 PO Manager</h1>
-    <p>Panoramic Building <span style="font-size:10px;opacity:0.5">v13</span></p>
+    <p>Panoramic Building <span style="font-size:10px;opacity:0.5">v14</span></p>
   </div>
   <button class="refresh-btn" onclick="refreshData()">↻ Refresh</button>
 </header>
@@ -416,6 +420,7 @@ var G = {
   pos:        [],
   config:     { statusOptions: [], vendorOptions: [] },
   filter:     'all',
+  dashFilter: null,
   receivePO:  null,
   editRow:    null
 };
@@ -524,24 +529,33 @@ function renderDashboard() {
 
   // Stats
   h += '<div class="stats-grid">';
-  h += stat(todayTotal,             'Today',     todayTotal   > 0 ? 'c-green' : 'c-gray');
-  h += stat(overdueTotal,           'Overdue',   overdueTotal > 0 ? 'c-red'   : 'c-green');
-  h += stat(missingTotal,           'No Date',   missingTotal > 0 ? 'c-amber' : 'c-green');
-  h += stat(buckets.reconcile.length,'Reconcile',buckets.reconcile.length > 0 ? 'c-teal' : 'c-gray');
-  h += stat(openCount,              'Open POs',  'c-gray');
-  h += stat(G.pos.length,           'Total POs', 'c-gray');
+  h += stat(todayTotal,              'Today',     todayTotal   > 0 ? 'c-green' : 'c-gray', 'today');
+  h += stat(overdueTotal,            'Overdue',   overdueTotal > 0 ? 'c-red'   : 'c-green', 'overdue');
+  h += stat(missingTotal,            'No Date',   missingTotal > 0 ? 'c-amber' : 'c-green', 'nodate');
+  h += stat(buckets.reconcile.length,'Reconcile', buckets.reconcile.length > 0 ? 'c-teal' : 'c-gray', 'reconcile');
+  h += stat(openCount,               'Open POs',  'c-gray', 'open');
+  h += stat(G.pos.length,            'Total POs', 'c-gray', 'total');
   h += '</div>';
+
+  // Active filter bar
+  var filterLabels = { today:'Today', overdue:'Overdue', nodate:'No Date', reconcile:'Reconcile', open:'Open POs', total:'All POs' };
+  if (G.dashFilter) {
+    h += '<div class="dash-filter-bar"><span>Showing: ' + filterLabels[G.dashFilter] + '</span>' +
+         '<button onclick="filterDash(\''+G.dashFilter+'\')">✕ Show All</button></div>';
+  }
+
+  var f = G.dashFilter;
 
   // Overdue
   var overdueAll = buckets.overdueDel.concat(buckets.overduePick)
                     .sort(function(a,b){ return parseMMDDYYYY(a.deliveryDate)-parseMMDDYYYY(b.deliveryDate); });
-  if (overdueAll.length) {
+  if (overdueAll.length && (!f || f==='overdue' || f==='open')) {
     h += secHead('🔴 Overdue (' + overdueAll.length + ')', 'sh-red');
     overdueAll.forEach(function(po){ h += poCard(po,'overdue'); });
   }
 
   // Today
-  if (todayTotal) {
+  if (todayTotal && (!f || f==='today' || f==='open')) {
     h += secHead('🚚 Today (' + todayTotal + ')', 'sh-green');
     buckets.todayDel.forEach(function(po){ h += poCard(po,'delivery'); });
     buckets.todayPick.forEach(function(po){ h += poCard(po,'pickup'); });
@@ -550,7 +564,7 @@ function renderDashboard() {
   // This week
   var weekAll = buckets.upcomingDel.concat(buckets.upcomingPick)
                   .sort(function(a,b){ return parseMMDDYYYY(a.deliveryDate)-parseMMDDYYYY(b.deliveryDate); });
-  if (weekAll.length) {
+  if (weekAll.length && (!f || f==='open')) {
     h += secHead('📅 This Week (' + weekAll.length + ')', 'sh-blue');
     weekAll.forEach(function(po){
       h += poCard(po, po.status.toLowerCase()==='pending delivery' ? 'delivery' : 'pickup');
@@ -558,28 +572,31 @@ function renderDashboard() {
   }
 
   // Ready to reconcile
-  if (buckets.reconcile.length) {
+  if (buckets.reconcile.length && (!f || f==='reconcile')) {
     h += secHead('📋 Ready to Reconcile (' + buckets.reconcile.length + ')', 'sh-teal');
-    buckets.reconcile.slice(0,12).forEach(function(po){ h += poCard(po,'reconcile'); });
-    if (buckets.reconcile.length > 12) h += more(buckets.reconcile.length - 12);
+    buckets.reconcile.forEach(function(po){ h += poCard(po,'reconcile'); });
   }
 
   // Ordered / in progress
-  if (buckets.ordered.length) {
+  if (buckets.ordered.length && (!f || f==='open')) {
     h += secHead('🏭 Ordered / In Progress (' + buckets.ordered.length + ')', 'sh-indigo');
-    buckets.ordered.slice(0,8).forEach(function(po){ h += poCard(po,'ordered'); });
-    if (buckets.ordered.length > 8) h += more(buckets.ordered.length - 8);
+    buckets.ordered.forEach(function(po){ h += poCard(po,'ordered'); });
   }
 
   // Missing date
   var missingAll = buckets.missingDel.concat(buckets.missingPick);
-  if (missingAll.length) {
+  if (missingAll.length && (!f || f==='nodate' || f==='open')) {
     h += secHead('🟡 Needs a Date (' + missingAll.length + ')', 'sh-amber');
-    missingAll.slice(0,8).forEach(function(po){ h += poCard(po,'missing'); });
-    if (missingAll.length > 8) h += more(missingAll.length - 8);
+    missingAll.forEach(function(po){ h += poCard(po,'missing'); });
   }
 
-  if (!overdueAll.length && !todayTotal && !weekAll.length &&
+  // Total — show all POs
+  if (f === 'total') {
+    h += secHead('📦 All POs (' + G.pos.length + ')', 'sh-indigo');
+    G.pos.slice().reverse().forEach(function(po){ h += poCard(po, po.status.toLowerCase().replace(/ /g,'-')); });
+  }
+
+  if (!f && !overdueAll.length && !todayTotal && !weekAll.length &&
       !buckets.reconcile.length && !missingAll.length && !buckets.ordered.length) {
     h += '<div class="empty">✅ All clear — no open POs need attention.</div>';
   }
@@ -587,8 +604,17 @@ function renderDashboard() {
   document.getElementById('dash-content').innerHTML = h;
 }
 
-function stat(val, lbl, cls) {
-  return '<div class="stat-card"><div class="stat-num '+cls+'">'+val+'</div><div class="stat-label">'+lbl+'</div></div>';
+function stat(val, lbl, cls, key) {
+  var active = G.dashFilter === key ? ' active' : '';
+  return '<div class="stat-card'+active+'" onclick="filterDash(\''+key+'\')">' +
+    '<div class="stat-num '+cls+'">'+val+'</div>' +
+    '<div class="stat-label">'+lbl+'</div>' +
+  '</div>';
+}
+
+function filterDash(key) {
+  G.dashFilter = (G.dashFilter === key) ? null : key;
+  renderDashboard();
 }
 function secHead(t, cls) { return '<div class="sec-head '+cls+'">'+t+'</div>'; }
 function more(n) { return '<p style="text-align:center;color:#aaa;font-size:12px;padding:6px 0">+'+n+' more — use Search tab</p>'; }
@@ -1057,56 +1083,4 @@ function handleIssuedFile(input) {
         canvas.getContext('2d').drawImage(img, 0, 0, w, h);
         var compressed = canvas.toDataURL('image/jpeg', QUALITY);
         uploadBase64(compressed.split(',')[1], 'image/jpeg');
-      };
-      img.src = dataUrl;
-    } else {
-      uploadBase64(dataUrl.split(',')[1], file.type || 'application/octet-stream');
-    }
-  };
-  reader.readAsDataURL(file);
-}
-
-function retakePhoto() {
-  // Reset everything so the user can pick again
-  document.getElementById('photo-zone').style.display         = 'block';
-  document.getElementById('photo-preview-area').style.display = 'none';
-  document.getElementById('photo-input').value                = '';
-  document.getElementById('r-note').value                     = '';
-  setPhotoStatus('', '');
-  stopBar();
-}
-
-function setPhotoStatus(msg, cls) {
-  var el = document.getElementById('photo-status');
-  el.textContent  = msg;
-  el.className    = 'photo-status' + (cls ? ' ' + cls : '');
-}
-
-// Animates the upload bar while waiting for the server
-var _barTimer = null;
-function animateBar() {
-  var bar = document.getElementById('upload-bar');
-  var pct = 0;
-  bar.style.width = '0%';
-  _barTimer = setInterval(function() {
-    // Creep toward 90% (the last 10% waits for the real response)
-    pct = pct < 90 ? pct + (90 - pct) * 0.04 : pct;
-    bar.style.width = pct + '%';
-  }, 120);
-}
-function stopBar() {
-  clearInterval(_barTimer);
-  var bar = document.getElementById('upload-bar');
-  bar.style.width = '100%';
-  setTimeout(function(){ bar.style.width = '0%'; }, 1200);
-}
-
-// Reset photo UI whenever the user looks up a new PO
-var _origShowReceiveInfo = showReceiveInfo;
-showReceiveInfo = function(po) {
-  retakePhoto();
-  _origShowReceiveInfo(po);
-};
-</script>
-</body>
-</html>
+      
