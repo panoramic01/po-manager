@@ -16,21 +16,21 @@
 
   <!-- Android / Chrome -->
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="theme-color" content="#1a5c38">
+  <meta name="theme-color" content="#1F3971">
 
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     html, body {
       width: 100%; height: 100%;
-      background: #1a5c38;
+      background: #1F3971;
       overflow: hidden;
     }
 
     /* Loading screen shown while iframe loads */
     #loader {
       position: fixed; inset: 0;
-      background: #1a5c38;
+      background: #1F3971;
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
       gap: 18px; z-index: 10;
@@ -68,10 +68,4 @@
 
 
   <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('./sw.js');
-    }
-  </script>
-
-</body>
-</html>
+    

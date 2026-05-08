@@ -1,6 +1,6 @@
 <svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
   <!-- Green background -->
-  <rect width="512" height="512" rx="112" fill="#1a5c38"/>
+  <rect width="512" height="512" rx="112" fill="#1F3971"/>
   <!-- Box/package icon -->
   <path d="M128 192l128-64 128 64v128l-128 64-128-64V192z"
         stroke="white" stroke-width="20" stroke-linejoin="round" fill="none"/>
