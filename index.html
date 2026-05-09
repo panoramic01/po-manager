@@ -177,36 +177,47 @@
     var joke = JOKES[Math.floor(Math.random() * JOKES.length)];
     document.getElementById('joke-setup').textContent = joke;
 
-    // Hide loader only after both: GAS app signals data is ready AND 4 seconds have passed
     var appReady   = false;
     var timerReady = false;
+    var hidden     = false;
 
+    // Minimum joke display time
     setTimeout(function() {
       timerReady = true;
       if (appReady) hideLoader();
     }, 4000);
 
-    // GAS app sends postMessage when PO data has finished loading
+    // Best case: GAS app signals that PO data is fully loaded
     window.addEventListener('message', function(e) {
       if (e.data && e.data.type === 'po-manager-ready') {
-        appReady = true;
-        if (timerReady) hideLoader();
+        markReady();
       }
     });
 
-    // Fallback: if no signal received after 15s, show error
-    function onIframeLoad() {} // keep for onerror sibling
+    // Fallback: iframe finished loading (data may still be fetching, but better than error screen)
+    function onIframeLoad() {
+      // Give the GAS app 3 seconds to send the postMessage before falling back
+      setTimeout(function() { markReady(); }, 3000);
+    }
 
     function onIframeError() {
       document.getElementById('loader').style.display = 'none';
       document.getElementById('error').style.display = 'flex';
     }
 
+    // Hard timeout — something went very wrong
     setTimeout(function() {
-      if (!appReady) onIframeError();
-    }, 15000);
+      if (!hidden) onIframeError();
+    }, 20000);
+
+    function markReady() {
+      appReady = true;
+      if (timerReady) hideLoader();
+    }
 
     function hideLoader() {
+      if (hidden) return;
+      hidden = true;
       var loader = document.getElementById('loader');
       loader.style.opacity = '0';
       setTimeout(function() { loader.style.display = 'none'; }, 400);
