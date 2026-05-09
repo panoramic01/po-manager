@@ -177,19 +177,34 @@
     var joke = JOKES[Math.floor(Math.random() * JOKES.length)];
     document.getElementById('joke-setup').textContent = joke;
 
-    // Hide loader only after both: iframe has loaded AND 4 seconds have passed
-    var iframeReady = false;
-    var timerReady  = false;
+    // Hide loader only after both: GAS app signals data is ready AND 4 seconds have passed
+    var appReady   = false;
+    var timerReady = false;
 
     setTimeout(function() {
       timerReady = true;
-      if (iframeReady) hideLoader();
+      if (appReady) hideLoader();
     }, 4000);
 
-    function onIframeLoad() {
-      iframeReady = true;
-      if (timerReady) hideLoader();
+    // GAS app sends postMessage when PO data has finished loading
+    window.addEventListener('message', function(e) {
+      if (e.data && e.data.type === 'po-manager-ready') {
+        appReady = true;
+        if (timerReady) hideLoader();
+      }
+    });
+
+    // Fallback: if no signal received after 15s, show error
+    function onIframeLoad() {} // keep for onerror sibling
+
+    function onIframeError() {
+      document.getElementById('loader').style.display = 'none';
+      document.getElementById('error').style.display = 'flex';
     }
+
+    setTimeout(function() {
+      if (!appReady) onIframeError();
+    }, 15000);
 
     function hideLoader() {
       var loader = document.getElementById('loader');

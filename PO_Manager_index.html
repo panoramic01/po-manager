@@ -475,6 +475,8 @@ function loadData() {
       runSearch();
       document.getElementById('dash-loading').style.display = 'none';
       document.getElementById('dash-content').style.display  = 'block';
+      // Signal the PWA wrapper that data is loaded and app is ready
+      try { parent.postMessage({ type: 'po-manager-ready' }, '*'); } catch(e) {}
     })
     .withFailureHandler(function(e) {
       document.getElementById('dash-loading').innerHTML =
