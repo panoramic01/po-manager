@@ -177,8 +177,21 @@
     var joke = JOKES[Math.floor(Math.random() * JOKES.length)];
     document.getElementById('joke-setup').textContent = joke;
 
-    // Hide loader when iframe fires load
+    // Hide loader only after both: iframe has loaded AND 4 seconds have passed
+    var iframeReady = false;
+    var timerReady  = false;
+
+    setTimeout(function() {
+      timerReady = true;
+      if (iframeReady) hideLoader();
+    }, 4000);
+
     function onIframeLoad() {
+      iframeReady = true;
+      if (timerReady) hideLoader();
+    }
+
+    function hideLoader() {
       var loader = document.getElementById('loader');
       loader.style.opacity = '0';
       setTimeout(function() { loader.style.display = 'none'; }, 400);
