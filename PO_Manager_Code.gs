@@ -6,7 +6,8 @@
  * Then deploy: Deploy > New Deployment > Web App.
  */
 
-var SHEET_NAME = "PO Database";
+var SHEET_NAME  = "PO Database";
+var ROLES_SHEET = "Roles";
 
 var STATUS_OPTIONS = [
   "Pending Pickup",
@@ -175,13 +176,51 @@ function findPOByNumber(poNum) {
 }
 
 /**
- * Returns config (status/vendor lists) for populating dropdowns.
+ * Returns config (status/vendor lists) + current user's role.
  */
 function getConfig() {
+  var roleData = getUserRole();
   return {
     statusOptions: STATUS_OPTIONS,
-    vendorOptions: VENDOR_OPTIONS
+    vendorOptions: VENDOR_OPTIONS,
+    userRole:      roleData.role,
+    userEmail:     roleData.email
   };
+}
+
+/**
+ * Looks up the active user's email in the Roles sheet and returns their role.
+ * Roles sheet columns: A = Email, B = Role
+ * Valid roles: admin | office | site_manager | runner | accountant
+ * Falls back to 'runner' (most restricted) if email not found.
+ */
+function getUserRole() {
+  try {
+    var email = Session.getActiveUser().getEmail();
+    if (!email) return { role: 'runner', email: 'unknown' };
+    email = email.toLowerCase().trim();
+
+    var ss    = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(ROLES_SHEET);
+
+    // No Roles sheet yet? Grant admin to script owner, runner to everyone else.
+    if (!sheet) {
+      var owner = Session.getEffectiveUser().getEmail().toLowerCase().trim();
+      return { role: (email === owner ? 'admin' : 'runner'), email: email };
+    }
+
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {          // row 0 = header
+      var rowEmail = (data[i][0] || '').toString().toLowerCase().trim();
+      var rowRole  = (data[i][1] || '').toString().toLowerCase().trim();
+      if (rowEmail === email) return { role: rowRole, email: email };
+    }
+
+    // Not in the Roles sheet — default to runner (most restricted)
+    return { role: 'runner', email: email };
+  } catch(e) {
+    return { role: 'runner', email: '' };
+  }
 }
 
 // ─── Private Helpers ─────────────────────────────────────────────────────────

@@ -32,12 +32,27 @@
       align-items: center; justify-content: center;
       gap: 18px; z-index: 10;
       transition: opacity 0.4s;
+      padding: 32px;
+      text-align: center;
     }
-    #loader svg { width: 64px; height: 64px; }
-    #loader p {
-      color: rgba(255,255,255,0.7);
+    #loader svg { width: 64px; height: 64px; flex-shrink: 0; }
+
+    #loading-label {
+      color: rgba(255,255,255,0.55);
+      font-family: -apple-system, sans-serif;
+      font-size: 15px;
+    }
+
+    #joke-box {
+      max-width: 300px;
+      margin-top: 4px;
+    }
+    #joke-setup {
+      color: rgba(255,255,255,0.9);
       font-family: -apple-system, sans-serif;
       font-size: 16px;
+      font-weight: 600;
+      line-height: 1.45;
     }
 
     /* Error state */
@@ -73,7 +88,12 @@
       <path d="M16 24l16-8 16 8v16l-16 8-16-8V24z" stroke="white" stroke-width="2.5" stroke-linejoin="round"/>
       <path d="M16 24l16 8 16-8M32 32v16" stroke="white" stroke-width="2.5" stroke-linejoin="round"/>
     </svg>
-    <p>Loading PO Manager…</p>
+
+    <div id="joke-box">
+      <div id="joke-setup">Loading PO Manager…</div>
+    </div>
+
+    <div id="loading-label">Loading PO Manager…</div>
   </div>
 
   <div id="error">
@@ -100,6 +120,62 @@
     }
 
     var GAS_URL = 'https://script.google.com/a/macros/panoramicbuildingllc.com/s/AKfycbzIFAUROq_34cldhXfRL-lGijntH2Y3hqykYZ5Br0zub70BZAA5MHzpe61ZL-JEDhDJeg/exec';
+
+    var JOKES = [
+      "I told my wife she was drawing her eyebrows too high. She looked surprised.",
+      "I used to be a banker, but I lost interest.",
+      "Why don't skeletons fight each other? They don't have the guts.",
+      "I'm on a seafood diet. I see food and I eat it.",
+      "What do you call a fish without eyes? A fsh.",
+      "I asked the librarian if they had books about paranoia. She whispered, 'They're right behind you.'",
+      "Why did the math book look so sad? Because it had too many problems.",
+      "I told my doctor I broke my arm in two places. He told me to stop going to those places.",
+      "What do you call a bear with no teeth? A gummy bear.",
+      "I used to hate facial hair, but then it grew on me.",
+      "Why can't you give Elsa a balloon? Because she'll let it go.",
+      "I'm reading a book about anti-gravity. It's impossible to put down.",
+      "Did you hear about the guy who invented Lifesavers? He made a mint.",
+      "Why did the bicycle fall over? It was two-tired.",
+      "I would tell a construction joke, but I'm still working on it.",
+      "What do you call cheese that isn't yours? Nacho cheese.",
+      "Why don't scientists trust atoms? Because they make up everything.",
+      "I couldn't figure out why the baseball kept getting bigger. Then it hit me.",
+      "What do you call a sleeping dinosaur? A dino-snore.",
+      "Why did the scarecrow win an award? Because he was outstanding in his field.",
+      "I have a joke about paper, but it's tearable.",
+      "What do you call a factory that makes okay products? A satisfactory.",
+      "Why do cows wear bells? Because their horns don't work.",
+      "I tried to catch some fog earlier. I mist.",
+      "Want to hear a joke about construction? I'm still working on it.",
+      "Why don't eggs tell jokes? They'd crack each other up.",
+      "What do you call a man with a rubber toe? Roberto.",
+      "I only know 25 letters of the alphabet. I don't know y.",
+      "Did you hear about the claustrophobic astronaut? He just needed a little space.",
+      "Why did the coffee file a police report? It got mugged.",
+      "I'm afraid for the calendar. Its days are numbered.",
+      "What do you call an alligator in a vest? An investigator.",
+      "Why did the golfer bring extra pants? In case he got a hole in one.",
+      "I used to play piano by ear, but now I use my hands.",
+      "What's a skeleton's least favorite room? The living room.",
+      "Why can't a nose be 12 inches long? Because then it would be a foot.",
+      "What do you call a pile of cats? A meow-ntain.",
+      "I told my boss I needed a raise because three companies were after me. He asked which ones. I said the gas, electric, and water companies.",
+      "What do lawyers wear to court? Lawsuits.",
+      "I asked my dog what two minus two is. He said nothing.",
+      "Why do bees hum? Because they don't know the words.",
+      "What do you call a parade of rabbits hopping backwards? A receding hare-line.",
+      "I got fired from the calendar factory. All I did was take a day off.",
+      "What's brown and sticky? A stick.",
+      "Why did the tomato turn red? Because it saw the salad dressing.",
+      "I used to be addicted to soap, but I'm clean now.",
+      "What do you call a boomerang that won't come back? A stick.",
+      "Why did the invisible man turn down the job offer? He couldn't see himself doing it.",
+      "I have a joke about a roof. It's on the house.",
+      "What do you call someone with no body and no nose? Nobody knows."
+    ];
+
+    var joke = JOKES[Math.floor(Math.random() * JOKES.length)];
+    document.getElementById('joke-setup').textContent = joke;
 
     // Hide loader when iframe fires load
     function onIframeLoad() {

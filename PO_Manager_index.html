@@ -229,7 +229,7 @@
 <header class="app-header">
   <div>
     <h1>📦 PO Manager</h1>
-    <p>Panoramic Building <span style="font-size:10px;opacity:0.5">v14</span></p>
+    <p>Panoramic Building <span style="font-size:10px;opacity:0.5">v47</span></p>
   </div>
   <button class="refresh-btn" onclick="refreshData()">↻ Refresh</button>
 </header>
@@ -395,19 +395,19 @@
 
 <!-- Bottom Nav -->
 <nav class="bottom-nav">
-  <button class="nav-btn active" onclick="showTab('dashboard',this)">
+  <button id="nav-dashboard" class="nav-btn active" onclick="showTab('dashboard',this)">
     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
     Dashboard
   </button>
-  <button class="nav-btn" onclick="showTab('create',this)">
+  <button id="nav-create" class="nav-btn" onclick="showTab('create',this)">
     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
     New PO
   </button>
-  <button class="nav-btn" onclick="showTab('receive',this)">
+  <button id="nav-receive" class="nav-btn" onclick="showTab('receive',this)">
     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
     Receive
   </button>
-  <button class="nav-btn" onclick="showTab('search',this)">
+  <button id="nav-search" class="nav-btn" onclick="showTab('search',this)">
     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
     Search
   </button>
@@ -422,14 +422,20 @@ var G = {
   filter:     'all',
   dashFilter: null,
   receivePO:  null,
-  editRow:    null
+  editRow:    null,
+  role:       'admin',   // set after getConfig resolves
+  userEmail:  '',
+  perms:      { canDash:true, canCreate:true, canReceive:true, canSearch:true, canEdit:true }
 };
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', function() {
   google.script.run
     .withSuccessHandler(function(cfg) {
-      G.config = cfg;
+      G.config    = cfg;
+      G.role      = cfg.userRole  || 'runner';
+      G.userEmail = cfg.userEmail || '';
+      applyRole(G.role);
       fillSelects();
       loadData();
     })
@@ -479,6 +485,48 @@ function loadData() {
 }
 
 function refreshData() { loadData(); showToast('Refreshing…'); }
+
+// ── Role-Based Access ─────────────────────────────────────────────────────────
+function applyRole(role) {
+  var p = {
+    canDash:    role !== 'runner',
+    canCreate:  role === 'admin' || role === 'office',
+    canReceive: role !== 'accountant',
+    canSearch:  role !== 'runner',
+    canEdit:    role === 'admin' || role === 'office' || role === 'site_manager'
+  };
+  G.perms = p;
+
+  // Show/hide nav buttons
+  document.getElementById('nav-dashboard').style.display = p.canDash    ? '' : 'none';
+  document.getElementById('nav-create').style.display    = p.canCreate  ? '' : 'none';
+  document.getElementById('nav-receive').style.display   = p.canReceive ? '' : 'none';
+  document.getElementById('nav-search').style.display    = p.canSearch  ? '' : 'none';
+
+  // Show role badge in header
+  var labels = { admin:'Admin', office:'Office', site_manager:'Site Manager', runner:'Runner', accountant:'Accountant' };
+  var headerP = document.querySelector('.app-header p');
+  if (headerP && labels[role]) {
+    headerP.innerHTML = 'Panoramic Building <span style="font-size:10px;opacity:0.5">v47</span>' +
+      ' &nbsp;<span style="font-size:11px;background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:6px">' + labels[role] + '</span>';
+  }
+
+  // Navigate to the correct default tab
+  if (role === 'runner') {
+    showTabDirect('receive', document.getElementById('nav-receive'));
+  } else {
+    showTabDirect('dashboard', document.getElementById('nav-dashboard'));
+  }
+}
+
+// Internal tab switch with no permission check (used by applyRole and boot)
+function showTabDirect(name, btn) {
+  document.querySelectorAll('.tab').forEach(function(t){ t.classList.remove('active'); });
+  document.querySelectorAll('.nav-btn').forEach(function(b){ b.classList.remove('active'); });
+  document.getElementById('tab-'+name).classList.add('active');
+  if (btn) btn.classList.add('active');
+  if (name === 'search') runSearch();
+}
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 function renderDashboard() {
@@ -633,8 +681,8 @@ function poCard(po, type) {
     (po.notes ? '<div class="po-note">'+esc(po.notes)+'</div>' : '') +
     '<div class="po-actions">' +
       statusBadge +
-      '<button class="btn btn-sm btn-edit"    onclick="openEdit(\''+po.poNum+'\')">Edit</button>' +
-      '<button class="btn btn-sm btn-receive" onclick="quickReceive(\''+po.poNum+'\')">Receive</button>' +
+      (G.perms.canEdit    ? '<button class="btn btn-sm btn-edit"    onclick="openEdit(\''+po.poNum+'\')">Edit</button>'            : '') +
+      (G.perms.canEdit    ? '<button class="btn btn-sm btn-receive" onclick="quickReceive(\''+po.poNum+'\')">Receive</button>'      : '') +
       (po.invoiceLink  ? '<a href="'+esc(po.invoiceLink)+'"  target="_blank" class="btn btn-sm" style="background:#fff8e1;color:#e65100;text-decoration:none">Invoice</a>'   : '') +
       (po.issuedPOLink ? '<a href="'+esc(po.issuedPOLink)+'" target="_blank" class="btn btn-sm" style="background:#eaedfa;color:#1F3971;text-decoration:none">Issued PO</a>' : '') +
     '</div>' +
@@ -736,7 +784,7 @@ function showReceiveInfo(po) {
 }
 
 function quickReceive(poNum) {
-  showTab('receive', document.querySelectorAll('.nav-btn')[2]);
+  showTab('receive', document.getElementById('nav-receive'));
   document.getElementById('r-ponum').value = poNum;
   document.getElementById('r-info').style.display = 'none';
   lookupPO();
@@ -908,11 +956,15 @@ function submitEdit() {
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 function showTab(name, btn) {
-  document.querySelectorAll('.tab').forEach(function(t){ t.classList.remove('active'); });
-  document.querySelectorAll('.nav-btn').forEach(function(b){ b.classList.remove('active'); });
-  document.getElementById('tab-'+name).classList.add('active');
-  btn.classList.add('active');
-  if (name === 'search') runSearch();
+  // Permission guard
+  var blocked = {
+    dashboard: !G.perms.canDash,
+    create:    !G.perms.canCreate,
+    receive:   !G.perms.canReceive,
+    search:    !G.perms.canSearch
+  };
+  if (blocked[name]) { showToast("⛔ You don't have access to that."); return; }
+  showTabDirect(name, btn);
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
