@@ -537,20 +537,24 @@ function renderDashboard() {
     upcomingDel:[], upcomingPick:[],
     overdueDel:[], overduePick:[],
     missingDel:[], missingPick:[],
-    reconcile:[], ordered:[]
+    reconcile:[], ordered:[], inProd:[], draft:[]
   };
 
   var openCount = 0;
 
   G.pos.forEach(function(po) {
     var sl = po.status.toLowerCase();
-    var isPD  = sl === 'pending delivery';
-    var isPP  = sl === 'pending pickup';
-    var isRTR = sl === 'ready to reconcile';
-    var isOrd = sl === 'ordered' || sl === 'being made' || sl === 'currently picking up';
+    var isPD     = sl === 'pending delivery';
+    var isPP     = sl === 'pending pickup';
+    var isRTR    = sl === 'ready to reconcile';
+    var isInProd = sl === 'being made' || sl === 'pending delivery to supplier';
+    var isOrd    = sl === 'ordered' || sl === 'currently picking up';
+    var isDraft  = sl === 'draft';
 
-    if (isRTR) { buckets.reconcile.push(po); return; }
-    if (isOrd) { buckets.ordered.push(po); return; }
+    if (isRTR)    { buckets.reconcile.push(po); return; }
+    if (isInProd) { buckets.inProd.push(po);    return; }
+    if (isOrd)    { buckets.ordered.push(po);   return; }
+    if (isDraft)  { buckets.draft.push(po);     return; }
     if (!isPD && !isPP) return;
 
     openCount++;
@@ -575,24 +579,46 @@ function renderDashboard() {
 
   var h = '';
 
-  // Stats
+  var pendingDelCount  = buckets.todayDel.concat(buckets.upcomingDel, buckets.overdueDel, buckets.missingDel).length;
+  var pendingPickCount = buckets.todayPick.concat(buckets.upcomingPick, buckets.overduePick, buckets.missingPick).length;
+
+  // Stats — 9 tiles, 3×3 grid
   h += '<div class="stats-grid">';
-  h += stat(todayTotal,              'Today',     todayTotal   > 0 ? 'c-green' : 'c-gray', 'today');
-  h += stat(overdueTotal,            'Overdue',   overdueTotal > 0 ? 'c-red'   : 'c-green', 'overdue');
-  h += stat(missingTotal,            'No Date',   missingTotal > 0 ? 'c-amber' : 'c-green', 'nodate');
-  h += stat(buckets.reconcile.length,'Reconcile', buckets.reconcile.length > 0 ? 'c-teal' : 'c-gray', 'reconcile');
-  h += stat(openCount,               'Open POs',  'c-gray', 'open');
-  h += stat(G.pos.length,            'Total POs', 'c-gray', 'total');
+  h += stat(todayTotal,              'Today',          todayTotal        > 0 ? 'c-green' : 'c-gray',  'today');
+  h += stat(overdueTotal,            'Overdue',         overdueTotal      > 0 ? 'c-red'   : 'c-green', 'overdue');
+  h += stat(missingTotal,            'No Date',         missingTotal      > 0 ? 'c-amber' : 'c-green', 'nodate');
+  h += stat(pendingDelCount,         'Pending Delivery',pendingDelCount   > 0 ? 'c-blue'  : 'c-gray',  'pendingdel');
+  h += stat(pendingPickCount,        'Pending Pickup',  pendingPickCount  > 0 ? 'c-blue'  : 'c-gray',  'pendingpick');
+  h += stat(buckets.inProd.length,   'In Production',   buckets.inProd.length > 0 ? 'c-teal' : 'c-gray', 'inprod');
+  h += stat(buckets.draft.length,    'Draft',           buckets.draft.length  > 0 ? 'c-gray' : 'c-gray', 'draft');
+  h += stat(openCount,               'Open POs',        'c-gray', 'open');
+  h += stat(G.pos.length,            'Total POs',       'c-gray', 'total');
   h += '</div>';
 
   // Active filter bar
-  var filterLabels = { today:'Today', overdue:'Overdue', nodate:'No Date', reconcile:'Reconcile', open:'Open POs', total:'All POs' };
+  var filterLabels = { today:'Today', overdue:'Overdue', nodate:'No Date', pendingdel:'Pending Delivery', pendingpick:'Pending Pickup', inprod:'In Production', draft:'Draft', open:'Open POs', total:'All POs' };
   if (G.dashFilter) {
     h += '<div class="dash-filter-bar"><span>Showing: ' + filterLabels[G.dashFilter] + '</span>' +
          '<button onclick="filterDash(G.dashFilter)">X Show All</button></div>';
   }
 
   var f = G.dashFilter;
+
+  // Pending Delivery filter — flat list sorted by date
+  if (f === 'pendingdel') {
+    var allDel = buckets.overdueDel.concat(buckets.todayDel, buckets.upcomingDel, buckets.missingDel)
+                   .sort(function(a,b){ return (parseMMDDYYYY(a.deliveryDate)||new Date(9e15)) - (parseMMDDYYYY(b.deliveryDate)||new Date(9e15)); });
+    h += secHead('🚛 Pending Delivery (' + allDel.length + ')', 'sh-blue');
+    allDel.forEach(function(po){ h += poCard(po,'delivery'); });
+  }
+
+  // Pending Pickup filter — flat list sorted by date
+  if (f === 'pendingpick') {
+    var allPick = buckets.overduePick.concat(buckets.todayPick, buckets.upcomingPick, buckets.missingPick)
+                    .sort(function(a,b){ return (parseMMDDYYYY(a.deliveryDate)||new Date(9e15)) - (parseMMDDYYYY(b.deliveryDate)||new Date(9e15)); });
+    h += secHead('🚚 Pending Pickup (' + allPick.length + ')', 'sh-blue');
+    allPick.forEach(function(po){ h += poCard(po,'pickup'); });
+  }
 
   // Overdue
   var overdueAll = buckets.overdueDel.concat(buckets.overduePick)
@@ -620,9 +646,15 @@ function renderDashboard() {
   }
 
   // Ready to reconcile
-  if (buckets.reconcile.length && (!f || f==='reconcile')) {
+  if (buckets.reconcile.length && (!f)) {
     h += secHead('📋 Ready to Reconcile (' + buckets.reconcile.length + ')', 'sh-teal');
     buckets.reconcile.forEach(function(po){ h += poCard(po,'reconcile'); });
+  }
+
+  // In Production
+  if (buckets.inProd.length && (!f || f==='inprod' || f==='open')) {
+    h += secHead('⚙️ In Production (' + buckets.inProd.length + ')', 'sh-indigo');
+    buckets.inProd.forEach(function(po){ h += poCard(po,'ordered'); });
   }
 
   // Ordered / in progress
@@ -638,6 +670,12 @@ function renderDashboard() {
     missingAll.forEach(function(po){ h += poCard(po,'missing'); });
   }
 
+  // Draft
+  if (buckets.draft.length && (!f || f==='draft')) {
+    h += secHead('📝 Draft (' + buckets.draft.length + ')', 'sh-indigo');
+    buckets.draft.forEach(function(po){ h += poCard(po,'complete'); });
+  }
+
   // Total — show all POs newest first
   if (f === 'total') {
     h += secHead('📦 All POs (' + G.pos.length + ')', 'sh-indigo');
@@ -645,7 +683,8 @@ function renderDashboard() {
   }
 
   if (!f && !overdueAll.length && !todayTotal && !weekAll.length &&
-      !buckets.reconcile.length && !missingAll.length && !buckets.ordered.length) {
+      !buckets.reconcile.length && !missingAll.length && !buckets.ordered.length &&
+      !buckets.inProd.length && !buckets.draft.length) {
     h += '<div class="empty">All clear — no open POs need attention.</div>';
   }
 
