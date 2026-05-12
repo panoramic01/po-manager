@@ -1,7 +1,7 @@
 {
-  "name": "PO Manager — Panoramic Building",
-  "short_name": "PO Manager",
-  "description": "Panoramic Building purchase order management",
+  "name": "Panoramic Ops",
+  "short_name": "Panoramic Ops",
+  "description": "Panoramic Building operations hub",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
