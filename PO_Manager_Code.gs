@@ -18,8 +18,11 @@ var STATUS_OPTIONS = [
   "Currently Picking Up",
   "Delivered",
   "Ready to Reconcile",
+  "Invoice Missing",
+  "Needs Review",
   "Complete",
-  "Draft"
+  "Draft",
+  "Other"
 ];
 
 var VENDOR_OPTIONS = [

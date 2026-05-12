@@ -368,7 +368,8 @@
       </div>
       <div class="form-group">
         <label class="form-label">Status</label>
-        <select class="form-control" id="c-status"></select>
+        <select class="form-control" id="c-status" onchange="toggleOtherVendor('c-status','c-status-other')"></select>
+        <input type="text" class="form-control" id="c-status-other" placeholder="Enter custom status…" style="display:none;margin-top:8px">
       </div>
       <div class="form-group">
         <label class="form-label">Invoice Total ($)</label>
@@ -916,6 +917,8 @@ function badgeCls(status) {
     'Pending Delivery'          : 'bd-green',
     'Pending Delivery to Supplier':'bd-teal',
     'Ready to Reconcile'        : 'bd-teal',
+    'Invoice Missing'           : 'bd-red',
+    'Needs Review'              : 'bd-amber',
     'Complete'                  : 'bd-gray',
     'Ordered'                   : 'bd-indigo',
     'Being made'                : 'bd-amber',
@@ -960,7 +963,7 @@ function submitCreate() {
       jobRef:        job,
       vendor:        vendor, // already resolved via getVendorValue
       vendorInvoice: trim('c-invoice'),
-      status:        val('c-status'),
+      status:        getVendorValue('c-status', 'c-status-other'),
       invoiceTotal:  val('c-total'),
       notes:         trim('c-notes')
     });
@@ -972,6 +975,8 @@ function clearCreate() {
   document.getElementById('c-vendor-other').value = '';
   document.getElementById('c-vendor-other').style.display = 'none';
   document.getElementById('c-status').value = 'Pending Pickup';
+  document.getElementById('c-status-other').value = '';
+  document.getElementById('c-status-other').style.display = 'none';
 }
 
 function showCreateForm() {
@@ -1139,8 +1144,10 @@ function openEdit(poNum) {
   if (!po) return;
   G.editRow = po.rowIndex;
 
+  var isCustomStatus = po.status && G.config.statusOptions.indexOf(po.status) === -1;
   var statusOpts = G.config.statusOptions.map(function(s){
-    return '<option value="'+esc(s)+'"'+(s===po.status?' selected':'')+'>'+esc(s)+'</option>';
+    var selected = isCustomStatus ? s === 'Other' : s === po.status;
+    return '<option value="'+esc(s)+'"'+(selected?' selected':'')+'>'+esc(s)+'</option>';
   }).join('');
 
   // If the stored vendor isn't in the standard list, treat it as a custom entry
@@ -1187,7 +1194,10 @@ function openEdit(poNum) {
         'style="margin-top:10px;display:' + (isCustomVendor ? 'block' : 'none') + '" ' +
         'value="' + (isCustomVendor ? esc(po.vendor) : '') + '">') +
     fg('Vendor Invoice #','<input type="text"   class="form-control" id="e-vinvoice" value="'+esc(po.vendorInvoice)+'">') +
-    fg('Status',          '<select class="form-control" id="e-status">'+statusOpts+'</select>') +
+    fg('Status',          '<select class="form-control" id="e-status" onchange="toggleOtherVendor(\'e-status\',\'e-status-other\')">'+statusOpts+'</select>' +
+      '<input type="text" class="form-control" id="e-status-other" placeholder="Enter custom status…" ' +
+        'style="margin-top:10px;display:' + (isCustomStatus ? 'block' : 'none') + '" ' +
+        'value="' + (isCustomStatus ? esc(po.status) : '') + '">') +
     (G.perms.canViewInvoice ? fg('Invoice Total ($)','<input type="number" class="form-control" id="e-total" value="'+esc(po.invoiceTotal)+'" step="0.01" min="0">') : '') +
     fg('Delivery / Pickup Date','<input type="date" class="form-control" id="e-date" value="'+esc(toInputDate(po.deliveryDate))+'">') +
     issuedField +
@@ -1227,7 +1237,7 @@ function submitEdit() {
       jobRef:        trim('e-job'),
       vendor:        getVendorValue('e-vendor', 'e-vendor-other'),
       vendorInvoice: trim('e-vinvoice'),
-      status:        val('e-status'),
+      status:        getVendorValue('e-status', 'e-status-other'),
       invoiceTotal:  G.perms.canViewInvoice ? val('e-total') : undefined,
       deliveryDate:  fromInputDate(trim('e-date')),
       issuedPO:      trim('e-issued'),
@@ -1674,6 +1684,9 @@ function quickStatusChange(poNum, rowIndex) {
 
   var statusBtns = G.config.statusOptions.map(function(s) {
     var isCurrent = s === po.status;
+    if (s === 'Other') {
+      return '<button class="status-option" onclick="showQuickStatusOther(this)">' + esc(s) + '</button>';
+    }
     return '<button class="status-option'+(isCurrent?' selected':'')+'" onclick="submitQuickStatus(\''+esc(s)+'\')">' + esc(s) + '</button>';
   }).join('');
 
@@ -1681,11 +1694,29 @@ function quickStatusChange(poNum, rowIndex) {
   document.getElementById('edit-modal-body').innerHTML =
     '<p style="font-size:13px;color:#A2A092;margin-bottom:12px">Current: <strong>' + esc(po.status) + '</strong></p>' +
     '<div class="status-btn-grid">' + statusBtns + '</div>' +
+    '<div id="qs-other-wrap" style="display:none;margin-top:12px">' +
+      '<input type="text" class="form-control" id="qs-other-input" placeholder="Enter custom status…">' +
+      '<button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="submitQuickStatusOther()">Save</button>' +
+    '</div>' +
     '<div class="modal-actions" style="margin-top:16px">' +
       '<button class="btn btn-secondary" style="width:100%" onclick="closeEdit()">Cancel</button>' +
     '</div>';
 
   document.getElementById('edit-modal').classList.add('open');
+}
+
+function showQuickStatusOther(btn) {
+  document.querySelectorAll('.status-option').forEach(function(b){ b.classList.remove('selected'); });
+  btn.classList.add('selected');
+  var wrap = document.getElementById('qs-other-wrap');
+  wrap.style.display = 'block';
+  document.getElementById('qs-other-input').focus();
+}
+
+function submitQuickStatusOther() {
+  var val = (document.getElementById('qs-other-input').value || '').trim();
+  if (!val) { showToast('Enter a status first.'); return; }
+  submitQuickStatus(val);
 }
 
 function submitQuickStatus(newStatus) {
