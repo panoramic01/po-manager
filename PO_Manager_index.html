@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>PO Manager</title>
+  <title>Panoramic Ops</title>
 
   <!-- PWA / Add to Home Screen — hides the browser URL bar on iOS & Android -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="PO Manager">
+  <meta name="apple-mobile-web-app-title" content="Panoramic Ops">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#1F3971">
   <style>
@@ -140,11 +140,20 @@
 
     /* ── Search ── */
     .search-row { display: flex; gap: 8px; margin-bottom: 12px; }
+    .search-wrap { flex: 1; position: relative; }
     .search-input {
-      flex: 1; padding: 15px 16px; border: 2px solid #D1D0CB;
+      width: 100%; padding: 15px 44px 15px 16px; border: 2px solid #D1D0CB;
       border-radius: 12px; font-size: 17px; background: white; min-height: 54px;
     }
     .search-input:focus { outline: none; border-color: #1F3971; }
+    .search-clear {
+      position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+      background: #D1D0CB; border: none; border-radius: 50%;
+      width: 22px; height: 22px; font-size: 13px; font-weight: 700;
+      color: #666; cursor: pointer; display: none; align-items: center; justify-content: center;
+      line-height: 1;
+    }
+    .search-clear.visible { display: flex; }
 
     /* ── Filter Chips ── */
     .chip-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 14px; -webkit-overflow-scrolling: touch; }
@@ -221,6 +230,53 @@
     .doc-link-invoice  { background: #fff8e1; color: #e65100; border-color: #ffe082; }
     .doc-link-issued   { background: #eaedfa; color: #1F3971; border-color: #98aed6; }
     .doc-link-disabled { background: #f7f6f2; color: #A2A092; border-color: #D1D0CB; pointer-events: none; }
+
+    /* ── Sort row ── */
+    .sort-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 10px; -webkit-overflow-scrolling: touch; align-items: center; }
+    .sort-row::-webkit-scrollbar { display: none; }
+    .sort-label { font-size: 12px; font-weight: 700; color: #A2A092; text-transform: uppercase; letter-spacing: 0.4px; white-space: nowrap; flex-shrink: 0; }
+    .sort-row .chip { padding: 8px 14px; font-size: 13px; min-height: 36px; }
+
+    /* ── Contact card ── */
+    .contact-card { background: white; border-radius: 14px; padding: 16px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+    .contact-name { font-size: 18px; font-weight: 700; color: #2E2E2E; margin-bottom: 6px; }
+    .contact-field { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #f0efe9; font-size: 15px; }
+    .contact-field:last-child { border-bottom: none; }
+    .contact-key { min-width: 80px; font-size: 11px; font-weight: 700; color: #A2A092; text-transform: uppercase; letter-spacing: 0.4px; flex-shrink: 0; }
+    .contact-field a { color: #1F3971; text-decoration: none; font-weight: 600; }
+
+    /* ── Cleanup iframe modal ── */
+    .cleanup-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 300;
+      display: none; flex-direction: column;
+    }
+    .cleanup-overlay.open { display: flex; }
+    .cleanup-header {
+      background: #1F3971; color: white;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 16px; padding-top: calc(14px + env(safe-area-inset-top));
+      flex-shrink: 0;
+    }
+    .cleanup-header h2 { font-size: 17px; font-weight: 700; }
+    .cleanup-close {
+      background: rgba(255,255,255,0.2); border: none; color: white;
+      border-radius: 10px; padding: 8px 16px; font-size: 14px;
+      font-weight: 700; cursor: pointer; min-height: 40px;
+    }
+    .cleanup-overlay iframe {
+      flex: 1; border: none; width: 100%; background: white;
+    }
+
+    /* ── Quick status modal ── */
+    .status-btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
+    .status-option { padding: 12px 8px; border-radius: 10px; border: 2px solid #D1D0CB; background: white; font-size: 13px; font-weight: 700; cursor: pointer; text-align: center; color: #2E2E2E; transition: all 0.15s; min-height: 44px; }
+    .status-option:active { opacity: 0.7; }
+    .status-option.selected { border-color: #1F3971; background: #eaedfa; color: #1F3971; }
+
+    /* ── Swipe to receive ── */
+    .po-item { position: relative; }
+    .swipe-bg { position: absolute; left: 0; top: 0; bottom: 0; width: 100%; background: linear-gradient(90deg, #eaedfa 0%, transparent 60%); border-radius: 14px; opacity: 0; pointer-events: none; transition: opacity 0.15s; display: flex; align-items: center; padding-left: 14px; }
+    .swipe-bg svg { stroke: #1F3971; }
   </style>
 </head>
 <body>
@@ -228,8 +284,8 @@
 <!-- Header -->
 <header class="app-header">
   <div>
-    <h1>📦 PO Manager</h1>
-    <p>Panoramic Building <span style="font-size:10px;opacity:0.5">v47</span></p>
+    <h1>Panoramic Ops</h1>
+    <p>Panoramic Building <span style="font-size:10px;opacity:0.5">v54</span></p>
   </div>
   <button class="refresh-btn" onclick="refreshData()">↻ Refresh</button>
 </header>
@@ -251,6 +307,30 @@
 
   <!-- ══ DASHBOARD ══ -->
   <div class="tab active" id="tab-dashboard">
+    <!-- Search bar lives here now -->
+    <div class="search-row">
+      <div class="search-wrap">
+        <input type="text" class="search-input" id="s-input"
+               placeholder="Search POs, jobs, vendors…"
+               oninput="runSearch(); toggleClear('s-input','s-clear')">
+        <button class="search-clear" id="s-clear" onclick="clearSearch('s-input','s-clear'); runSearch()">✕</button>
+      </div>
+    </div>
+    <div class="chip-row" id="s-chips" style="display:none">
+      <button class="chip active" onclick="setChip('all',this)">All</button>
+      <button class="chip" onclick="setChip('Pending Pickup',this)">Pickup</button>
+      <button class="chip" onclick="setChip('Pending Delivery',this)">Delivery</button>
+      <button class="chip" onclick="setChip('Ready to Reconcile',this)">Reconcile</button>
+      <button class="chip" onclick="setChip('Complete',this)">Complete</button>
+    </div>
+    <div class="sort-row" id="s-sort" style="display:none">
+      <span class="sort-label">Sort:</span>
+      <button class="chip active" id="sort-newest" onclick="setSort('newest',this)">Newest</button>
+      <button class="chip" id="sort-oldest" onclick="setSort('oldest',this)">Oldest</button>
+      <button class="chip" id="sort-duedate" onclick="setSort('duedate',this)">Due Date</button>
+      <button class="chip" id="sort-vendor"  onclick="setSort('vendor',this)">Vendor</button>
+    </div>
+    <div id="s-results" style="display:none"></div>
     <div class="loading" id="dash-loading">
       <div class="spinner"></div>
       <p>Loading POs…</p>
@@ -275,9 +355,12 @@
       </div>
       <div class="form-group">
         <label class="form-label">Vendor *</label>
-        <select class="form-control" id="c-vendor">
+        <select class="form-control" id="c-vendor" onchange="toggleOtherVendor('c-vendor','c-vendor-other')">
           <option value="">— Select Vendor —</option>
         </select>
+        <input type="text" class="form-control" id="c-vendor-other"
+               placeholder="Type vendor name…"
+               style="display:none;margin-top:10px">
       </div>
       <div class="form-group">
         <label class="form-label">Vendor Invoice #</label>
@@ -301,7 +384,7 @@
     <!-- Success screen (shown after PO is created) -->
     <div id="create-success-card" style="display:none">
       <div class="card" style="text-align:center;padding:32px 20px">
-        <div style="font-size:56px;margin-bottom:12px">✅</div>
+        <div style="font-size:48px;margin-bottom:12px;color:#1F3971;font-weight:800">✓</div>
         <div style="font-size:13px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:6px">PO Created</div>
         <div id="success-po-num" style="font-size:36px;font-weight:800;color:#1F3971;font-family:monospace;letter-spacing:1px;margin-bottom:20px"></div>
         <div style="display:flex;flex-direction:column;gap:10px">
@@ -317,7 +400,7 @@
   <!-- ══ RECEIVE PO ══ -->
   <div class="tab" id="tab-receive">
     <div class="card">
-      <div class="card-title">Log Received Materials</div>
+      <div class="card-title">Receive PO</div>
 
       <div class="form-group">
         <label class="form-label">PO Number</label>
@@ -372,26 +455,56 @@
         <button class="btn btn-primary" id="receive-btn" onclick="submitReceive()">✓ Update PO</button>
       </div>
     </div>
+
+    <div class="card" style="text-align:center;padding:24px 20px">
+      <div style="font-size:15px;font-weight:700;margin-bottom:6px">Job Clean Up Checklist</div>
+      <div style="font-size:13px;color:#A2A092;margin-bottom:16px">Log OpenSpace, materials cleaned, and leftover material for a completed job.</div>
+      <button class="btn btn-secondary" style="width:100%;padding:14px;font-size:15px;border-radius:12px" onclick="openCleanup()">Open Cleanup Form</button>
+    </div>
   </div>
 
-  <!-- ══ SEARCH ══ -->
-  <div class="tab" id="tab-search">
+  <!-- ══ PRICING ══ -->
+  <div class="tab" id="tab-pricing">
     <div class="search-row">
-      <input type="text" class="search-input" id="s-input"
-             placeholder="PO #, job, vendor, builder, notes…"
-             oninput="runSearch()">
+      <div class="search-wrap">
+        <input type="text" class="search-input" id="p-input"
+               placeholder="Search materials…"
+               oninput="runPricingSearch(); toggleClear('p-input','p-clear')">
+        <button class="search-clear" id="p-clear" onclick="clearSearch('p-input','p-clear'); runPricingSearch()">✕</button>
+      </div>
     </div>
-    <div class="chip-row">
-      <button class="chip active" onclick="setChip('all',this)">All</button>
-      <button class="chip" onclick="setChip('Pending Pickup',this)">Pickup</button>
-      <button class="chip" onclick="setChip('Pending Delivery',this)">Delivery</button>
-      <button class="chip" onclick="setChip('Ready to Reconcile',this)">Reconcile</button>
-      <button class="chip" onclick="setChip('Complete',this)">Complete</button>
+    <div id="p-loading" style="display:none">
+      <div class="loading"><div class="spinner"></div><p>Loading prices…</p></div>
     </div>
-    <div id="s-results"></div>
+    <div id="p-results"><div class="empty">Start typing to search materials.</div></div>
+  </div>
+
+  <!-- ══ CONTACTS ══ -->
+  <div class="tab" id="tab-contacts">
+    <div class="search-row">
+      <div class="search-wrap">
+        <input type="text" class="search-input" id="ct-input"
+               placeholder="Search contacts…"
+               oninput="runContactSearch(); toggleClear('ct-input','ct-clear')">
+        <button class="search-clear" id="ct-clear" onclick="clearSearch('ct-input','ct-clear'); runContactSearch()">✕</button>
+      </div>
+    </div>
+    <div id="ct-loading" style="display:none">
+      <div class="loading"><div class="spinner"></div><p>Loading contacts…</p></div>
+    </div>
+    <div id="ct-results"><div class="empty">Loading contacts…</div></div>
   </div>
 
 </main>
+
+<!-- Cleanup iframe overlay -->
+<div class="cleanup-overlay" id="cleanup-overlay">
+  <div class="cleanup-header">
+    <h2>Job Clean Up Checklist</h2>
+    <button class="cleanup-close" onclick="closeCleanup()">Close</button>
+  </div>
+  <iframe id="cleanup-iframe" src="" allow="camera"></iframe>
+</div>
 
 <!-- Bottom Nav -->
 <nav class="bottom-nav">
@@ -405,27 +518,40 @@
   </button>
   <button id="nav-receive" class="nav-btn" onclick="showTab('receive',this)">
     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-    Receive
+    Log
   </button>
-  <button id="nav-search" class="nav-btn" onclick="showTab('search',this)">
-    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-    Search
+  <button id="nav-pricing" class="nav-btn" onclick="showTab('pricing',this)">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z"/></svg>
+    Pricing
   </button>
+  <button id="nav-contacts" class="nav-btn" onclick="showTab('contacts',this)">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+    Contacts
+  </button>
+
 </nav>
 
 <!-- ══════════════════ JAVASCRIPT ══════════════════ -->
 <script>
 // ── State ────────────────────────────────────────────────────────────────────
 var G = {
-  pos:        [],
-  config:     { statusOptions: [], vendorOptions: [] },
-  filter:     'all',
-  dashFilter: null,
-  receivePO:  null,
-  editRow:    null,
-  role:       'admin',   // set after getConfig resolves
-  userEmail:  '',
-  perms:      { canDash:true, canCreate:true, canReceive:true, canSearch:true, canEdit:true }
+  pos:           [],
+  config:        { statusOptions: [], vendorOptions: [] },
+  filter:        'all',
+  dashFilter:    null,
+  receivePO:     null,
+  editRow:       null,
+  role:          'admin',
+  userEmail:     '',
+  perms:         { canDash:true, canCreate:true, canReceive:true, canSearch:true, canPricing:true, canEdit:true },
+  pricing:       [],
+  pricingLoaded: false,
+  pricingIdx:    null,
+  contacts:        [],
+  contactsHeaders: [],
+  contactsLoaded:  false,
+  contactEditIdx:  null,
+  sort:            'newest'
 };
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
@@ -440,7 +566,7 @@ document.addEventListener('DOMContentLoaded', function() {
       loadData();
     })
     .withFailureHandler(function(e) {
-      showToast('❌ Could not load config');
+      showToast('Error:Could not load config');
       console.error(e);
     })
     .getConfig();
@@ -478,7 +604,7 @@ function loadData() {
     })
     .withFailureHandler(function(e) {
       document.getElementById('dash-loading').innerHTML =
-        '<p style="color:#c62828;font-size:14px">⚠️ Error loading data.<br>Please refresh.</p>';
+        '<p style="color:#c62828;font-size:14px">Error loading data.<br>Please refresh.</p>';
       console.error(e);
     })
     .getSheetData();
@@ -489,25 +615,30 @@ function refreshData() { loadData(); showToast('Refreshing…'); }
 // ── Role-Based Access ─────────────────────────────────────────────────────────
 function applyRole(role) {
   var p = {
-    canDash:    role !== 'runner',
-    canCreate:  role === 'admin' || role === 'office',
-    canReceive: role !== 'accountant',
-    canSearch:  role !== 'runner',
-    canEdit:    role === 'admin' || role === 'office' || role === 'site_manager'
+    canDash:        role !== 'runner',
+    canCreate:      role === 'admin' || role === 'office',
+    canReceive:     role !== 'accountant',
+    canSearch:      role !== 'runner',
+    canPricing:     role === 'admin',
+    canEdit:        role === 'admin' || role === 'office' || role === 'site_manager',
+    canViewInvoice: role !== 'site_manager' && role !== 'runner',
+    canContacts:    role === 'admin' || role === 'office' || role === 'site_manager',
+    canCleanup:     role === 'admin' || role === 'office' || role === 'site_manager' || role === 'runner'
   };
   G.perms = p;
 
   // Show/hide nav buttons
-  document.getElementById('nav-dashboard').style.display = p.canDash    ? '' : 'none';
-  document.getElementById('nav-create').style.display    = p.canCreate  ? '' : 'none';
-  document.getElementById('nav-receive').style.display   = p.canReceive ? '' : 'none';
-  document.getElementById('nav-search').style.display    = p.canSearch  ? '' : 'none';
+  document.getElementById('nav-dashboard').style.display = p.canDash     ? '' : 'none';
+  document.getElementById('nav-create').style.display    = p.canCreate   ? '' : 'none';
+  document.getElementById('nav-receive').style.display   = p.canReceive  ? '' : 'none';
+  document.getElementById('nav-pricing').style.display   = p.canPricing  ? '' : 'none';
+  document.getElementById('nav-contacts').style.display  = p.canContacts ? '' : 'none';
 
   // Show role badge in header
   var labels = { admin:'Admin', office:'Office', site_manager:'Site Manager', runner:'Runner', accountant:'Accountant' };
   var headerP = document.querySelector('.app-header p');
   if (headerP && labels[role]) {
-    headerP.innerHTML = 'Panoramic Building <span style="font-size:10px;opacity:0.5">v47</span>' +
+    headerP.innerHTML = 'Panoramic Building <span style="font-size:10px;opacity:0.5">v54</span>' +
       ' &nbsp;<span style="font-size:11px;background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:6px">' + labels[role] + '</span>';
   }
 
@@ -525,7 +656,8 @@ function showTabDirect(name, btn) {
   document.querySelectorAll('.nav-btn').forEach(function(b){ b.classList.remove('active'); });
   document.getElementById('tab-'+name).classList.add('active');
   if (btn) btn.classList.add('active');
-  if (name === 'search') runSearch();
+  if (name === 'pricing')  loadPricing();
+  if (name === 'contacts') loadContacts();
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -534,9 +666,10 @@ function renderDashboard() {
 
   var buckets = {
     todayDel:[], todayPick:[],
-    upcomingDel:[], upcomingPick:[],
+    upcomingDel:[], upcomingPick:[],   // within 7 days
+    futureDel:[], futurePick:[],        // date set but > 7 days out
     overdueDel:[], overduePick:[],
-    missingDel:[], missingPick:[],
+    missingDel:[], missingPick:[],      // truly no date
     reconcile:[], ordered:[], inProd:[], draft:[]
   };
 
@@ -569,7 +702,8 @@ function renderDashboard() {
     } else if (dd <= addDays(now, 7)) {
       isPD ? buckets.upcomingDel.push(po) : buckets.upcomingPick.push(po);
     } else {
-      isPD ? buckets.missingDel.push(po) : buckets.missingPick.push(po);
+      // Has a date but it's more than 7 days out — NOT missing a date
+      isPD ? buckets.futureDel.push(po) : buckets.futurePick.push(po);
     }
   });
 
@@ -579,8 +713,8 @@ function renderDashboard() {
 
   var h = '';
 
-  var pendingDelCount  = buckets.todayDel.concat(buckets.upcomingDel, buckets.overdueDel, buckets.missingDel).length;
-  var pendingPickCount = buckets.todayPick.concat(buckets.upcomingPick, buckets.overduePick, buckets.missingPick).length;
+  var pendingDelCount  = buckets.todayDel.concat(buckets.upcomingDel, buckets.futureDel, buckets.overdueDel, buckets.missingDel).length;
+  var pendingPickCount = buckets.todayPick.concat(buckets.upcomingPick, buckets.futurePick, buckets.overduePick, buckets.missingPick).length;
 
   // Stats — 9 tiles, 3×3 grid
   h += '<div class="stats-grid">';
@@ -606,31 +740,59 @@ function renderDashboard() {
 
   // Pending Delivery filter — flat list sorted by date
   if (f === 'pendingdel') {
-    var allDel = buckets.overdueDel.concat(buckets.todayDel, buckets.upcomingDel, buckets.missingDel)
-                   .sort(function(a,b){ return (parseMMDDYYYY(a.deliveryDate)||new Date(9e15)) - (parseMMDDYYYY(b.deliveryDate)||new Date(9e15)); });
-    h += secHead('🚛 Pending Delivery (' + allDel.length + ')', 'sh-blue');
-    allDel.forEach(function(po){ h += poCard(po,'delivery'); });
+    var sortByDate = function(a,b){ return (parseMMDDYYYY(a.deliveryDate)||new Date(9e15)) - (parseMMDDYYYY(b.deliveryDate)||new Date(9e15)); };
+    var delSoon    = buckets.overdueDel.concat(buckets.todayDel, buckets.upcomingDel).sort(sortByDate);
+    var delFuture  = buckets.futureDel.slice().sort(sortByDate);
+    var delMissing = buckets.missingDel;
+    var delTotal   = delSoon.length + delFuture.length + delMissing.length;
+    h += secHead('Pending Delivery (' + delTotal + ')', 'sh-blue');
+    if (delSoon.length) {
+      h += '<div class="sec-head sh-green" style="font-size:12px;margin-top:8px">This Week / Overdue (' + delSoon.length + ')</div>';
+      delSoon.forEach(function(po){ h += poCard(po,'delivery'); });
+    }
+    if (delFuture.length) {
+      h += '<div class="sec-head sh-indigo" style="font-size:12px;margin-top:8px">Future (' + delFuture.length + ')</div>';
+      delFuture.forEach(function(po){ h += poCard(po,'delivery'); });
+    }
+    if (delMissing.length) {
+      h += '<div class="sec-head sh-amber" style="font-size:12px;margin-top:8px">No Date (' + delMissing.length + ')</div>';
+      delMissing.forEach(function(po){ h += poCard(po,'missing'); });
+    }
   }
 
-  // Pending Pickup filter — flat list sorted by date
+  // Pending Pickup filter — split by this week / future / no date
   if (f === 'pendingpick') {
-    var allPick = buckets.overduePick.concat(buckets.todayPick, buckets.upcomingPick, buckets.missingPick)
-                    .sort(function(a,b){ return (parseMMDDYYYY(a.deliveryDate)||new Date(9e15)) - (parseMMDDYYYY(b.deliveryDate)||new Date(9e15)); });
-    h += secHead('🚚 Pending Pickup (' + allPick.length + ')', 'sh-blue');
-    allPick.forEach(function(po){ h += poCard(po,'pickup'); });
+    var sortByDate2 = function(a,b){ return (parseMMDDYYYY(a.deliveryDate)||new Date(9e15)) - (parseMMDDYYYY(b.deliveryDate)||new Date(9e15)); };
+    var pickSoon    = buckets.overduePick.concat(buckets.todayPick, buckets.upcomingPick).sort(sortByDate2);
+    var pickFuture  = buckets.futurePick.slice().sort(sortByDate2);
+    var pickMissing = buckets.missingPick;
+    var pickTotal   = pickSoon.length + pickFuture.length + pickMissing.length;
+    h += secHead('Pending Pickup (' + pickTotal + ')', 'sh-blue');
+    if (pickSoon.length) {
+      h += '<div class="sec-head sh-green" style="font-size:12px;margin-top:8px">This Week / Overdue (' + pickSoon.length + ')</div>';
+      pickSoon.forEach(function(po){ h += poCard(po,'pickup'); });
+    }
+    if (pickFuture.length) {
+      h += '<div class="sec-head sh-indigo" style="font-size:12px;margin-top:8px">Future (' + pickFuture.length + ')</div>';
+      pickFuture.forEach(function(po){ h += poCard(po,'pickup'); });
+    }
+    if (pickMissing.length) {
+      h += '<div class="sec-head sh-amber" style="font-size:12px;margin-top:8px">No Date (' + pickMissing.length + ')</div>';
+      pickMissing.forEach(function(po){ h += poCard(po,'missing'); });
+    }
   }
 
   // Overdue
   var overdueAll = buckets.overdueDel.concat(buckets.overduePick)
                     .sort(function(a,b){ return parseMMDDYYYY(a.deliveryDate)-parseMMDDYYYY(b.deliveryDate); });
   if (overdueAll.length && (!f || f==='overdue' || f==='open')) {
-    h += secHead('🔴 Overdue (' + overdueAll.length + ')', 'sh-red');
+    h += secHead('Overdue (' + overdueAll.length + ')', 'sh-red');
     overdueAll.forEach(function(po){ h += poCard(po,'overdue'); });
   }
 
   // Today
   if (todayTotal && (!f || f==='today' || f==='open')) {
-    h += secHead('🚚 Today (' + todayTotal + ')', 'sh-green');
+    h += secHead('Today (' + todayTotal + ')', 'sh-green');
     buckets.todayDel.forEach(function(po){ h += poCard(po,'delivery'); });
     buckets.todayPick.forEach(function(po){ h += poCard(po,'pickup'); });
   }
@@ -639,50 +801,60 @@ function renderDashboard() {
   var weekAll = buckets.upcomingDel.concat(buckets.upcomingPick)
                   .sort(function(a,b){ return parseMMDDYYYY(a.deliveryDate)-parseMMDDYYYY(b.deliveryDate); });
   if (weekAll.length && (!f || f==='open')) {
-    h += secHead('📅 This Week (' + weekAll.length + ')', 'sh-blue');
+    h += secHead('This Week (' + weekAll.length + ')', 'sh-blue');
     weekAll.forEach(function(po){
+      h += poCard(po, po.status.toLowerCase()==='pending delivery' ? 'delivery' : 'pickup');
+    });
+  }
+
+  // Later (date set but > 7 days out)
+  var futureAll = buckets.futureDel.concat(buckets.futurePick)
+                    .sort(function(a,b){ return parseMMDDYYYY(a.deliveryDate)-parseMMDDYYYY(b.deliveryDate); });
+  if (futureAll.length && (!f || f==='open')) {
+    h += secHead('Later (' + futureAll.length + ')', 'sh-blue');
+    futureAll.forEach(function(po){
       h += poCard(po, po.status.toLowerCase()==='pending delivery' ? 'delivery' : 'pickup');
     });
   }
 
   // Ready to reconcile
   if (buckets.reconcile.length && (!f)) {
-    h += secHead('📋 Ready to Reconcile (' + buckets.reconcile.length + ')', 'sh-teal');
+    h += secHead('Ready to Reconcile (' + buckets.reconcile.length + ')', 'sh-teal');
     buckets.reconcile.forEach(function(po){ h += poCard(po,'reconcile'); });
   }
 
   // In Production
   if (buckets.inProd.length && (!f || f==='inprod' || f==='open')) {
-    h += secHead('⚙️ In Production (' + buckets.inProd.length + ')', 'sh-indigo');
+    h += secHead('In Production (' + buckets.inProd.length + ')', 'sh-indigo');
     buckets.inProd.forEach(function(po){ h += poCard(po,'ordered'); });
   }
 
   // Ordered / in progress
   if (buckets.ordered.length && (!f || f==='open')) {
-    h += secHead('🏭 Ordered / In Progress (' + buckets.ordered.length + ')', 'sh-indigo');
+    h += secHead('Ordered / In Progress (' + buckets.ordered.length + ')', 'sh-indigo');
     buckets.ordered.forEach(function(po){ h += poCard(po,'ordered'); });
   }
 
   // Missing date
   var missingAll = buckets.missingDel.concat(buckets.missingPick);
   if (missingAll.length && (!f || f==='nodate' || f==='open')) {
-    h += secHead('🟡 Needs a Date (' + missingAll.length + ')', 'sh-amber');
+    h += secHead('Needs a Date (' + missingAll.length + ')', 'sh-amber');
     missingAll.forEach(function(po){ h += poCard(po,'missing'); });
   }
 
   // Draft
   if (buckets.draft.length && (!f || f==='draft')) {
-    h += secHead('📝 Draft (' + buckets.draft.length + ')', 'sh-indigo');
+    h += secHead('Draft (' + buckets.draft.length + ')', 'sh-indigo');
     buckets.draft.forEach(function(po){ h += poCard(po,'complete'); });
   }
 
   // Total — show all POs newest first
   if (f === 'total') {
-    h += secHead('📦 All POs (' + G.pos.length + ')', 'sh-indigo');
+    h += secHead('All POs (' + G.pos.length + ')', 'sh-indigo');
     G.pos.slice().reverse().forEach(function(po){ h += poCard(po, po.status.toLowerCase().replace(/ /g,'-')); });
   }
 
-  if (!f && !overdueAll.length && !todayTotal && !weekAll.length &&
+  if (!f && !overdueAll.length && !todayTotal && !weekAll.length && !futureAll.length &&
       !buckets.reconcile.length && !missingAll.length && !buckets.ordered.length &&
       !buckets.inProd.length && !buckets.draft.length) {
     h += '<div class="empty">All clear — no open POs need attention.</div>';
@@ -706,12 +878,22 @@ function secHead(t, cls) { return '<div class="sec-head '+cls+'">'+t+'</div>'; }
 function more(n) { return '<p style="text-align:center;color:#aaa;font-size:12px;padding:6px 0">+'+n+' more — use Search tab</p>'; }
 
 function poCard(po, type) {
-  var amt   = po.invoiceTotal && parseFloat(po.invoiceTotal) > 0
+  var amt   = po.invoiceTotal && parseFloat(po.invoiceTotal) > 0 && G.perms.canViewInvoice
               ? '<span class="po-amount">$'+fmtCurrency(po.invoiceTotal)+'</span>' : '';
   var dateStr = po.deliveryDate ? ' · '+po.deliveryDate : '';
-  var statusBadge = badge(po.status);
 
-  return '<div class="po-item '+type+'">' +
+  // Clickable badge for quick status change (admin/office/site_manager)
+  var statusBadge = G.perms.canEdit
+    ? '<span class="badge '+badgeCls(po.status)+'" onclick="quickStatusChange(\''+po.poNum+'\','+po.rowIndex+')" style="cursor:pointer" title="Tap to change status">'+esc(po.status)+'</span>'
+    : badge(po.status);
+
+  // Swipe-to-receive hint arrow
+  var swipeBg = G.perms.canReceive
+    ? '<div class="swipe-bg"><svg width="22" height="22" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>'
+    : '';
+
+  return '<div class="po-item '+type+'" data-ponum="'+esc(po.poNum)+'" data-rowindex="'+po.rowIndex+'">' +
+    swipeBg +
     '<div class="row-between">' +
       '<span class="po-num">'+po.poNum+'</span>' + amt +
     '</div>' +
@@ -721,33 +903,37 @@ function poCard(po, type) {
     '<div class="po-actions">' +
       statusBadge +
       (G.perms.canEdit    ? '<button class="btn btn-sm btn-edit"    onclick="openEdit(\''+po.poNum+'\')">Edit</button>'            : '') +
-      (G.perms.canEdit    ? '<button class="btn btn-sm btn-receive" onclick="quickReceive(\''+po.poNum+'\')">Receive</button>'      : '') +
-      (po.invoiceLink  ? '<a href="'+esc(po.invoiceLink)+'"  target="_blank" class="btn btn-sm" style="background:#fff8e1;color:#e65100;text-decoration:none">Invoice</a>'   : '') +
+      (G.perms.canReceive ? '<button class="btn btn-sm btn-receive" onclick="quickReceive(\''+po.poNum+'\')">Receive</button>'     : '') +
+      (po.invoiceLink && G.perms.canViewInvoice ? '<a href="'+esc(po.invoiceLink)+'" target="_blank" class="btn btn-sm" style="background:#fff8e1;color:#e65100;text-decoration:none">Invoice</a>' : '') +
       (po.issuedPOLink ? '<a href="'+esc(po.issuedPOLink)+'" target="_blank" class="btn btn-sm" style="background:#eaedfa;color:#1F3971;text-decoration:none">Issued PO</a>' : '') +
     '</div>' +
   '</div>';
 }
 
-function badge(status) {
+function badgeCls(status) {
   var map = {
-    'Pending Pickup'       : 'bd-blue',
-    'Pending Delivery'     : 'bd-green',
-    'Ready to Reconcile'   : 'bd-teal',
-    'Complete'             : 'bd-gray',
-    'Ordered'              : 'bd-indigo',
-    'Being made'           : 'bd-amber',
-    'Currently Picking Up' : 'bd-purple',
-    'Draft'                : 'bd-gray'
+    'Pending Pickup'            : 'bd-blue',
+    'Pending Delivery'          : 'bd-green',
+    'Pending Delivery to Supplier':'bd-teal',
+    'Ready to Reconcile'        : 'bd-teal',
+    'Complete'                  : 'bd-gray',
+    'Ordered'                   : 'bd-indigo',
+    'Being made'                : 'bd-amber',
+    'Currently Picking Up'      : 'bd-purple',
+    'Draft'                     : 'bd-gray'
   };
-  var cls = map[status] || 'bd-gray';
-  return '<span class="badge '+cls+'">'+esc(status)+'</span>';
+  return map[status] || 'bd-gray';
+}
+
+function badge(status) {
+  return '<span class="badge '+badgeCls(status)+'">'+esc(status)+'</span>';
 }
 
 // ── Create PO ─────────────────────────────────────────────────────────────────
 function submitCreate() {
   var job    = trim('c-job');
-  var vendor = val('c-vendor');
-  if (!job || !vendor) { showToast('⚠️ Job Reference and Vendor are required'); return; }
+  var vendor = getVendorValue('c-vendor', 'c-vendor-other');
+  if (!job || !vendor) { showToast('Job Reference and Vendor are required'); return; }
 
   setBtnState('create-btn', 'Creating…', true);
 
@@ -762,17 +948,17 @@ function submitCreate() {
         document.getElementById('create-form-card').style.display    = 'none';
         document.getElementById('create-success-card').style.display = 'block';
       } else {
-        showToast('❌ ' + res.error);
+        showToast('Error:' + res.error);
       }
     })
     .withFailureHandler(function() {
       setBtnState('create-btn', 'Create PO', false);
-      showToast('❌ Error creating PO');
+      showToast('Error:Error creating PO');
     })
     .createPO({
       builder:       trim('c-builder'),
       jobRef:        job,
-      vendor:        vendor,
+      vendor:        vendor, // already resolved via getVendorValue
       vendorInvoice: trim('c-invoice'),
       status:        val('c-status'),
       invoiceTotal:  val('c-total'),
@@ -783,6 +969,8 @@ function submitCreate() {
 function clearCreate() {
   ['c-builder','c-job','c-invoice','c-total','c-notes'].forEach(function(id){ document.getElementById(id).value=''; });
   document.getElementById('c-vendor').value = '';
+  document.getElementById('c-vendor-other').value = '';
+  document.getElementById('c-vendor-other').style.display = 'none';
   document.getElementById('c-status').value = 'Pending Pickup';
 }
 
@@ -802,9 +990,9 @@ function lookupPO() {
   } else {
     google.script.run
       .withSuccessHandler(function(p) {
-        p ? showReceiveInfo(p) : showToast('⚠️ PO '+poNum+' not found');
+        p ? showReceiveInfo(p) : showToast('PO '+poNum+' not found');
       })
-      .withFailureHandler(function(){ showToast('❌ Lookup failed'); })
+      .withFailureHandler(function(){ showToast('Error:Lookup failed'); })
       .findPOByNumber(poNum);
   }
 }
@@ -838,18 +1026,18 @@ function submitReceive() {
     .withSuccessHandler(function(res) {
       setBtnState('receive-btn', '✓ Update PO', false);
       if (res.success) {
-        showToast('✅ ' + G.receivePO.poNum + ' updated!');
+        showToast('' + G.receivePO.poNum + ' updated!');
         document.getElementById('r-ponum').value = '';
         document.getElementById('r-info').style.display = 'none';
         G.receivePO = null;
         loadData();
       } else {
-        showToast('❌ ' + res.error);
+        showToast('Error:' + res.error);
       }
     })
     .withFailureHandler(function() {
       setBtnState('receive-btn', '✓ Update PO', false);
-      showToast('❌ Error updating PO');
+      showToast('Error:Error updating PO');
     })
     .updatePO(G.receivePO.rowIndex, {
       status:       'Ready to Reconcile',
@@ -859,25 +1047,68 @@ function submitReceive() {
 }
 
 // ── Search ───────────────────────────────────────────────────────────────────
+function toggleClear(inputId, clearId) {
+  var hasVal = !!document.getElementById(inputId).value;
+  document.getElementById(clearId).classList.toggle('visible', hasVal);
+}
+
+function clearSearch(inputId, clearId) {
+  document.getElementById(inputId).value = '';
+  document.getElementById(clearId).classList.remove('visible');
+}
+
 function setChip(filter, el) {
   G.filter = filter;
-  document.querySelectorAll('.chip-row .chip').forEach(function(c){ c.classList.remove('active'); });
+  document.querySelectorAll('#s-chips .chip').forEach(function(c){ c.classList.remove('active'); });
   el.classList.add('active');
   runSearch();
 }
 
 function runSearch() {
-  var q = (document.getElementById('s-input').value || '').toLowerCase().trim();
+  var q          = (document.getElementById('s-input').value || '').toLowerCase().trim();
+  var isSearching = !!q || G.filter !== 'all';
 
+  var resultsEl   = document.getElementById('s-results');
+  var dashContent = document.getElementById('dash-content');
+  var chipsEl     = document.getElementById('s-chips');
+  var sortEl      = document.getElementById('s-sort');
+
+  // Show filter chips whenever there's any search activity; sort only when text typed
+  if (chipsEl) chipsEl.style.display = isSearching ? 'flex' : 'none';
+  if (sortEl)  sortEl.style.display  = q           ? 'flex' : 'none';
+
+  if (!isSearching) {
+    if (resultsEl)   resultsEl.style.display   = 'none';
+    // Only reveal dash-content once data has loaded (spinner handles pre-load)
+    if (dashContent) dashContent.style.display = G.pos.length ? 'block' : 'none';
+    return;
+  }
+
+  if (resultsEl)   resultsEl.style.display   = 'block';
+  if (dashContent) dashContent.style.display = 'none';
+
+  var tokens  = q.split(/\s+/).filter(Boolean);
   var results = G.pos.filter(function(po) {
     if (G.filter !== 'all' && po.status !== G.filter) return false;
     if (!q) return true;
-    return (po.poNum+' '+po.jobRef+' '+po.vendor+' '+po.builder+' '+po.notes+' '+po.vendorInvoice)
-             .toLowerCase().includes(q);
+    var text = (po.poNum+' '+po.jobRef+' '+po.vendor+' '+po.builder+' '+po.notes+' '+po.vendorInvoice).toLowerCase();
+    return tokens.every(function(t) { return text.includes(t); });
   });
 
-  // sort: most recent first (by rowIndex desc)
-  results.sort(function(a,b){ return b.rowIndex - a.rowIndex; });
+  // Sort
+  if (G.sort === 'oldest') {
+    results.sort(function(a,b){ return a.rowIndex - b.rowIndex; });
+  } else if (G.sort === 'duedate') {
+    results.sort(function(a,b){
+      var da = parseMMDDYYYY(a.deliveryDate), db = parseMMDDYYYY(b.deliveryDate);
+      var ta = da ? da.getTime() : 9e15, tb = db ? db.getTime() : 9e15;
+      return ta - tb;
+    });
+  } else if (G.sort === 'vendor') {
+    results.sort(function(a,b){ return (a.vendor||'').localeCompare(b.vendor||''); });
+  } else {
+    results.sort(function(a,b){ return b.rowIndex - a.rowIndex; }); // newest
+  }
 
   var h = '';
   if (results.length === 0) {
@@ -890,7 +1121,7 @@ function runSearch() {
     if (results.length > 60) h += '<div class="empty">Showing first 60 — refine your search.</div>';
   }
 
-  document.getElementById('s-results').innerHTML = h;
+  resultsEl.innerHTML = h;
 }
 
 function typeClass(status) {
@@ -912,24 +1143,29 @@ function openEdit(poNum) {
     return '<option value="'+esc(s)+'"'+(s===po.status?' selected':'')+'>'+esc(s)+'</option>';
   }).join('');
 
+  // If the stored vendor isn't in the standard list, treat it as a custom entry
+  var isCustomVendor = po.vendor && G.config.vendorOptions.indexOf(po.vendor) === -1;
   var vendorOpts = G.config.vendorOptions.map(function(v){
-    return '<option value="'+esc(v)+'"'+(v===po.vendor?' selected':'')+'>'+esc(v)+'</option>';
+    var selected = isCustomVendor ? v === 'Other' : v === po.vendor;
+    return '<option value="'+esc(v)+'"'+(selected?' selected':'')+'>'+esc(v)+'</option>';
   }).join('');
 
   document.getElementById('edit-modal-title').textContent = poNum;
 
   // Build document link buttons
-  var invoiceBtn = po.invoiceLink
-    ? '<a href="'+esc(po.invoiceLink)+'" target="_blank" class="doc-link doc-link-invoice">📄 Invoice</a>'
-    : '<span class="doc-link doc-link-disabled">📄 No Invoice</span>';
+  var invoiceBtn = G.perms.canViewInvoice
+    ? (po.invoiceLink
+        ? '<a href="'+esc(po.invoiceLink)+'" target="_blank" class="doc-link doc-link-invoice">Invoice</a>'
+        : '<span class="doc-link doc-link-disabled">No Invoice</span>')
+    : '';
 
   var issuedBtn = po.issuedPOLink
-    ? '<a href="'+esc(po.issuedPOLink)+'" target="_blank" class="doc-link doc-link-issued">📋 Issued PO</a>'
-    : '<span class="doc-link doc-link-disabled">📋 No Issued PO</span>';
+    ? '<a href="'+esc(po.issuedPOLink)+'" target="_blank" class="doc-link doc-link-issued">Issued PO</a>'
+    : '<span class="doc-link doc-link-disabled">No Issued PO</span>';
 
   var issuedField =
     '<div class="form-group">' +
-      '<label class="form-label">' + (po.issuedPOLink ? '📋 Update Issued PO' : '📋 Add Issued PO') + '</label>' +
+      '<label class="form-label">' + (po.issuedPOLink ? 'Update Issued PO' : 'Add Issued PO') + '</label>' +
       '<input type="url" class="form-control" id="e-issued" value="'+esc(po.issuedPOLink)+'" placeholder="Paste link, or upload file below…" style="margin-bottom:10px">' +
       '<input type="file" id="e-issued-file" accept="image/*,.pdf" style="display:none" onchange="handleIssuedFile(this)">' +
       '<button type="button" class="btn-camera" style="width:100%;justify-content:center" onclick="document.getElementById(\'e-issued-file\').click()">' +
@@ -943,11 +1179,17 @@ function openEdit(poNum) {
     '<div class="doc-links">' + invoiceBtn + issuedBtn + '</div>' +
     fg('Builder',         '<input type="text"   class="form-control" id="e-builder"  value="'+esc(po.builder)+'">') +
     fg('Job Reference',   '<input type="text"   class="form-control" id="e-job"      value="'+esc(po.jobRef)+'">') +
-    fg('Vendor',          '<select class="form-control" id="e-vendor"><option value="">—</option>'+vendorOpts+'</select>') +
+    fg('Vendor',
+      '<select class="form-control" id="e-vendor" onchange="toggleOtherVendor(\'e-vendor\',\'e-vendor-other\')">' +
+        '<option value="">—</option>' + vendorOpts +
+      '</select>' +
+      '<input type="text" class="form-control" id="e-vendor-other" placeholder="Type vendor name…" ' +
+        'style="margin-top:10px;display:' + (isCustomVendor ? 'block' : 'none') + '" ' +
+        'value="' + (isCustomVendor ? esc(po.vendor) : '') + '">') +
     fg('Vendor Invoice #','<input type="text"   class="form-control" id="e-vinvoice" value="'+esc(po.vendorInvoice)+'">') +
     fg('Status',          '<select class="form-control" id="e-status">'+statusOpts+'</select>') +
-    fg('Invoice Total ($)','<input type="number" class="form-control" id="e-total"   value="'+esc(po.invoiceTotal)+'" step="0.01" min="0">') +
-    fg('Delivery / Pickup Date','<input type="text" class="form-control" id="e-date" value="'+esc(po.deliveryDate)+'" placeholder="MM/DD/YYYY">') +
+    (G.perms.canViewInvoice ? fg('Invoice Total ($)','<input type="number" class="form-control" id="e-total" value="'+esc(po.invoiceTotal)+'" step="0.01" min="0">') : '') +
+    fg('Delivery / Pickup Date','<input type="date" class="form-control" id="e-date" value="'+esc(toInputDate(po.deliveryDate))+'">') +
     issuedField +
     fg('Notes',           '<textarea class="form-control" id="e-notes" rows="3">'+esc(po.notes)+'</textarea>') +
     '<div class="modal-actions">' +
@@ -973,21 +1215,21 @@ function submitEdit() {
     .withSuccessHandler(function(res) {
       if (res.success) {
         closeEdit();
-        showToast('✅ PO updated!');
+        showToast('PO updated!');
         loadData();
       } else {
-        showToast('❌ ' + (res.error||'Save failed'));
+        showToast('Error:' + (res.error||'Save failed'));
       }
     })
-    .withFailureHandler(function(){ showToast('❌ Error saving changes'); })
+    .withFailureHandler(function(){ showToast('Error:Error saving changes'); })
     .updatePO(G.editRow, {
       builder:       trim('e-builder'),
       jobRef:        trim('e-job'),
-      vendor:        val('e-vendor'),
+      vendor:        getVendorValue('e-vendor', 'e-vendor-other'),
       vendorInvoice: trim('e-vinvoice'),
       status:        val('e-status'),
-      invoiceTotal:  val('e-total'),
-      deliveryDate:  trim('e-date'),
+      invoiceTotal:  G.perms.canViewInvoice ? val('e-total') : undefined,
+      deliveryDate:  fromInputDate(trim('e-date')),
       issuedPO:      trim('e-issued'),
       notes:         trim('e-notes')
     });
@@ -1000,9 +1242,10 @@ function showTab(name, btn) {
     dashboard: !G.perms.canDash,
     create:    !G.perms.canCreate,
     receive:   !G.perms.canReceive,
-    search:    !G.perms.canSearch
+    pricing:   !G.perms.canPricing,
+    contacts:  !G.perms.canContacts
   };
-  if (blocked[name]) { showToast("⛔ You don't have access to that."); return; }
+  if (blocked[name]) { showToast("You don't have access to that."); return; }
   showTabDirect(name, btn);
 }
 
@@ -1103,14 +1346,14 @@ function handlePhoto(input) {
           stopBar();
           if (res.success) {
             document.getElementById('r-note').value = res.url;
-            setPhotoStatus('✅ Photo uploaded to Drive', 'done');
+            setPhotoStatus('Photo uploaded to Drive', 'done');
           } else {
-            setPhotoStatus('❌ Upload failed: ' + res.error, 'error');
+            setPhotoStatus('Upload failed:' + res.error, 'error');
           }
         })
         .withFailureHandler(function(err) {
           stopBar();
-          setPhotoStatus('❌ Upload error — check connection', 'error');
+          setPhotoStatus('Upload error — check connection', 'error');
           console.error(err);
         })
         .savePhotoToDrive(base64, mimeType, filename);
@@ -1146,15 +1389,15 @@ function handleIssuedFile(input) {
         .withSuccessHandler(function(res) {
           if (res.success) {
             document.getElementById('e-issued').value = res.url;
-            statusEl.textContent = '✅ Uploaded — link filled in above';
+            statusEl.textContent = 'Uploaded — link filled in above';
             statusEl.className   = 'photo-status done';
           } else {
-            statusEl.textContent = '❌ Upload failed: ' + res.error;
+            statusEl.textContent = 'Upload failed:' + res.error;
             statusEl.className   = 'photo-status error';
           }
         })
         .withFailureHandler(function(err) {
-          statusEl.textContent = '❌ Upload error — check connection';
+          statusEl.textContent = 'Upload error — check connection';
           statusEl.className   = 'photo-status error';
         })
         .savePhotoToDrive(b64, mime, filename);
@@ -1217,12 +1460,459 @@ function stopBar() {
   setTimeout(function(){ bar.style.width = '0%'; }, 1200);
 }
 
-// Reset photo UI whenever the user looks up a new PO
+// ── Pricing ───────────────────────────────────────────────────────────────────
+function loadPricing() {
+  if (G.pricingLoaded) { runPricingSearch(); return; }
+  document.getElementById('p-loading').style.display = 'block';
+  document.getElementById('p-results').style.display = 'none';
+
+  google.script.run
+    .withSuccessHandler(function(items) {
+      G.pricing = items || [];
+      G.pricingLoaded = true;
+      document.getElementById('p-loading').style.display = 'none';
+      document.getElementById('p-results').style.display = 'block';
+      runPricingSearch();
+    })
+    .withFailureHandler(function() {
+      document.getElementById('p-loading').style.display = 'none';
+      document.getElementById('p-results').innerHTML = '<div class="empty">Could not load pricing data.</div>';
+      document.getElementById('p-results').style.display = 'block';
+    })
+    .getPricingData();
+}
+
+function runPricingSearch() {
+  var q = (document.getElementById('p-input').value || '').toLowerCase().trim();
+  var resultsEl = document.getElementById('p-results');
+
+  if (!q) {
+    resultsEl.innerHTML = '<div class="empty">Start typing to search materials.</div>';
+    return;
+  }
+
+  var tokens  = q.split(/\s+/).filter(Boolean);
+  var matches = G.pricing.filter(function(item) {
+    var text = (item.description + ' ' + item.category).toLowerCase();
+    return tokens.every(function(t) { return text.includes(t); });
+  });
+
+  if (!matches.length) {
+    resultsEl.innerHTML = '<div class="empty">No materials match "' + esc(q) + '".</div>';
+    return;
+  }
+
+  var h = '<p style="font-size:11px;color:#aaa;margin-bottom:8px">' + matches.length + ' result' + (matches.length !== 1 ? 's' : '') + '</p>';
+  matches.forEach(function(item, i) {
+    // Find the original index in G.pricing so the edit button targets the right row
+    var origIdx = G.pricing.indexOf(item);
+    h += pricingCard(item, origIdx);
+  });
+  resultsEl.innerHTML = h;
+}
+
+function pricingCard(item, idx) {
+  var vendors = ['LW Supply','Allside','Timberline','LKL','Lansing','BFS'];
+  var best = item.bestPrice;
+
+  // Build vendor price rows
+  var vendorRows = '';
+  vendors.forEach(function(v) {
+    var price = item.prices[v];
+    if (price === undefined) return;
+    var isBest = best > 0 && Math.abs(price - best) < 0.001;
+    vendorRows +=
+      '<div style="display:flex;justify-content:space-between;align-items:center;' +
+        'padding:7px 10px;border-radius:8px;margin-bottom:4px;' +
+        'background:' + (isBest ? '#eaedfa' : '#f7f6f2') + '">' +
+        '<span style="font-size:14px;font-weight:' + (isBest ? '700' : '500') + ';color:' + (isBest ? '#1F3971' : '#555') + '">' + v + '</span>' +
+        '<span style="font-size:14px;font-weight:700;color:' + (isBest ? '#1F3971' : '#2E2E2E') + '">' +
+          '$' + price.toFixed(2) + (isBest ? ' ✓' : '') +
+        '</span>' +
+      '</div>';
+  });
+
+  if (!vendorRows) vendorRows = '<div class="empty" style="padding:8px 0">No vendor prices on file.</div>';
+
+  return '<div class="po-item">' +
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">' +
+      '<span style="font-size:12px;font-weight:600;color:#A2A092;text-transform:uppercase;letter-spacing:0.4px">' + esc(item.category) + '</span>' +
+      '<div style="display:flex;gap:6px;align-items:center">' +
+        '<span class="badge bd-indigo" style="font-size:11px;padding:3px 9px">' + esc(item.um) + '</span>' +
+        '<button class="btn btn-sm btn-edit" onclick="openPricingEdit(' + idx + ')">Edit</button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="po-main" style="font-size:16px;margin-bottom:10px">' + esc(item.description) + '</div>' +
+    (best > 0 ?
+      '<div style="margin-bottom:12px">' +
+        '<span style="font-size:26px;font-weight:800;color:#1F3971">$' + best.toFixed(2) + '</span>' +
+        '<span style="font-size:12px;color:#A2A092;margin-left:6px">best price</span>' +
+      '</div>' : '') +
+    vendorRows +
+  '</div>';
+}
+
+// ── Pricing Edit ──────────────────────────────────────────────────────────────
+function openPricingEdit(idx) {
+  var item = G.pricing[idx];
+  if (!item) return;
+  G.editRow     = item.rowIndex;
+  G.pricingIdx  = idx;
+
+  var vendors = ['LW Supply','Allside','Timberline','LKL','Lansing','BFS'];
+  var fields  = vendors.map(function(v) {
+    var price = item.prices[v] || '';
+    return fg(v, '<input type="number" class="form-control" id="pe-' + v.replace(/ /g,'-') + '" value="' + price + '" step="0.01" min="0" placeholder="—">');
+  }).join('');
+
+  document.getElementById('edit-modal-title').textContent = item.description;
+  document.getElementById('edit-modal-body').innerHTML =
+    '<p style="font-size:13px;color:#A2A092;margin-bottom:16px">Best price is auto-calculated as the lowest vendor price on save.</p>' +
+    fields +
+    '<div class="modal-actions">' +
+      '<button class="btn btn-primary" style="flex:1" onclick="submitPricingEdit()">Save Prices</button>' +
+      '<button class="btn btn-secondary" style="flex:0 0 auto" onclick="closeEdit()">Cancel</button>' +
+    '</div>';
+
+  document.getElementById('edit-modal').classList.add('open');
+}
+
+function submitPricingEdit() {
+  var vendors = ['LW Supply','Allside','Timberline','LKL','Lansing','BFS'];
+  var vendorPrices = {};
+  vendors.forEach(function(v) {
+    vendorPrices[v] = document.getElementById('pe-' + v.replace(/ /g,'-')).value;
+  });
+
+  var saveBtn = document.querySelector('#edit-modal-body .btn-primary');
+  if (saveBtn) { saveBtn.textContent = 'Saving…'; saveBtn.disabled = true; }
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res.success) {
+        // Update local cache
+        var item = G.pricing[G.pricingIdx];
+        vendors.forEach(function(v) {
+          var p = parseFloat(vendorPrices[v]);
+          if (!isNaN(p) && p > 0) { item.prices[v] = p; }
+          else { delete item.prices[v]; }
+        });
+        item.bestPrice = res.bestPrice || 0;
+        closeEdit();
+        showToast('Prices updated!');
+        runPricingSearch();
+      } else {
+        showToast('Error:' + (res.error || 'Save failed'));
+        if (saveBtn) { saveBtn.textContent = 'Save Prices'; saveBtn.disabled = false; }
+      }
+    })
+    .withFailureHandler(function() {
+      showToast('Error:Error saving prices');
+      if (saveBtn) { saveBtn.textContent = 'Save Prices'; saveBtn.disabled = false; }
+    })
+    .updatePricing(G.editRow, vendorPrices);
+}
+
+// ── Reset photo UI whenever the user looks up a new PO
 var _origShowReceiveInfo = showReceiveInfo;
 showReceiveInfo = function(po) {
   retakePhoto();
   _origShowReceiveInfo(po);
 };
+
+// ── Vendor "Other" helpers ────────────────────────────────────────────────────
+function toggleOtherVendor(selectId, inputId) {
+  var sel = document.getElementById(selectId);
+  var inp = document.getElementById(inputId);
+  if (!inp) return;
+  var isOther = sel.value === 'Other';
+  inp.style.display = isOther ? 'block' : 'none';
+  if (!isOther) inp.value = '';
+  if (isOther)  inp.focus();
+}
+
+// Returns the actual vendor string — either the selected option or the typed value
+function getVendorValue(selectId, inputId) {
+  var sel = document.getElementById(selectId);
+  if (!sel) return '';
+  if (sel.value === 'Other') {
+    var inp = document.getElementById(inputId);
+    return inp ? inp.value.trim() : 'Other';
+  }
+  return sel.value;
+}
+
+// ── Sort ──────────────────────────────────────────────────────────────────────
+function setSort(sort, el) {
+  G.sort = sort;
+  document.querySelectorAll('.sort-row .chip').forEach(function(c){ c.classList.remove('active'); });
+  el.classList.add('active');
+  runSearch();
+}
+
+// ── Date helpers ─────────────────────────────────────────────────────────────
+// MM/DD/YYYY → YYYY-MM-DD (for <input type="date">)
+function toInputDate(mmddyyyy) {
+  if (!mmddyyyy) return '';
+  var m = mmddyyyy.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return '';
+  return m[3] + '-' + ('0'+m[1]).slice(-2) + '-' + ('0'+m[2]).slice(-2);
+}
+// YYYY-MM-DD → MM/DD/YYYY (back to sheet format)
+function fromInputDate(yyyymmdd) {
+  if (!yyyymmdd) return '';
+  var m = yyyymmdd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return yyyymmdd;
+  return m[2] + '/' + m[3] + '/' + m[1];
+}
+
+// ── Quick Status Change ───────────────────────────────────────────────────────
+function quickStatusChange(poNum, rowIndex) {
+  var po = G.pos.find(function(p){ return p.poNum === poNum; });
+  if (!po) return;
+  G.editRow = rowIndex;
+
+  var statusBtns = G.config.statusOptions.map(function(s) {
+    var isCurrent = s === po.status;
+    return '<button class="status-option'+(isCurrent?' selected':'')+'" onclick="submitQuickStatus(\''+esc(s)+'\')">' + esc(s) + '</button>';
+  }).join('');
+
+  document.getElementById('edit-modal-title').textContent = poNum;
+  document.getElementById('edit-modal-body').innerHTML =
+    '<p style="font-size:13px;color:#A2A092;margin-bottom:12px">Current: <strong>' + esc(po.status) + '</strong></p>' +
+    '<div class="status-btn-grid">' + statusBtns + '</div>' +
+    '<div class="modal-actions" style="margin-top:16px">' +
+      '<button class="btn btn-secondary" style="width:100%" onclick="closeEdit()">Cancel</button>' +
+    '</div>';
+
+  document.getElementById('edit-modal').classList.add('open');
+}
+
+function submitQuickStatus(newStatus) {
+  var rowIndex = G.editRow;
+  if (!rowIndex) return;
+
+  // Optimistic update
+  var po = G.pos.find(function(p){ return p.rowIndex === rowIndex; });
+  if (po) po.status = newStatus;
+  closeEdit();
+  showToast('Status → ' + newStatus);
+  renderDashboard();
+  runSearch();
+
+  google.script.run
+    .withFailureHandler(function() { showToast('Error:Error saving status — refresh to sync'); })
+    .updatePO(rowIndex, { status: newStatus });
+}
+
+// ── Cleanup ───────────────────────────────────────────────────────────────────
+function openCleanup() {
+  if (!G.perms.canCleanup) { showToast("You don't have access to that."); return; }
+  var overlay = document.getElementById('cleanup-overlay');
+  var iframe  = document.getElementById('cleanup-iframe');
+  // Load form fresh each time so it's a clean blank form
+  if (!iframe.src || iframe.src === window.location.href) {
+    iframe.src = 'https://form.asana.com/?k=kiMhpmASAeEg_D4e631yjA&d=1208027938795761';
+  }
+  overlay.classList.add('open');
+}
+
+function closeCleanup() {
+  var overlay = document.getElementById('cleanup-overlay');
+  var iframe  = document.getElementById('cleanup-iframe');
+  overlay.classList.remove('open');
+  // Reset iframe so next open is a fresh form
+  iframe.src = '';
+}
+
+// ── Contacts ──────────────────────────────────────────────────────────────────
+function loadContacts() {
+  if (G.contactsLoaded) { runContactSearch(); return; }
+  document.getElementById('ct-loading').style.display = 'block';
+  document.getElementById('ct-results').style.display = 'none';
+
+  google.script.run
+    .withSuccessHandler(function(data) {
+      G.contacts        = data.contacts || [];
+      G.contactsHeaders = data.headers  || [];
+      G.contactsLoaded  = true;
+      document.getElementById('ct-loading').style.display = 'none';
+      document.getElementById('ct-results').style.display = 'block';
+      runContactSearch();
+    })
+    .withFailureHandler(function() {
+      document.getElementById('ct-loading').style.display = 'none';
+      document.getElementById('ct-results').innerHTML = '<div class="empty">⚠️ Could not load contacts.</div>';
+      document.getElementById('ct-results').style.display = 'block';
+    })
+    .getContacts();
+}
+
+function runContactSearch() {
+  var q = (document.getElementById('ct-input').value || '').toLowerCase().trim();
+  var el = document.getElementById('ct-results');
+  if (!G.contacts.length) { el.innerHTML = '<div class="empty">No contacts found. Add people to the Contacts tab in the database.</div>'; return; }
+
+  var tokens = q.split(/\s+/).filter(Boolean);
+  var filtered = G.contacts.filter(function(c) {
+    if (!q) return true;
+    var text = Object.values(c).join(' ').toLowerCase();
+    return tokens.every(function(t){ return text.includes(t); });
+  });
+
+  if (!filtered.length) { el.innerHTML = '<div class="empty">No contacts match "' + esc(q) + '".</div>'; return; }
+
+  // Pass the index in G.contacts so the edit button knows which contact to open
+  el.innerHTML = filtered.map(function(c) {
+    return contactCard(c, G.contacts.indexOf(c));
+  }).join('');
+}
+
+function contactCard(c, idx) {
+  // Try common name keys, fall back to first non-internal field
+  var name = c['Name'] || c['name'] || c['Full Name'] || c['Contact'] || '';
+  if (!name) {
+    var keys = Object.keys(c).filter(function(k){ return !k.startsWith('_'); });
+    name = c[keys[0]] || '—';
+  }
+  var fields = '';
+
+  Object.keys(c).forEach(function(key) {
+    if (key.startsWith('_')) return; // skip internal fields like _rowIndex
+    var v = c[key];
+    if (!v) return;
+    // Skip the field used as the name header
+    if (v === name && (key === 'Name' || key === 'name' || key === 'Full Name' || key === 'Contact')) return;
+
+    var lk = key.toLowerCase();
+    var content;
+    if (lk.includes('phone') || lk.includes('cell') || lk.includes('mobile') || lk.includes('fax')) {
+      content = '<a href="tel:' + v.replace(/\s/g,'') + '">' + esc(v) + '</a>';
+    } else if (lk.includes('email') || v.includes('@')) {
+      content = '<a href="mailto:' + esc(v) + '">' + esc(v) + '</a>';
+    } else {
+      content = esc(v);
+    }
+    fields += '<div class="contact-field"><span class="contact-key">' + esc(key) + '</span>' + content + '</div>';
+  });
+
+  var editBtn = G.perms.canEdit
+    ? '<button class="btn btn-sm btn-edit" onclick="openContactEdit(' + idx + ')" style="margin-top:12px">Edit</button>'
+    : '';
+
+  return '<div class="contact-card">' +
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start">' +
+      '<div class="contact-name">' + esc(name) + '</div>' +
+    '</div>' +
+    fields +
+    editBtn +
+  '</div>';
+}
+
+// ── Contact Edit ──────────────────────────────────────────────────────────────
+function openContactEdit(idx) {
+  var c = G.contacts[idx];
+  if (!c) return;
+  G.contactEditIdx = idx;
+
+  var fields = G.contactsHeaders.map(function(h) {
+    var val = c[h] || '';
+    return fg(h, '<input type="text" class="form-control" id="ce-' + esc(h.replace(/\s+/g,'-')) + '" value="' + esc(val) + '" placeholder="' + esc(h) + '">');
+  }).join('');
+
+  var name = c['Name'] || c['name'] || c['Full Name'] || c['Contact'] || 'Contact';
+  document.getElementById('edit-modal-title').textContent = name;
+  document.getElementById('edit-modal-body').innerHTML =
+    fields +
+    '<div class="modal-actions">' +
+      '<button class="btn btn-primary" style="flex:1" id="contact-save-btn" onclick="submitContactEdit()">Save</button>' +
+      '<button class="btn btn-secondary" style="flex:0 0 auto" onclick="closeEdit()">Cancel</button>' +
+    '</div>';
+
+  document.getElementById('edit-modal').classList.add('open');
+}
+
+function submitContactEdit() {
+  var c = G.contacts[G.contactEditIdx];
+  if (!c) return;
+
+  var values = {};
+  G.contactsHeaders.forEach(function(h) {
+    var el = document.getElementById('ce-' + h.replace(/\s+/g,'-'));
+    if (el) values[h] = el.value.trim();
+  });
+
+  var btn = document.getElementById('contact-save-btn');
+  if (btn) { btn.textContent = 'Saving…'; btn.disabled = true; }
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res.success) {
+        // Update local cache
+        G.contactsHeaders.forEach(function(h) { if (values[h] !== undefined) c[h] = values[h]; });
+        closeEdit();
+        showToast('Contact updated!');
+        runContactSearch();
+      } else {
+        showToast('Error:' + (res.error || 'Save failed'));
+        if (btn) { btn.textContent = 'Save'; btn.disabled = false; }
+      }
+    })
+    .withFailureHandler(function() {
+      showToast('Error:Error saving contact');
+      if (btn) { btn.textContent = 'Save'; btn.disabled = false; }
+    })
+    .updateContact(c._rowIndex, values);
+}
+
+// ── Swipe to Receive ──────────────────────────────────────────────────────────
+(function() {
+  var startX = 0, startY = 0, activeEl = null, moved = 0;
+  var THRESHOLD = 72;
+  var swipeBg = null;
+
+  document.addEventListener('touchstart', function(e) {
+    var item = e.target.closest('.po-item');
+    if (!item || !G.perms.canReceive) { activeEl = null; return; }
+    activeEl = item;
+    startX   = e.touches[0].clientX;
+    startY   = e.touches[0].clientY;
+    moved    = 0;
+    swipeBg  = item.querySelector('.swipe-bg');
+    item.style.transition = 'none';
+  }, { passive: true });
+
+  document.addEventListener('touchmove', function(e) {
+    if (!activeEl) return;
+    var dx = e.touches[0].clientX - startX;
+    var dy = Math.abs(e.touches[0].clientY - startY);
+    // Abort if more vertical than horizontal (user is scrolling)
+    if (dy > Math.abs(dx) * 1.3 && Math.abs(dx) < 15) { activeEl = null; return; }
+    moved = dx;
+    if (dx > 0 && dx < 140) {
+      activeEl.style.transform = 'translateX(' + dx + 'px)';
+      if (swipeBg) swipeBg.style.opacity = Math.min(dx / THRESHOLD, 1).toString();
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchend', function() {
+    if (!activeEl) return;
+    activeEl.style.transition = 'transform 0.25s ease';
+    activeEl.style.transform  = 'translateX(0)';
+    if (swipeBg) swipeBg.style.opacity = '0';
+
+    if (moved >= THRESHOLD) {
+      var poNum = activeEl.getAttribute('data-ponum');
+      if (poNum) {
+        quickReceive(poNum);
+        showToast('📋 Opening receive for ' + poNum);
+      }
+    }
+    activeEl = null;
+    swipeBg  = null;
+    moved    = 0;
+  });
+})();
 </script>
 </body>
 </html>

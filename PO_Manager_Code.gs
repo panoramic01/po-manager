@@ -38,7 +38,7 @@ var VENDOR_OPTIONS = [
 
 function doGet() {
   return HtmlService.createHtmlOutputFromFile("index")
-    .setTitle("PO Manager — Panoramic Building")
+    .setTitle("Panoramic Ops")
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
@@ -223,6 +223,97 @@ function getUserRole() {
   }
 }
 
+// ─── Pricing ─────────────────────────────────────────────────────────────────
+
+var PRICING_SHEET   = "Pricing";
+var PRICING_VENDORS = ["LW Supply", "Allside", "Timberline", "LKL", "Lansing", "BFS"];
+
+/**
+ * Reads the Pricing sheet and returns an array of material objects.
+ * Category header rows (no U/M) are captured and attached to subsequent items.
+ */
+function getPricingData() {
+  try {
+    var ss    = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(PRICING_SHEET);
+    if (!sheet) return [];
+
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return [];
+
+    // Columns: A=desc, B=um, C=bestPrice, D=empty, E-J=vendors
+    var data = sheet.getRange(2, 1, lastRow - 1, 10).getValues();
+    var items = [];
+    var currentCategory = '';
+
+    data.forEach(function(row, rowIdx) {
+      var desc = (row[0] || '').toString().trim();
+      var um   = (row[1] || '').toString().trim();
+      if (!desc) return;
+
+      // Category header — no U/M value
+      if (!um) { currentCategory = desc; return; }
+
+      var bestPrice = parseFloat(row[2]) || 0;
+      var prices    = {};
+      // Vendor columns: E=4, F=5, G=6, H=7, I=8, J=9 (0-based)
+      PRICING_VENDORS.forEach(function(vendor, i) {
+        var v = row[i + 4];
+        if (v !== '' && v !== null && v !== undefined && v !== 0) {
+          prices[vendor] = parseFloat(v) || 0;
+        }
+      });
+
+      items.push({
+        description:  desc,
+        um:           um,
+        bestPrice:    bestPrice,
+        prices:       prices,
+        category:     currentCategory,
+        rowIndex:     rowIdx + 2   // actual sheet row (1-based, +1 for header, +1 for 0-based)
+      });
+    });
+
+    return items;
+  } catch(e) {
+    return [];
+  }
+}
+
+/**
+ * Updates vendor prices for a single material row.
+ * Auto-calculates best price as the minimum of all entered vendor prices.
+ */
+function updatePricing(rowIndex, vendorPrices) {
+  try {
+    var ss    = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(PRICING_SHEET);
+    if (!sheet) return { success: false, error: 'Pricing sheet not found' };
+
+    var allPrices = [];
+    // Vendor columns E-J are 1-based cols 5-10
+    PRICING_VENDORS.forEach(function(vendor, i) {
+      var price = vendorPrices[vendor];
+      var col   = i + 5; // col E = 5, F = 6 ... J = 10
+      if (price !== '' && price !== null && price !== undefined) {
+        var val = parseFloat(price);
+        sheet.getRange(rowIndex, col).setValue(isNaN(val) ? '' : val);
+        if (!isNaN(val) && val > 0) allPrices.push(val);
+      } else {
+        sheet.getRange(rowIndex, col).setValue('');
+      }
+    });
+
+    // Best price = lowest vendor price, written to col C
+    var bestPrice = allPrices.length > 0 ? Math.min.apply(null, allPrices) : '';
+    sheet.getRange(rowIndex, 3).setValue(bestPrice);
+
+    return { success: true, bestPrice: bestPrice };
+  } catch(e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
 // ─── Private Helpers ─────────────────────────────────────────────────────────
 
 function getSheet() {
@@ -281,4 +372,52 @@ function savePhotoToDrive(base64Data, mimeType, filename) {
 function authorizeDrive() {
   DriveApp.getRootFolder();
   Logger.log("Drive authorized!");
+}
+
+// ─── Contacts ─────────────────────────────────────────────────────────────────
+
+/**
+ * Reads the Contacts sheet. Row 1 = headers, rows 2+ = data.
+ * Returns an array of objects keyed by header name.
+ */
+function getContacts() {
+  try {
+    var ss    = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('Contacts');
+    if (!sheet) return { headers: [], contacts: [] };
+    var data = sheet.getDataRange().getValues();
+    if (data.length < 2) return { headers: [], contacts: [] };
+    var headers  = data[0].map(function(h){ return h.toString().trim(); }).filter(Boolean);
+    var contacts = [];
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      var obj = { _rowIndex: i + 1 }; var hasData = false;
+      headers.forEach(function(h, j) {
+        obj[h] = (row[j] || '').toString().trim();
+        if (obj[h]) hasData = true;
+      });
+      if (hasData) contacts.push(obj);
+    }
+    return { headers: headers, contacts: contacts };
+  } catch(e) { return { headers: [], contacts: [], error: e.toString() }; }
+}
+
+/**
+ * Updates a single contact row. `values` is an object keyed by column header.
+ */
+function updateContact(rowIndex, values) {
+  try {
+    var ss    = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('Contacts');
+    if (!sheet) return { success: false, error: 'Contacts sheet not found' };
+
+    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    headers.forEach(function(h, i) {
+      var key = h.toString().trim();
+      if (key && values[key] !== undefined) {
+        sheet.getRange(rowIndex, i + 1).setValue(values[key]);
+      }
+    });
+    return { success: true };
+  } catch(e) { return { success: false, error: e.toString() }; }
 }
