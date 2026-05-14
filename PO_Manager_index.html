@@ -285,7 +285,7 @@
 <header class="app-header">
   <div>
     <h1>Panoramic Ops</h1>
-    <p>Panoramic Building <span style="font-size:10px;opacity:0.5">v54</span></p>
+    <p>Panoramic Building <span style="font-size:10px;opacity:0.5">v62</span></p>
   </div>
   <button class="refresh-btn" onclick="refreshData()">↻ Refresh</button>
 </header>
@@ -460,7 +460,25 @@
     <div class="card" style="text-align:center;padding:24px 20px">
       <div style="font-size:15px;font-weight:700;margin-bottom:6px">Job Clean Up Checklist</div>
       <div style="font-size:13px;color:#A2A092;margin-bottom:16px">Log OpenSpace, materials cleaned, and leftover material for a completed job.</div>
-      <button class="btn btn-secondary" style="width:100%;padding:14px;font-size:15px;border-radius:12px" onclick="openCleanup()">Open Cleanup Form</button>
+      <button class="btn btn-secondary" style="width:100%;padding:14px;font-size:15px;border-radius:12px" onclick="openFormOverlay('cleanup-overlay')">Open Cleanup Form</button>
+    </div>
+
+    <div class="card" style="text-align:center;padding:24px 20px">
+      <div style="font-size:15px;font-weight:700;margin-bottom:6px">Reimbursement Form</div>
+      <div style="font-size:13px;color:#A2A092;margin-bottom:16px">Submit a reimbursement request.</div>
+      <button class="btn btn-secondary" style="width:100%;padding:14px;font-size:15px;border-radius:12px" onclick="openFormOverlay('reimbursement-overlay')">Open Reimbursement Form</button>
+    </div>
+
+    <div class="card" style="text-align:center;padding:24px 20px">
+      <div style="font-size:15px;font-weight:700;margin-bottom:6px">Company Credit Card</div>
+      <div style="font-size:13px;color:#A2A092;margin-bottom:16px">Log a company credit card charge.</div>
+      <button class="btn btn-secondary" style="width:100%;padding:14px;font-size:15px;border-radius:12px" onclick="openFormOverlay('creditcard-overlay')">Open CC Form</button>
+    </div>
+
+    <div class="card" style="text-align:center;padding:24px 20px">
+      <div style="font-size:15px;font-weight:700;margin-bottom:6px">Material Request</div>
+      <div style="font-size:13px;color:#A2A092;margin-bottom:16px">Submit a request for materials needed on a job.</div>
+      <button class="btn btn-secondary" style="width:100%;padding:14px;font-size:15px;border-radius:12px" onclick="openFormOverlay('materialrequest-overlay')">Open Material Request</button>
     </div>
   </div>
 
@@ -498,14 +516,7 @@
 
 </main>
 
-<!-- Cleanup iframe overlay -->
-<div class="cleanup-overlay" id="cleanup-overlay">
-  <div class="cleanup-header">
-    <h2>Job Clean Up Checklist</h2>
-    <button class="cleanup-close" onclick="closeCleanup()">Close</button>
-  </div>
-  <iframe id="cleanup-iframe" src="" allow="camera"></iframe>
-</div>
+
 
 <!-- Bottom Nav -->
 <nav class="bottom-nav">
@@ -557,21 +568,39 @@ var G = {
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', function() {
+  // If we have a cached email from a previous session, pass it directly —
+  // no Google re-auth needed. On a brand-new device/browser the cached email
+  // won't exist, so we call getConfig() with no argument and Google OAuth
+  // (deployment setting) verifies the user via Session.getActiveUser().
+  var cachedEmail = localStorage.getItem('panoramic_ops_email') || null;
+
   google.script.run
     .withSuccessHandler(function(cfg) {
       G.config    = cfg;
       G.role      = cfg.userRole  || 'runner';
       G.userEmail = cfg.userEmail || '';
+      // Persist for future loads
+      if (G.userEmail) {
+        localStorage.setItem('panoramic_ops_email', G.userEmail);
+        localStorage.setItem('panoramic_ops_role',  G.role);
+      }
       applyRole(G.role);
       fillSelects();
       loadData();
     })
     .withFailureHandler(function(e) {
-      showToast('Error:Could not load config');
+      showToast('Error: Could not load config');
       console.error(e);
     })
-    .getConfig();
+    .getConfig(cachedEmail);
 });
+
+function switchAccount() {
+  localStorage.removeItem('panoramic_ops_email');
+  localStorage.removeItem('panoramic_ops_role');
+  showToast('Signing out…');
+  setTimeout(function() { window.location.reload(); }, 800);
+}
 
 function fillSelects() {
   // vendor selects
@@ -639,8 +668,8 @@ function applyRole(role) {
   var labels = { admin:'Admin', office:'Office', site_manager:'Site Manager', runner:'Runner', accountant:'Accountant' };
   var headerP = document.querySelector('.app-header p');
   if (headerP && labels[role]) {
-    headerP.innerHTML = 'Panoramic Building <span style="font-size:10px;opacity:0.5">v54</span>' +
-      ' &nbsp;<span style="font-size:11px;background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:6px">' + labels[role] + '</span>';
+    headerP.innerHTML = 'Panoramic Building <span style="font-size:10px;opacity:0.5">v65</span>' +
+      ' &nbsp;<span onclick="switchAccount()" style="cursor:pointer;font-size:11px;background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:6px" title="Switch account">' + labels[role] + '</span>';
   }
 
   // Navigate to the correct default tab
@@ -1736,24 +1765,21 @@ function submitQuickStatus(newStatus) {
     .updatePO(rowIndex, { status: newStatus });
 }
 
-// ── Cleanup ───────────────────────────────────────────────────────────────────
-function openCleanup() {
-  if (!G.perms.canCleanup) { showToast("You don't have access to that."); return; }
-  var overlay = document.getElementById('cleanup-overlay');
-  var iframe  = document.getElementById('cleanup-iframe');
-  // Load form fresh each time so it's a clean blank form
-  if (!iframe.src || iframe.src === window.location.href) {
-    iframe.src = 'https://form.asana.com/?k=kiMhpmASAeEg_D4e631yjA&d=1208027938795761';
-  }
-  overlay.classList.add('open');
+// ── Form Overlays (Cleanup / Reimbursement / Credit Card / Material Request) ───
+var FORM_URLS = {
+  'cleanup-overlay':          'https://form.asana.com/?k=kiMhpmASAeEg_D4e631yjA&d=1208027938795761',
+  'reimbursement-overlay':    'https://form.asana.com/?k=_Klc2P6hcqrs1fOpBWIRWg&d=1208027938795761',
+  'creditcard-overlay':       'https://form.asana.com/?k=op5VV1qG1S8SQoAHCs6t1w&d=1208027938795761',
+  'materialrequest-overlay':  'https://form.asana.com/?k=2jXgnoyqZUuRb5rd2_S27w&d=1208027938795761'
+};
+
+function openFormOverlay(overlayId) {
+  var url = FORM_URLS[overlayId];
+  if (url) window.open(url, '_blank');
 }
 
-function closeCleanup() {
-  var overlay = document.getElementById('cleanup-overlay');
-  var iframe  = document.getElementById('cleanup-iframe');
-  overlay.classList.remove('open');
-  // Reset iframe so next open is a fresh form
-  iframe.src = '';
+function closeFormOverlay(overlayId) {
+  // No-op — kept so existing Close buttons don't error
 }
 
 // ── Contacts ──────────────────────────────────────────────────────────────────

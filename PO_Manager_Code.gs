@@ -179,16 +179,55 @@ function findPOByNumber(poNum) {
 }
 
 /**
- * Returns config (status/vendor lists) + current user's role.
+ * Returns config (status/vendor lists) + role.
+ *
+ * Called two ways:
+ *   getConfig()        — first-ever visit, Google OAuth deployment verifies user via Session
+ *   getConfig(email)   — returning visitor, email was cached in localStorage after first login
+ *
+ * Deploy the web app as "Anyone with Google account" so the first-ever call gets a real
+ * verified email from Session.getActiveUser(). After that, the cached email is used directly.
  */
-function getConfig() {
-  var roleData = getUserRole();
+function getConfig(email) {
+  var roleData;
+  if (email) {
+    roleData = getRoleByEmail(email);
+  } else {
+    // First visit — Google OAuth has already authenticated the user
+    var sessionEmail = Session.getActiveUser().getEmail();
+    roleData = getRoleByEmail(sessionEmail);
+  }
   return {
     statusOptions: STATUS_OPTIONS,
     vendorOptions: VENDOR_OPTIONS,
     userRole:      roleData.role,
     userEmail:     roleData.email
   };
+}
+
+/**
+ * Looks up a role by a caller-supplied email address.
+ * Returns { role, email }. Falls back to 'runner' if not found.
+ */
+function getRoleByEmail(email) {
+  try {
+    if (!email) return { role: 'runner', email: '' };
+    email = email.toLowerCase().trim();
+
+    var ss    = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(ROLES_SHEET);
+    if (!sheet) return { role: 'runner', email: email };
+
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      var rowEmail = (data[i][0] || '').toString().toLowerCase().trim();
+      var rowRole  = (data[i][1] || '').toString().toLowerCase().trim();
+      if (rowEmail === email) return { role: rowRole, email: email };
+    }
+    return { role: 'runner', email: email };
+  } catch(e) {
+    return { role: 'runner', email: email };
+  }
 }
 
 /**
