@@ -245,6 +245,38 @@
     .contact-key { min-width: 80px; font-size: 11px; font-weight: 700; color: #A2A092; text-transform: uppercase; letter-spacing: 0.4px; flex-shrink: 0; }
     .contact-field a { color: #1F3971; text-decoration: none; font-weight: 600; }
 
+    /* ── Login Screen ── */
+    .login-screen {
+      position: fixed; inset: 0; z-index: 400;
+      background: linear-gradient(135deg, #1F3971 0%, #2a4d96 100%);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 32px 24px;
+      padding-top: calc(32px + env(safe-area-inset-top));
+    }
+    .login-screen.hidden { display: none; }
+    .login-logo {
+      width: 72px; height: 72px;
+      background: rgba(255,255,255,0.15);
+      border-radius: 20px;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 24px;
+    }
+    .login-title { color: white; font-size: 26px; font-weight: 800; margin-bottom: 6px; }
+    .login-sub   { color: rgba(255,255,255,0.6); font-size: 15px; margin-bottom: 36px; }
+    .login-card  {
+      background: white; border-radius: 20px;
+      padding: 28px 24px; width: 100%; max-width: 380px;
+    }
+    .login-card label { font-size: 13px; font-weight: 700; color: #A2A092; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 8px; }
+    .login-card input { width: 100%; padding: 14px 16px; border: 2px solid #E8E8E8; border-radius: 12px; font-size: 16px; outline: none; box-sizing: border-box; }
+    .login-card input:focus { border-color: #1F3971; }
+    .login-field { margin-bottom: 16px; }
+    .login-error { color: #c62828; font-size: 13px; margin-top: 10px; display: none; }
+    .login-btn { width: 100%; margin-top: 4px; padding: 15px; background: #1F3971; color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 700; cursor: pointer; }
+    .login-btn:active { opacity: 0.85; }
+    .login-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
     /* ── Cleanup iframe modal ── */
     .cleanup-overlay {
       position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 300;
@@ -543,6 +575,34 @@
 
 </nav>
 
+<!-- Login Screen -->
+<div class="login-screen hidden" id="login-screen">
+  <div class="login-logo">
+    <svg width="40" height="40" viewBox="0 0 64 64" fill="none">
+      <path d="M16 24l16-8 16 8v16l-16 8-16-8V24z" stroke="white" stroke-width="2.5" stroke-linejoin="round"/>
+      <path d="M16 24l16 8 16-8M32 32v16" stroke="white" stroke-width="2.5" stroke-linejoin="round"/>
+    </svg>
+  </div>
+  <div class="login-title">Panoramic Ops</div>
+  <div class="login-sub">Sign in to continue</div>
+  <div class="login-card">
+    <div class="login-field">
+      <label>Email</label>
+      <input type="email" id="login-email" placeholder="you@example.com"
+             autocomplete="email" autocapitalize="none"
+             onkeydown="if(event.key==='Enter') document.getElementById('login-password').focus()">
+    </div>
+    <div class="login-field">
+      <label>Password</label>
+      <input type="password" id="login-password" placeholder="••••••••"
+             autocomplete="current-password"
+             onkeydown="if(event.key==='Enter') submitLogin()">
+    </div>
+    <div class="login-error" id="login-error"></div>
+    <button class="login-btn" id="login-btn" onclick="submitLogin()">Sign In</button>
+  </div>
+</div>
+
 <!-- ══════════════════ JAVASCRIPT ══════════════════ -->
 <script>
 // ── State ────────────────────────────────────────────────────────────────────
@@ -568,38 +628,101 @@ var G = {
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', function() {
-  // If we have a cached email from a previous session, pass it directly —
-  // no Google re-auth needed. On a brand-new device/browser the cached email
-  // won't exist, so we call getConfig() with no argument and Google OAuth
-  // (deployment setting) verifies the user via Session.getActiveUser().
-  var cachedEmail = localStorage.getItem('panoramic_ops_email') || null;
+  var cachedEmail = localStorage.getItem('panoramic_ops_email');
+  if (cachedEmail) {
+    // Returning user — boot directly from cached email, no password needed
+    bootWithEmail(cachedEmail);
+  } else {
+    // New device / signed out — show login screen
+    document.getElementById('login-screen').classList.remove('hidden');
+    setTimeout(function(){ document.getElementById('login-email').focus(); }, 300);
+  }
+});
 
+function bootWithEmail(email) {
   google.script.run
     .withSuccessHandler(function(cfg) {
       G.config    = cfg;
       G.role      = cfg.userRole  || 'runner';
-      G.userEmail = cfg.userEmail || '';
-      // Persist for future loads
-      if (G.userEmail) {
-        localStorage.setItem('panoramic_ops_email', G.userEmail);
-        localStorage.setItem('panoramic_ops_role',  G.role);
-      }
+      G.userEmail = cfg.userEmail || email;
       applyRole(G.role);
       fillSelects();
       loadData();
     })
     .withFailureHandler(function(e) {
-      showToast('Error: Could not load config');
+      // Cache may be stale — force re-login
+      localStorage.removeItem('panoramic_ops_email');
+      document.getElementById('login-screen').classList.remove('hidden');
+      showToast('Session expired. Please sign in again.');
       console.error(e);
     })
-    .getConfig(cachedEmail);
-});
+    .getConfig(email);
+}
+
+function submitLogin() {
+  var email    = (document.getElementById('login-email').value    || '').trim().toLowerCase();
+  var password = (document.getElementById('login-password').value || '').trim();
+  var errEl    = document.getElementById('login-error');
+  var btn      = document.getElementById('login-btn');
+
+  if (!email || !email.includes('@')) {
+    errEl.textContent = 'Enter a valid email address.';
+    errEl.style.display = 'block';
+    return;
+  }
+  if (!password) {
+    errEl.textContent = 'Enter your password.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Signing in…';
+  errEl.style.display = 'none';
+
+  // Safety timeout — reset button if server never responds (e.g. not redeployed yet)
+  var loginTimeout = setTimeout(function() {
+    btn.disabled = false;
+    btn.textContent = 'Sign In';
+    errEl.textContent = 'Request timed out. Make sure the app is deployed and try again.';
+    errEl.style.display = 'block';
+  }, 15000);
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      clearTimeout(loginTimeout);
+      btn.disabled = false;
+      btn.textContent = 'Sign In';
+      if (result.success) {
+        localStorage.setItem('panoramic_ops_email', result.email);
+        document.getElementById('login-screen').classList.add('hidden');
+        document.getElementById('login-password').value = '';
+        G.config    = { statusOptions: [], vendorOptions: [] };
+        bootWithEmail(result.email);
+      } else {
+        errEl.textContent = result.error || 'Sign in failed.';
+        errEl.style.display = 'block';
+        document.getElementById('login-password').focus();
+      }
+    })
+    .withFailureHandler(function(e) {
+      clearTimeout(loginTimeout);
+      btn.disabled = false;
+      btn.textContent = 'Sign In';
+      errEl.textContent = 'Could not connect. Try again.';
+      errEl.style.display = 'block';
+      console.error('verifyLogin failed:', e);
+    })
+    .verifyLogin(email, password);
+}
 
 function switchAccount() {
   localStorage.removeItem('panoramic_ops_email');
-  localStorage.removeItem('panoramic_ops_role');
-  showToast('Signing out…');
-  setTimeout(function() { window.location.reload(); }, 800);
+  document.getElementById('login-email').value    = '';
+  document.getElementById('login-password').value = '';
+  document.getElementById('login-error').style.display = 'none';
+  document.getElementById('login-screen').classList.remove('hidden');
+  setTimeout(function(){ document.getElementById('login-email').focus(); }, 300);
 }
 
 function fillSelects() {
@@ -668,7 +791,7 @@ function applyRole(role) {
   var labels = { admin:'Admin', office:'Office', site_manager:'Site Manager', runner:'Runner', accountant:'Accountant' };
   var headerP = document.querySelector('.app-header p');
   if (headerP && labels[role]) {
-    headerP.innerHTML = 'Panoramic Building <span style="font-size:10px;opacity:0.5">v65</span>' +
+    headerP.innerHTML = 'Panoramic Building <span style="font-size:10px;opacity:0.5">v66</span>' +
       ' &nbsp;<span onclick="switchAccount()" style="cursor:pointer;font-size:11px;background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:6px" title="Switch account">' + labels[role] + '</span>';
   }
 

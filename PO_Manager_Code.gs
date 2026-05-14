@@ -179,24 +179,44 @@ function findPOByNumber(poNum) {
 }
 
 /**
- * Returns config (status/vendor lists) + role.
- *
- * Called two ways:
- *   getConfig()        — first-ever visit, Google OAuth deployment verifies user via Session
- *   getConfig(email)   — returning visitor, email was cached in localStorage after first login
- *
- * Deploy the web app as "Anyone with Google account" so the first-ever call gets a real
- * verified email from Session.getActiveUser(). After that, the cached email is used directly.
+ * Verifies an email + password against the Roles sheet.
+ * Roles sheet columns: A = Email, B = Role, C = Password
+ * Returns { success, role, email, error }
+ */
+function verifyLogin(email, password) {
+  try {
+    if (!email || !password) return { success: false, error: 'Enter your email and password.' };
+    email = email.toLowerCase().trim();
+
+    var ss    = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(ROLES_SHEET);
+    if (!sheet) return { success: false, error: 'System error. Contact admin.' };
+
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      var rowEmail = (data[i][0] || '').toString().toLowerCase().trim();
+      var rowRole  = (data[i][1] || '').toString().toLowerCase().trim();
+      var rowPass  = (data[i][2] || '').toString().trim(); // Column C
+      if (rowEmail === email) {
+        if (rowPass && rowPass === password) {
+          return { success: true, role: rowRole, email: email };
+        } else {
+          return { success: false, error: 'Incorrect password.' };
+        }
+      }
+    }
+    return { success: false, error: 'Email not recognized. Contact your admin.' };
+  } catch(e) {
+    return { success: false, error: 'System error. Try again.' };
+  }
+}
+
+/**
+ * Returns config (status/vendor lists) + role for a cached/returning user.
+ * Only called after a successful verifyLogin() — email is trusted from localStorage.
  */
 function getConfig(email) {
-  var roleData;
-  if (email) {
-    roleData = getRoleByEmail(email);
-  } else {
-    // First visit — Google OAuth has already authenticated the user
-    var sessionEmail = Session.getActiveUser().getEmail();
-    roleData = getRoleByEmail(sessionEmail);
-  }
+  var roleData = getRoleByEmail(email || '');
   return {
     statusOptions: STATUS_OPTIONS,
     vendorOptions: VENDOR_OPTIONS,
