@@ -368,6 +368,9 @@
       <p>Loading POs…</p>
     </div>
     <div id="dash-content" style="display:none"></div>
+    <p style="text-align:center;font-size:12px;color:#A2A092;padding:12px 16px 20px;margin:0">
+      Please allow 24 hours for PO statuses to be updated.
+    </p>
   </div>
 
   <!-- ══ CREATE PO ══ -->
@@ -524,10 +527,11 @@
         <button class="search-clear" id="p-clear" onclick="clearSearch('p-input','p-clear'); runPricingSearch()">✕</button>
       </div>
     </div>
+    <div class="chip-row" id="p-cats" style="display:none"></div>
     <div id="p-loading" style="display:none">
       <div class="loading"><div class="spinner"></div><p>Loading prices…</p></div>
     </div>
-    <div id="p-results"><div class="empty">Start typing to search materials.</div></div>
+    <div id="p-results"><div class="empty">Select a category or search above.</div></div>
   </div>
 
   <!-- ══ CONTACTS ══ -->
@@ -617,7 +621,8 @@ var G = {
   userEmail:     '',
   perms:         { canDash:true, canCreate:true, canReceive:true, canSearch:true, canPricing:true, canEdit:true },
   pricing:       [],
-  pricingLoaded: false,
+  pricingLoaded:    false,
+  pricingCategory:  '',
   pricingIdx:    null,
   contacts:        [],
   contactsHeaders: [],
@@ -1634,6 +1639,7 @@ function loadPricing() {
       G.pricingLoaded = true;
       document.getElementById('p-loading').style.display = 'none';
       document.getElementById('p-results').style.display = 'block';
+      buildPricingCategoryChips();
       runPricingSearch();
     })
     .withFailureHandler(function() {
@@ -1644,29 +1650,58 @@ function loadPricing() {
     .getPricingData();
 }
 
+function buildPricingCategoryChips() {
+  var seen = {};
+  var cats = [];
+  G.pricing.forEach(function(item) {
+    var c = (item.category || '').trim();
+    if (c && !seen[c]) { seen[c] = true; cats.push(c); }
+  });
+  if (!cats.length) return;
+  cats.sort();
+
+  var html = '<button class="chip active" id="pcat-all" onclick="setPricingCategory(\'\',this)">All</button>';
+  cats.forEach(function(c) {
+    html += '<button class="chip" onclick="setPricingCategory(\'' + esc(c) + '\',this)">' + esc(c) + '</button>';
+  });
+  var el = document.getElementById('p-cats');
+  el.innerHTML = html;
+  el.style.display = 'flex';
+}
+
+function setPricingCategory(cat, btn) {
+  G.pricingCategory = cat;
+  document.querySelectorAll('#p-cats .chip').forEach(function(b){ b.classList.remove('active'); });
+  if (btn) btn.classList.add('active');
+  runPricingSearch();
+}
+
 function runPricingSearch() {
-  var q = (document.getElementById('p-input').value || '').toLowerCase().trim();
+  var q         = (document.getElementById('p-input').value || '').toLowerCase().trim();
+  var cat       = G.pricingCategory;
   var resultsEl = document.getElementById('p-results');
 
-  if (!q) {
-    resultsEl.innerHTML = '<div class="empty">Start typing to search materials.</div>';
+  // Nothing selected yet
+  if (!q && !cat) {
+    resultsEl.innerHTML = '<div class="empty">Select a category or search above.</div>';
     return;
   }
 
-  var tokens  = q.split(/\s+/).filter(Boolean);
+  var tokens  = q ? q.split(/\s+/).filter(Boolean) : [];
   var matches = G.pricing.filter(function(item) {
+    if (cat && (item.category || '').trim() !== cat) return false;
+    if (!tokens.length) return true;
     var text = (item.description + ' ' + item.category).toLowerCase();
     return tokens.every(function(t) { return text.includes(t); });
   });
 
   if (!matches.length) {
-    resultsEl.innerHTML = '<div class="empty">No materials match "' + esc(q) + '".</div>';
+    resultsEl.innerHTML = '<div class="empty">No materials match' + (cat ? ' in ' + esc(cat) : '') + (q ? ' "' + esc(q) + '"' : '') + '.</div>';
     return;
   }
 
   var h = '<p style="font-size:11px;color:#aaa;margin-bottom:8px">' + matches.length + ' result' + (matches.length !== 1 ? 's' : '') + '</p>';
-  matches.forEach(function(item, i) {
-    // Find the original index in G.pricing so the edit button targets the right row
+  matches.forEach(function(item) {
     var origIdx = G.pricing.indexOf(item);
     h += pricingCard(item, origIdx);
   });
