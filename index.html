@@ -340,7 +340,10 @@
     <h1>Panoramic Ops</h1>
     <p>Panoramic Building <span style="font-size:10px;opacity:0.5">v62</span></p>
   </div>
-  <button class="refresh-btn" onclick="refreshData()">↻ Refresh</button>
+  <div style="display:flex;gap:8px">
+    <button class="refresh-btn" onclick="forceUpdate()" style="background:rgba(255,255,255,0.15)">↑ Update</button>
+    <button class="refresh-btn" onclick="refreshData()">↻ Refresh</button>
+  </div>
 </header>
 
 <!-- Toast -->
@@ -895,6 +898,19 @@ function loadData() {
 }
 
 function refreshData() { loadData(); showToast('Refreshing…'); }
+
+function forceUpdate() {
+  showToast('Updating…');
+  var clearCaches = caches.keys().then(function(keys) {
+    return Promise.all(keys.map(function(k) { return caches.delete(k); }));
+  });
+  var unregister = ('serviceWorker' in navigator)
+    ? navigator.serviceWorker.getRegistration().then(function(reg) { return reg ? reg.unregister() : null; })
+    : Promise.resolve();
+  Promise.all([clearCaches, unregister]).then(function() {
+    window.location.reload(true);
+  });
+}
 
 // ── Role-Based Access ─────────────────────────────────────────────────────────
 function applyRole(role) {
