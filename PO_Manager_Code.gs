@@ -45,6 +45,41 @@ function doGet() {
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
+/**
+ * REST-style POST handler — replaces google.script.run for all client calls.
+ * Expects JSON body: { action: string, payload: object }
+ * Returns JSON via ContentService.
+ */
+function doPost(e) {
+  try {
+    var body    = JSON.parse(e.postData.contents);
+    var action  = body.action;
+    var payload = body.payload || {};
+    var result;
+
+    if      (action === 'getConfig')        result = getConfig(payload.email);
+    else if (action === 'verifyLogin')       result = verifyLogin(payload.email, payload.password);
+    else if (action === 'getSheetData')      result = getSheetData();
+    else if (action === 'createPO')          result = createPO(payload);
+    else if (action === 'updatePO')          result = updatePO(payload.rowIndex, payload.updates);
+    else if (action === 'findPOByNumber')    result = findPOByNumber(payload.poNum);
+    else if (action === 'savePhotoToDrive')  result = savePhotoToDrive(payload.base64Data, payload.mimeType, payload.filename);
+    else if (action === 'getPricingData')    result = getPricingData();
+    else if (action === 'updatePricing')     result = updatePricing(payload.rowIndex, payload.vendorPrices);
+    else if (action === 'getContacts')       result = getContacts();
+    else if (action === 'updateContact')     result = updateContact(payload.rowIndex, payload.values);
+    else                                     result = { error: 'Unknown action: ' + action };
+
+    return ContentService
+      .createTextOutput(JSON.stringify(result))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ error: err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
 // ─── Data Access ─────────────────────────────────────────────────────────────
 
 /**

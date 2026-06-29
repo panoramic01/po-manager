@@ -1,4 +1,4 @@
-var CACHE = 'po-manager-v2';
+var CACHE = 'po-manager-v3';
 var SHELL = ['/po-manager/', '/po-manager/index.html', '/po-manager/manifest.json', '/po-manager/icon-192.png', '/po-manager/icon-512.png', '/po-manager/apple-touch-icon.png'];
 
 self.addEventListener('install', function(e) {
@@ -7,7 +7,13 @@ self.addEventListener('install', function(e) {
 });
 
 self.addEventListener('activate', function(e) {
-  e.waitUntil(clients.claim());
+  e.waitUntil(
+    caches.keys().then(function(keys) {
+      return Promise.all(
+        keys.filter(function(k) { return k !== CACHE; }).map(function(k) { return caches.delete(k); })
+      );
+    }).then(function() { return clients.claim(); })
+  );
 });
 
 // Fetch handler — required for Chrome PWA installability

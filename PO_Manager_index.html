@@ -680,6 +680,23 @@ var G = {
   sort:            'newest'
 };
 
+// ── GAS endpoint (fetch() replaces google.script.run) ────────────────────────
+var GAS_URL = 'https://script.google.com/macros/s/AKfycbwvX4xv5kDofWEldpSRJP8O2yeVVgMcYVQsgtKmuFyKBZWTj0vfhFIIZAJp2UQob_XJ-Q/exec';
+
+function gasCall(action, payload, onSuccess, onFailure) {
+  fetch(GAS_URL, {
+    method: 'POST',
+    body: JSON.stringify({ action: action, payload: payload || {} }),
+    redirect: 'follow'
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) { if (onSuccess) onSuccess(data); })
+  .catch(function(err) {
+    console.error('gasCall [' + action + '] error:', err);
+    if (onFailure) onFailure(err);
+  });
+}
+
 // ── Boot ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', function() {
   var cachedEmail = localStorage.getItem('panoramic_ops_email');
@@ -705,26 +722,23 @@ function showLoginScreen(msg) {
 }
 
 function bootWithEmail(email) {
-  google.script.run
-    .withSuccessHandler(function(cfg) {
-      try {
-        if (!cfg) throw new Error('No config returned');
-        G.config    = cfg;
-        G.role      = cfg.userRole  || 'runner';
-        G.userEmail = cfg.userEmail || email;
-        applyRole(G.role);
-        fillSelects();
-        loadData();
-      } catch(e) {
-        console.error('Boot error:', e);
-        showLoginScreen('Something went wrong. Please sign in again.');
-      }
-    })
-    .withFailureHandler(function(e) {
-      console.error('getConfig failed:', e);
-      showLoginScreen('Could not connect. Please sign in again.');
-    })
-    .getConfig(email);
+  gasCall('getConfig', { email: email }, function(cfg) {
+    try {
+      if (!cfg) throw new Error('No config returned');
+      G.config    = cfg;
+      G.role      = cfg.userRole  || 'runner';
+      G.userEmail = cfg.userEmail || email;
+      applyRole(G.role);
+      fillSelects();
+      loadData();
+    } catch(e) {
+      console.error('Boot error:', e);
+      showLoginScreen('Something went wrong. Please sign in again.');
+    }
+  }, function(e) {
+    console.error('getConfig failed:', e);
+    showLoginScreen('Could not connect. Please sign in again.');
+  });
 }
 
 function submitLogin() {
@@ -756,32 +770,29 @@ function submitLogin() {
     errEl.style.display = 'block';
   }, 15000);
 
-  google.script.run
-    .withSuccessHandler(function(result) {
-      clearTimeout(loginTimeout);
-      btn.disabled = false;
-      btn.textContent = 'Sign In';
-      if (result.success) {
-        localStorage.setItem('panoramic_ops_email', result.email);
-        document.getElementById('login-screen').classList.add('hidden');
-        document.getElementById('login-password').value = '';
-        G.config    = { statusOptions: [], vendorOptions: [] };
-        bootWithEmail(result.email);
-      } else {
-        errEl.textContent = result.error || 'Sign in failed.';
-        errEl.style.display = 'block';
-        document.getElementById('login-password').focus();
-      }
-    })
-    .withFailureHandler(function(e) {
-      clearTimeout(loginTimeout);
-      btn.disabled = false;
-      btn.textContent = 'Sign In';
-      errEl.textContent = 'Could not connect. Try again.';
+  gasCall('verifyLogin', { email: email, password: password }, function(result) {
+    clearTimeout(loginTimeout);
+    btn.disabled = false;
+    btn.textContent = 'Sign In';
+    if (result.success) {
+      localStorage.setItem('panoramic_ops_email', result.email);
+      document.getElementById('login-screen').classList.add('hidden');
+      document.getElementById('login-password').value = '';
+      G.config    = { statusOptions: [], vendorOptions: [] };
+      bootWithEmail(result.email);
+    } else {
+      errEl.textContent = result.error || 'Sign in failed.';
       errEl.style.display = 'block';
-      console.error('verifyLogin failed:', e);
-    })
-    .verifyLogin(email, password);
+      document.getElementById('login-password').focus();
+    }
+  }, function(e) {
+    clearTimeout(loginTimeout);
+    btn.disabled = false;
+    btn.textContent = 'Sign In';
+    errEl.textContent = 'Could not connect. Try again.';
+    errEl.style.display = 'block';
+    console.error('verifyLogin failed:', e);
+  });
 }
 
 function switchAccount() {
@@ -818,20 +829,17 @@ function loadData() {
   document.getElementById('dash-loading').style.display = 'block';
   document.getElementById('dash-content').style.display  = 'none';
 
-  google.script.run
-    .withSuccessHandler(function(pos) {
-      G.pos = pos || [];
-      renderDashboard();
-      runSearch();
-      document.getElementById('dash-loading').style.display = 'none';
-      document.getElementById('dash-content').style.display  = 'block';
-    })
-    .withFailureHandler(function(e) {
-      document.getElementById('dash-loading').innerHTML =
-        '<p style="color:#c62828;font-size:14px">Error loading data.<br>Please refresh.</p>';
-      console.error(e);
-    })
-    .getSheetData();
+  gasCall('getSheetData', {}, function(pos) {
+    G.pos = pos || [];
+    renderDashboard();
+    runSearch();
+    document.getElementById('dash-loading').style.display = 'none';
+    document.getElementById('dash-content').style.display  = 'block';
+  }, function(e) {
+    document.getElementById('dash-loading').innerHTML =
+      '<p style="color:#c62828;font-size:14px">Error loading data.<br>Please refresh.</p>';
+    console.error(e);
+  });
 }
 
 function refreshData() { loadData(); showToast('Refreshing…'); }
@@ -1169,33 +1177,30 @@ function submitCreate() {
 
   setBtnState('create-btn', 'Creating…', true);
 
-  google.script.run
-    .withSuccessHandler(function(res) {
-      setBtnState('create-btn', 'Create PO', false);
-      if (res.success) {
-        clearCreate();
-        loadData();
-        // Show success screen with PO number
-        document.getElementById('success-po-num').textContent = res.poNumber;
-        document.getElementById('create-form-card').style.display    = 'none';
-        document.getElementById('create-success-card').style.display = 'block';
-      } else {
-        showToast('Error:' + res.error);
-      }
-    })
-    .withFailureHandler(function() {
-      setBtnState('create-btn', 'Create PO', false);
-      showToast('Error:Error creating PO');
-    })
-    .createPO({
-      builder:       trim('c-builder'),
-      jobRef:        job,
-      vendor:        vendor, // already resolved via getVendorValue
-      vendorInvoice: trim('c-invoice'),
-      status:        getVendorValue('c-status', 'c-status-other'),
-      invoiceTotal:  val('c-total'),
-      notes:         trim('c-notes')
-    });
+  gasCall('createPO', {
+    builder:       trim('c-builder'),
+    jobRef:        job,
+    vendor:        vendor,
+    vendorInvoice: trim('c-invoice'),
+    status:        getVendorValue('c-status', 'c-status-other'),
+    invoiceTotal:  val('c-total'),
+    notes:         trim('c-notes')
+  }, function(res) {
+    setBtnState('create-btn', 'Create PO', false);
+    if (res.success) {
+      clearCreate();
+      loadData();
+      // Show success screen with PO number
+      document.getElementById('success-po-num').textContent = res.poNumber;
+      document.getElementById('create-form-card').style.display    = 'none';
+      document.getElementById('create-success-card').style.display = 'block';
+    } else {
+      showToast('Error:' + res.error);
+    }
+  }, function() {
+    setBtnState('create-btn', 'Create PO', false);
+    showToast('Error:Error creating PO');
+  });
 }
 
 function clearCreate() {
@@ -1222,12 +1227,9 @@ function lookupPO() {
   if (found) {
     showReceiveInfo(found);
   } else {
-    google.script.run
-      .withSuccessHandler(function(p) {
-        p ? showReceiveInfo(p) : showToast('PO '+poNum+' not found');
-      })
-      .withFailureHandler(function(){ showToast('Error:Lookup failed'); })
-      .findPOByNumber(poNum);
+    gasCall('findPOByNumber', { poNum: poNum }, function(p) {
+      p ? showReceiveInfo(p) : showToast('PO '+poNum+' not found');
+    }, function(){ showToast('Error:Lookup failed'); });
   }
 }
 
@@ -1256,28 +1258,28 @@ function submitReceive() {
 
   setBtnState('receive-btn', 'Saving…', true);
 
-  google.script.run
-    .withSuccessHandler(function(res) {
-      setBtnState('receive-btn', '✓ Update PO', false);
-      if (res.success) {
-        showToast('' + G.receivePO.poNum + ' updated!');
-        document.getElementById('r-ponum').value = '';
-        document.getElementById('r-info').style.display = 'none';
-        G.receivePO = null;
-        loadData();
-      } else {
-        showToast('Error:' + res.error);
-      }
-    })
-    .withFailureHandler(function() {
-      setBtnState('receive-btn', '✓ Update PO', false);
-      showToast('Error:Error updating PO');
-    })
-    .updatePO(G.receivePO.rowIndex, {
+  gasCall('updatePO', {
+    rowIndex: G.receivePO.rowIndex,
+    updates: {
       status:       'Ready to Reconcile',
       receivedNote: trim('r-note'),
       notes:        trim('r-notes') || G.receivePO.notes
-    });
+    }
+  }, function(res) {
+    setBtnState('receive-btn', '✓ Update PO', false);
+    if (res.success) {
+      showToast('' + G.receivePO.poNum + ' updated!');
+      document.getElementById('r-ponum').value = '';
+      document.getElementById('r-info').style.display = 'none';
+      G.receivePO = null;
+      loadData();
+    } else {
+      showToast('Error:' + res.error);
+    }
+  }, function() {
+    setBtnState('receive-btn', '✓ Update PO', false);
+    showToast('Error:Error updating PO');
+  });
 }
 
 // ── Search ───────────────────────────────────────────────────────────────────
@@ -1450,18 +1452,9 @@ function maybeCloseModal(e) { if (e.target===document.getElementById('edit-modal
 function submitEdit() {
   if (!G.editRow) return;
 
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (res.success) {
-        closeEdit();
-        showToast('PO updated!');
-        loadData();
-      } else {
-        showToast('Error:' + (res.error||'Save failed'));
-      }
-    })
-    .withFailureHandler(function(){ showToast('Error:Error saving changes'); })
-    .updatePO(G.editRow, {
+  gasCall('updatePO', {
+    rowIndex: G.editRow,
+    updates: {
       builder:       trim('e-builder'),
       jobRef:        trim('e-job'),
       vendor:        getVendorValue('e-vendor', 'e-vendor-other'),
@@ -1471,7 +1464,16 @@ function submitEdit() {
       deliveryDate:  fromInputDate(trim('e-date')),
       issuedPO:      trim('e-issued'),
       notes:         trim('e-notes')
-    });
+    }
+  }, function(res) {
+    if (res.success) {
+      closeEdit();
+      showToast('PO updated!');
+      loadData();
+    } else {
+      showToast('Error:' + (res.error||'Save failed'));
+    }
+  }, function(){ showToast('Error:Error saving changes'); });
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
@@ -1580,22 +1582,19 @@ function handlePhoto(input) {
       animateBar();
       setPhotoStatus('Uploading…', 'uploading');
 
-      google.script.run
-        .withSuccessHandler(function(res) {
-          stopBar();
-          if (res.success) {
-            document.getElementById('r-note').value = res.url;
-            setPhotoStatus('Photo uploaded to Drive', 'done');
-          } else {
-            setPhotoStatus('Upload failed:' + res.error, 'error');
-          }
-        })
-        .withFailureHandler(function(err) {
-          stopBar();
-          setPhotoStatus('Upload error — check connection', 'error');
-          console.error(err);
-        })
-        .savePhotoToDrive(base64, mimeType, filename);
+      gasCall('savePhotoToDrive', { base64Data: base64, mimeType: mimeType, filename: filename }, function(res) {
+        stopBar();
+        if (res.success) {
+          document.getElementById('r-note').value = res.url;
+          setPhotoStatus('Photo uploaded to Drive', 'done');
+        } else {
+          setPhotoStatus('Upload failed:' + res.error, 'error');
+        }
+      }, function(err) {
+        stopBar();
+        setPhotoStatus('Upload error — check connection', 'error');
+        console.error(err);
+      });
     };
     img.src = e.target.result;
   };
@@ -1624,22 +1623,19 @@ function handleIssuedFile(input) {
     var dataUrl = e.target.result;
 
     function uploadBase64(b64, mime) {
-      google.script.run
-        .withSuccessHandler(function(res) {
-          if (res.success) {
-            document.getElementById('e-issued').value = res.url;
-            statusEl.textContent = 'Uploaded — link filled in above';
-            statusEl.className   = 'photo-status done';
-          } else {
-            statusEl.textContent = 'Upload failed:' + res.error;
-            statusEl.className   = 'photo-status error';
-          }
-        })
-        .withFailureHandler(function(err) {
-          statusEl.textContent = 'Upload error — check connection';
+      gasCall('savePhotoToDrive', { base64Data: b64, mimeType: mime, filename: filename }, function(res) {
+        if (res.success) {
+          document.getElementById('e-issued').value = res.url;
+          statusEl.textContent = 'Uploaded — link filled in above';
+          statusEl.className   = 'photo-status done';
+        } else {
+          statusEl.textContent = 'Upload failed:' + res.error;
           statusEl.className   = 'photo-status error';
-        })
-        .savePhotoToDrive(b64, mime, filename);
+        }
+      }, function(err) {
+        statusEl.textContent = 'Upload error — check connection';
+        statusEl.className   = 'photo-status error';
+      });
     }
 
     // Images: compress via canvas first; everything else (PDF etc) upload raw
@@ -1705,26 +1701,23 @@ function loadPricing() {
   document.getElementById('p-loading').style.display = 'block';
   document.getElementById('p-results').style.display = 'none';
 
-  google.script.run
-    .withSuccessHandler(function(result) {
-      G.pricing        = (result && result.items)   ? result.items   : [];
-      G.pricingVendors = (result && result.vendors) ? result.vendors : [];
-      G.pricingLoaded  = true;
-      document.getElementById('p-loading').style.display = 'none';
-      document.getElementById('p-results').style.display = 'block';
-      if (result && result.lastUpdated) {
-        var el = document.getElementById('p-last-updated');
-        if (el) el.textContent = 'Last updated ' + result.lastUpdated;
-      }
-      buildPricingCategoryChips();
-      runPricingSearch();
-    })
-    .withFailureHandler(function() {
-      document.getElementById('p-loading').style.display = 'none';
-      document.getElementById('p-results').innerHTML = '<div class="empty">Could not load pricing data.</div>';
-      document.getElementById('p-results').style.display = 'block';
-    })
-    .getPricingData();
+  gasCall('getPricingData', {}, function(result) {
+    G.pricing        = (result && result.items)   ? result.items   : [];
+    G.pricingVendors = (result && result.vendors) ? result.vendors : [];
+    G.pricingLoaded  = true;
+    document.getElementById('p-loading').style.display = 'none';
+    document.getElementById('p-results').style.display = 'block';
+    if (result && result.lastUpdated) {
+      var el = document.getElementById('p-last-updated');
+      if (el) el.textContent = 'Last updated ' + result.lastUpdated;
+    }
+    buildPricingCategoryChips();
+    runPricingSearch();
+  }, function() {
+    document.getElementById('p-loading').style.display = 'none';
+    document.getElementById('p-results').innerHTML = '<div class="empty">Could not load pricing data.</div>';
+    document.getElementById('p-results').style.display = 'block';
+  });
 }
 
 function buildPricingCategoryChips() {
@@ -1861,30 +1854,27 @@ function submitPricingEdit() {
   var saveBtn = document.querySelector('#edit-modal-body .btn-primary');
   if (saveBtn) { saveBtn.textContent = 'Saving…'; saveBtn.disabled = true; }
 
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (res.success) {
-        // Update local cache
-        var item = G.pricing[G.pricingIdx];
-        vendors.forEach(function(v) {
-          var p = parseFloat(vendorPrices[v]);
-          if (!isNaN(p) && p > 0) { item.prices[v] = p; }
-          else { delete item.prices[v]; }
-        });
-        item.bestPrice = res.bestPrice || 0;
-        closeEdit();
-        showToast('Prices updated!');
-        runPricingSearch();
-      } else {
-        showToast('Error:' + (res.error || 'Save failed'));
-        if (saveBtn) { saveBtn.textContent = 'Save Prices'; saveBtn.disabled = false; }
-      }
-    })
-    .withFailureHandler(function() {
-      showToast('Error:Error saving prices');
+  gasCall('updatePricing', { rowIndex: G.editRow, vendorPrices: vendorPrices }, function(res) {
+    if (res.success) {
+      // Update local cache
+      var item = G.pricing[G.pricingIdx];
+      vendors.forEach(function(v) {
+        var p = parseFloat(vendorPrices[v]);
+        if (!isNaN(p) && p > 0) { item.prices[v] = p; }
+        else { delete item.prices[v]; }
+      });
+      item.bestPrice = res.bestPrice || 0;
+      closeEdit();
+      showToast('Prices updated!');
+      runPricingSearch();
+    } else {
+      showToast('Error:' + (res.error || 'Save failed'));
       if (saveBtn) { saveBtn.textContent = 'Save Prices'; saveBtn.disabled = false; }
-    })
-    .updatePricing(G.editRow, vendorPrices);
+    }
+  }, function() {
+    showToast('Error:Error saving prices');
+    if (saveBtn) { saveBtn.textContent = 'Save Prices'; saveBtn.disabled = false; }
+  });
 }
 
 // ── Reset photo UI whenever the user looks up a new PO
@@ -1995,9 +1985,9 @@ function submitQuickStatus(newStatus) {
   renderDashboard();
   runSearch();
 
-  google.script.run
-    .withFailureHandler(function() { showToast('Error:Error saving status — refresh to sync'); })
-    .updatePO(rowIndex, { status: newStatus });
+  gasCall('updatePO', { rowIndex: rowIndex, updates: { status: newStatus } }, null, function() {
+    showToast('Error:Error saving status — refresh to sync');
+  });
 }
 
 // ── Form Overlays (Cleanup / Reimbursement / Credit Card / Material Request) ───
@@ -2024,21 +2014,18 @@ function loadContacts() {
   document.getElementById('ct-loading').style.display = 'block';
   document.getElementById('ct-results').style.display = 'none';
 
-  google.script.run
-    .withSuccessHandler(function(data) {
-      G.contacts        = data.contacts || [];
-      G.contactsHeaders = data.headers  || [];
-      G.contactsLoaded  = true;
-      document.getElementById('ct-loading').style.display = 'none';
-      document.getElementById('ct-results').style.display = 'block';
-      runContactSearch();
-    })
-    .withFailureHandler(function() {
-      document.getElementById('ct-loading').style.display = 'none';
-      document.getElementById('ct-results').innerHTML = '<div class="empty">⚠️ Could not load contacts.</div>';
-      document.getElementById('ct-results').style.display = 'block';
-    })
-    .getContacts();
+  gasCall('getContacts', {}, function(data) {
+    G.contacts        = data.contacts || [];
+    G.contactsHeaders = data.headers  || [];
+    G.contactsLoaded  = true;
+    document.getElementById('ct-loading').style.display = 'none';
+    document.getElementById('ct-results').style.display = 'block';
+    runContactSearch();
+  }, function() {
+    document.getElementById('ct-loading').style.display = 'none';
+    document.getElementById('ct-results').innerHTML = '<div class="empty">⚠️ Could not load contacts.</div>';
+    document.getElementById('ct-results').style.display = 'block';
+  });
 }
 
 function runContactSearch() {
@@ -2138,24 +2125,21 @@ function submitContactEdit() {
   var btn = document.getElementById('contact-save-btn');
   if (btn) { btn.textContent = 'Saving…'; btn.disabled = true; }
 
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (res.success) {
-        // Update local cache
-        G.contactsHeaders.forEach(function(h) { if (values[h] !== undefined) c[h] = values[h]; });
-        closeEdit();
-        showToast('Contact updated!');
-        runContactSearch();
-      } else {
-        showToast('Error:' + (res.error || 'Save failed'));
-        if (btn) { btn.textContent = 'Save'; btn.disabled = false; }
-      }
-    })
-    .withFailureHandler(function() {
-      showToast('Error:Error saving contact');
+  gasCall('updateContact', { rowIndex: c._rowIndex, values: values }, function(res) {
+    if (res.success) {
+      // Update local cache
+      G.contactsHeaders.forEach(function(h) { if (values[h] !== undefined) c[h] = values[h]; });
+      closeEdit();
+      showToast('Contact updated!');
+      runContactSearch();
+    } else {
+      showToast('Error:' + (res.error || 'Save failed'));
       if (btn) { btn.textContent = 'Save'; btn.disabled = false; }
-    })
-    .updateContact(c._rowIndex, values);
+    }
+  }, function() {
+    showToast('Error:Error saving contact');
+    if (btn) { btn.textContent = 'Save'; btn.disabled = false; }
+  });
 }
 
 // ── Swipe to Receive ──────────────────────────────────────────────────────────
