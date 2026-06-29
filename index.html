@@ -338,7 +338,7 @@
 <header class="app-header">
   <div>
     <h1>Panoramic Ops</h1>
-    <p>Panoramic Building <span style="font-size:10px;opacity:0.5">v62</span></p>
+    <p>Panoramic Building <span style="font-size:10px;opacity:0.5">v10.2</span></p>
   </div>
   <div style="display:flex;gap:8px">
     <button class="refresh-btn" onclick="forceUpdate()" style="background:rgba(255,255,255,0.15)">↑ Update</button>
@@ -954,7 +954,7 @@ function applyRole(role) {
   var labels = { admin:'Admin', office:'Office', site_manager:'Site Manager', runner:'Runner', accountant:'Accountant' };
   var headerP = document.querySelector('.app-header p');
   if (headerP && labels[role]) {
-    headerP.innerHTML = 'Panoramic Building <span style="font-size:10px;opacity:0.5">v67</span>' +
+    headerP.innerHTML = 'Panoramic Building <span style="font-size:10px;opacity:0.5">v10.2</span>' +
       ' &nbsp;<span onclick="switchAccount()" style="cursor:pointer;font-size:11px;background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:6px" title="Switch account">' + labels[role] + '</span>';
   }
 
