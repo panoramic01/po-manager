@@ -706,10 +706,12 @@ var JOKES = [
 })();
 function hideSplash() {
   var s = document.getElementById('splash');
-  if (!s) return;
+  if (!s || s.style.display === 'none') return;
   s.style.opacity = '0';
   setTimeout(function() { s.style.display = 'none'; }, 300);
 }
+// Safety net — hide splash after 8s no matter what
+setTimeout(hideSplash, 8000);
 
 // ── State ────────────────────────────────────────────────────────────────────
 var G = {
@@ -759,6 +761,7 @@ document.addEventListener('DOMContentLoaded', function() {
     bootWithEmail(cachedEmail);
   } else {
     // New device / signed out — show login screen
+    hideSplash();
     document.getElementById('login-screen').classList.remove('hidden');
     setTimeout(function(){ document.getElementById('login-email').focus(); }, 300);
   }
