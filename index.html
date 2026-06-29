@@ -704,9 +704,12 @@ var JOKES = [
   var el = document.getElementById('splash-joke');
   if (el) el.textContent = JOKES[Math.floor(Math.random() * JOKES.length)];
 })();
+var _splashHidden = false;
 function hideSplash() {
+  if (_splashHidden) return;
+  _splashHidden = true;
   var s = document.getElementById('splash');
-  if (!s || s.style.display === 'none') return;
+  if (!s) return;
   s.style.opacity = '0';
   setTimeout(function() { s.style.display = 'none'; }, 300);
 }
@@ -2266,4 +2269,5 @@ function submitContactEdit() {
   });
 })();
 </script>
-</b
+</body>
+</html>

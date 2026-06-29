@@ -323,13 +323,27 @@
 </head>
 <body>
 
+<!-- Splash Screen -->
+<div id="splash" style="position:fixed;inset:0;background:#1F3971;z-index:500;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:32px;text-align:center;transition:opacity 0.3s">
+  <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:64px;height:64px;flex-shrink:0">
+    <rect width="64" height="64" rx="16" fill="white" fill-opacity="0.15"/>
+    <path d="M16 24l16-8 16 8v16l-16 8-16-8V24z" stroke="white" stroke-width="2.5" stroke-linejoin="round"/>
+    <path d="M16 24l16 8 16-8M32 32v16" stroke="white" stroke-width="2.5" stroke-linejoin="round"/>
+  </svg>
+  <div id="splash-joke" style="color:rgba(255,255,255,0.9);font-family:-apple-system,sans-serif;font-size:16px;font-weight:600;line-height:1.45;max-width:300px">Loading Panoramic Ops…</div>
+  <div style="color:rgba(255,255,255,0.55);font-family:-apple-system,sans-serif;font-size:15px">Loading…</div>
+</div>
+
 <!-- Header -->
 <header class="app-header">
   <div>
     <h1>Panoramic Ops</h1>
     <p>Panoramic Building <span style="font-size:10px;opacity:0.5">v62</span></p>
   </div>
-  <button class="refresh-btn" onclick="refreshData()">↻ Refresh</button>
+  <div style="display:flex;gap:8px">
+    <button class="refresh-btn" onclick="forceUpdate()" style="background:rgba(255,255,255,0.15)">↑ Update</button>
+    <button class="refresh-btn" onclick="refreshData()">↻ Refresh</button>
+  </div>
 </header>
 
 <!-- Toast -->
@@ -567,37 +581,6 @@
     <div id="ct-results"><div class="empty">Loading contacts…</div></div>
   </div>
 
-  <!-- ══ ADMIN ══ -->
-  <div class="tab" id="tab-admin">
-
-    <!-- Statement Reconcile Card -->
-    <div class="card">
-      <div class="card-title">Statement Reconcile</div>
-      <p style="font-size:14px;color:#8A887E;margin-bottom:18px;line-height:1.5">
-        Paste invoice numbers from a vendor statement to see which ones are missing from the PO database.
-      </p>
-      <div class="form-group">
-        <label class="form-label">Vendor</label>
-        <select class="form-control" id="recon-vendor">
-          <option value="">— All Vendors —</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Invoice Numbers</label>
-        <textarea class="form-control" id="recon-invoices" rows="7"
-          placeholder="Paste invoice numbers here, one per line or comma-separated&#10;&#10;34761&#10;34791&#10;34830&#10;..."></textarea>
-      </div>
-      <button class="btn btn-primary" id="recon-btn" onclick="runReconcile()">Check Against Database</button>
-    </div>
-
-    <!-- Reconcile Results -->
-    <div id="recon-results" style="display:none">
-      <div id="recon-summary-bar" style="background:#1F3971;color:white;border-radius:12px;padding:14px 18px;margin-bottom:14px;font-size:14px;font-weight:700;display:flex;justify-content:space-between"></div>
-      <div id="recon-missing-section"></div>
-      <div id="recon-found-section"></div>
-    </div>
-
-  </div>
 
 </main>
 
@@ -624,10 +607,6 @@
   <button id="nav-contacts" class="nav-btn" onclick="showTab('contacts',this)">
     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
     Contacts
-  </button>
-  <button id="nav-admin" class="nav-btn" onclick="showTab('admin',this)" style="display:none">
-    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>
-    Admin
   </button>
 
 </nav>
@@ -662,7 +641,80 @@
 
 <!-- ══════════════════ JAVASCRIPT ══════════════════ -->
 <script>
-if ('serviceWorker' in navigator) { navigator.serviceWorker.register('./sw.js'); }
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js');
+  navigator.serviceWorker.addEventListener('message', function(e) {
+    if (e.data && e.data.type === 'SW_UPDATED') window.location.reload();
+  });
+}
+
+// ── Splash ───────────────────────────────────────────────────────────────────
+var JOKES = [
+  "I told my wife she was drawing her eyebrows too high. She looked surprised.",
+  "I used to be a banker, but I lost interest.",
+  "Why don't skeletons fight each other? They don't have the guts.",
+  "I'm on a seafood diet. I see food and I eat it.",
+  "What do you call a fish without eyes? A fsh.",
+  "I asked the librarian if they had books about paranoia. She whispered, 'They're right behind you.'",
+  "Why did the math book look so sad? Because it had too many problems.",
+  "I told my doctor I broke my arm in two places. He told me to stop going to those places.",
+  "What do you call a bear with no teeth? A gummy bear.",
+  "I used to hate facial hair, but then it grew on me.",
+  "Why can't you give Elsa a balloon? Because she'll let it go.",
+  "I'm reading a book about anti-gravity. It's impossible to put down.",
+  "Did you hear about the guy who invented Lifesavers? He made a mint.",
+  "Why did the bicycle fall over? It was two-tired.",
+  "I would tell a construction joke, but I'm still working on it.",
+  "What do you call cheese that isn't yours? Nacho cheese.",
+  "Why don't scientists trust atoms? Because they make up everything.",
+  "I couldn't figure out why the baseball kept getting bigger. Then it hit me.",
+  "What do you call a sleeping dinosaur? A dino-snore.",
+  "Why did the scarecrow win an award? Because he was outstanding in his field.",
+  "I have a joke about paper, but it's tearable.",
+  "What do you call a factory that makes okay products? A satisfactory.",
+  "Why do cows wear bells? Because their horns don't work.",
+  "I tried to catch some fog earlier. I mist.",
+  "Why don't eggs tell jokes? They'd crack each other up.",
+  "What do you call a man with a rubber toe? Roberto.",
+  "I only know 25 letters of the alphabet. I don't know y.",
+  "Did you hear about the claustrophobic astronaut? He just needed a little space.",
+  "Why did the coffee file a police report? It got mugged.",
+  "I'm afraid for the calendar. Its days are numbered.",
+  "What do you call an alligator in a vest? An investigator.",
+  "Why did the golfer bring extra pants? In case he got a hole in one.",
+  "I used to play piano by ear, but now I use my hands.",
+  "What's a skeleton's least favorite room? The living room.",
+  "Why can't a nose be 12 inches long? Because then it would be a foot.",
+  "What do you call a pile of cats? A meow-ntain.",
+  "What do lawyers wear to court? Lawsuits.",
+  "I asked my dog what two minus two is. He said nothing.",
+  "Why do bees hum? Because they don't know the words.",
+  "I got fired from the calendar factory. All I did was take a day off.",
+  "What's brown and sticky? A stick.",
+  "I used to be addicted to soap, but I'm clean now.",
+  "I have a joke about a roof. It's on the house.",
+  "What did the janitor say when he jumped out of the closet? Supplies!",
+  "Why do fish swim in salt water? Pepper makes them sneeze.",
+  "I couldn't figure out how to put my seatbelt on. Then it clicked.",
+  "I used to think I was indecisive. Now I'm not so sure.",
+  "What do you call a pig that does karate? A pork chop.",
+  "I used to hate maths but then I realized decimals have a point."
+];
+(function() {
+  var el = document.getElementById('splash-joke');
+  if (el) el.textContent = JOKES[Math.floor(Math.random() * JOKES.length)];
+})();
+var _splashHidden = false;
+function hideSplash() {
+  if (_splashHidden) return;
+  _splashHidden = true;
+  var s = document.getElementById('splash');
+  if (!s) return;
+  s.style.opacity = '0';
+  setTimeout(function() { s.style.display = 'none'; }, 300);
+}
+// Safety net — hide splash after 8s no matter what
+setTimeout(hideSplash, 8000);
 
 // ── State ────────────────────────────────────────────────────────────────────
 var G = {
@@ -712,12 +764,14 @@ document.addEventListener('DOMContentLoaded', function() {
     bootWithEmail(cachedEmail);
   } else {
     // New device / signed out — show login screen
+    hideSplash();
     document.getElementById('login-screen').classList.remove('hidden');
     setTimeout(function(){ document.getElementById('login-email').focus(); }, 300);
   }
 });
 
 function showLoginScreen(msg) {
+  hideSplash();
   localStorage.removeItem('panoramic_ops_email');
   var ls = document.getElementById('login-screen');
   if (ls) ls.classList.remove('hidden');
@@ -851,8 +905,27 @@ function loadData() {
 
 function refreshData() { loadData(); showToast('Refreshing…'); }
 
+function forceUpdate() {
+  showToast('Updating…');
+  setTimeout(function() {
+    try {
+      var reload = function() { window.location.reload(); };
+      var step1 = window.caches
+        ? caches.keys().then(function(ks) { return Promise.all(ks.map(function(k) { return caches.delete(k); })); }).catch(function(){})
+        : Promise.resolve();
+      var step2 = navigator.serviceWorker
+        ? navigator.serviceWorker.getRegistrations().then(function(rs) { return Promise.all(rs.map(function(r) { return r.unregister(); })); }).catch(function(){})
+        : Promise.resolve();
+      Promise.all([step1, step2]).then(reload).catch(reload);
+    } catch(e) {
+      window.location.reload();
+    }
+  }, 600);
+}
+
 // ── Role-Based Access ─────────────────────────────────────────────────────────
 function applyRole(role) {
+  hideSplash();
   var p = {
     canDash:        role !== 'runner',
     canCreate:      role === 'admin' || role === 'office',
@@ -864,7 +937,7 @@ function applyRole(role) {
     canViewInvoice: role !== 'site_manager' && role !== 'runner',
     canContacts:    role === 'admin' || role === 'office',
     canCleanup:     role === 'admin' || role === 'office' || role === 'site_manager' || role === 'runner',
-    canAdmin:       role === 'admin'
+    canAdmin:       false
   };
   G.perms = p;
 
@@ -875,7 +948,6 @@ function applyRole(role) {
   sd('nav-receive',     p.canReceive);
   sd('nav-pricing',     p.canPricing);
   sd('nav-contacts',    p.canContacts);
-  sd('nav-admin',       p.canAdmin);
   sd('receive-po-card', p.canReceivePO);
 
   // Show role badge in header
@@ -902,7 +974,6 @@ function showTabDirect(name, btn) {
   if (btn) btn.classList.add('active');
   if (name === 'pricing')  loadPricing();
   if (name === 'contacts') loadContacts();
-  if (name === 'admin')    loadAdmin();
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -2200,4 +2271,3 @@ function submitContactEdit() {
 </script>
 </body>
 </html>
-                                                                                                                                                                                                                                                                                          
