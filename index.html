@@ -323,6 +323,17 @@
 </head>
 <body>
 
+<!-- Splash Screen -->
+<div id="splash" style="position:fixed;inset:0;background:#1F3971;z-index:500;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:32px;text-align:center;transition:opacity 0.3s">
+  <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:64px;height:64px;flex-shrink:0">
+    <rect width="64" height="64" rx="16" fill="white" fill-opacity="0.15"/>
+    <path d="M16 24l16-8 16 8v16l-16 8-16-8V24z" stroke="white" stroke-width="2.5" stroke-linejoin="round"/>
+    <path d="M16 24l16 8 16-8M32 32v16" stroke="white" stroke-width="2.5" stroke-linejoin="round"/>
+  </svg>
+  <div id="splash-joke" style="color:rgba(255,255,255,0.9);font-family:-apple-system,sans-serif;font-size:16px;font-weight:600;line-height:1.45;max-width:300px">Loading Panoramic Ops…</div>
+  <div style="color:rgba(255,255,255,0.55);font-family:-apple-system,sans-serif;font-size:15px">Loading…</div>
+</div>
+
 <!-- Header -->
 <header class="app-header">
   <div>
@@ -627,7 +638,75 @@
 
 <!-- ══════════════════ JAVASCRIPT ══════════════════ -->
 <script>
-if ('serviceWorker' in navigator) { navigator.serviceWorker.register('./sw.js'); }
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js');
+  navigator.serviceWorker.addEventListener('message', function(e) {
+    if (e.data && e.data.type === 'SW_UPDATED') window.location.reload();
+  });
+}
+
+// ── Splash ───────────────────────────────────────────────────────────────────
+var JOKES = [
+  "I told my wife she was drawing her eyebrows too high. She looked surprised.",
+  "I used to be a banker, but I lost interest.",
+  "Why don't skeletons fight each other? They don't have the guts.",
+  "I'm on a seafood diet. I see food and I eat it.",
+  "What do you call a fish without eyes? A fsh.",
+  "I asked the librarian if they had books about paranoia. She whispered, 'They're right behind you.'",
+  "Why did the math book look so sad? Because it had too many problems.",
+  "I told my doctor I broke my arm in two places. He told me to stop going to those places.",
+  "What do you call a bear with no teeth? A gummy bear.",
+  "I used to hate facial hair, but then it grew on me.",
+  "Why can't you give Elsa a balloon? Because she'll let it go.",
+  "I'm reading a book about anti-gravity. It's impossible to put down.",
+  "Did you hear about the guy who invented Lifesavers? He made a mint.",
+  "Why did the bicycle fall over? It was two-tired.",
+  "I would tell a construction joke, but I'm still working on it.",
+  "What do you call cheese that isn't yours? Nacho cheese.",
+  "Why don't scientists trust atoms? Because they make up everything.",
+  "I couldn't figure out why the baseball kept getting bigger. Then it hit me.",
+  "What do you call a sleeping dinosaur? A dino-snore.",
+  "Why did the scarecrow win an award? Because he was outstanding in his field.",
+  "I have a joke about paper, but it's tearable.",
+  "What do you call a factory that makes okay products? A satisfactory.",
+  "Why do cows wear bells? Because their horns don't work.",
+  "I tried to catch some fog earlier. I mist.",
+  "Why don't eggs tell jokes? They'd crack each other up.",
+  "What do you call a man with a rubber toe? Roberto.",
+  "I only know 25 letters of the alphabet. I don't know y.",
+  "Did you hear about the claustrophobic astronaut? He just needed a little space.",
+  "Why did the coffee file a police report? It got mugged.",
+  "I'm afraid for the calendar. Its days are numbered.",
+  "What do you call an alligator in a vest? An investigator.",
+  "Why did the golfer bring extra pants? In case he got a hole in one.",
+  "I used to play piano by ear, but now I use my hands.",
+  "What's a skeleton's least favorite room? The living room.",
+  "Why can't a nose be 12 inches long? Because then it would be a foot.",
+  "What do you call a pile of cats? A meow-ntain.",
+  "What do lawyers wear to court? Lawsuits.",
+  "I asked my dog what two minus two is. He said nothing.",
+  "Why do bees hum? Because they don't know the words.",
+  "I got fired from the calendar factory. All I did was take a day off.",
+  "What's brown and sticky? A stick.",
+  "I used to be addicted to soap, but I'm clean now.",
+  "I have a joke about a roof. It's on the house.",
+  "What did the janitor say when he jumped out of the closet? Supplies!",
+  "Why do fish swim in salt water? Pepper makes them sneeze.",
+  "I couldn't figure out how to put my seatbelt on. Then it clicked.",
+  "I used to think I was indecisive. Now I'm not so sure.",
+  "What do you call a pig that does karate? A pork chop.",
+  "I used to hate maths but then I realized decimals have a point."
+];
+(function() {
+  var el = document.getElementById('splash-joke');
+  if (el) el.textContent = JOKES[Math.floor(Math.random() * JOKES.length)];
+})();
+function hideSplash() {
+  var s = document.getElementById('splash');
+  if (!s) return;
+  s.style.opacity = '0';
+  setTimeout(function() { s.style.display = 'none'; }, 300);
+}
 
 // ── State ────────────────────────────────────────────────────────────────────
 var G = {
@@ -683,6 +762,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function showLoginScreen(msg) {
+  hideSplash();
   localStorage.removeItem('panoramic_ops_email');
   var ls = document.getElementById('login-screen');
   if (ls) ls.classList.remove('hidden');
@@ -818,6 +898,7 @@ function refreshData() { loadData(); showToast('Refreshing…'); }
 
 // ── Role-Based Access ─────────────────────────────────────────────────────────
 function applyRole(role) {
+  hideSplash();
   var p = {
     canDash:        role !== 'runner',
     canCreate:      role === 'admin' || role === 'office',
