@@ -287,24 +287,36 @@ function getUserRole() {
 
 // ─── Pricing ─────────────────────────────────────────────────────────────────
 
-var PRICING_SHEET   = "Pricing";
-var PRICING_VENDORS = ["LW Supply", "Allside", "Timberline", "LKL", "Lansing", "BFS"];
+var PRICING_SHEET = "Pricing";
 
 /**
- * Reads the Pricing sheet and returns an array of material objects.
- * Category header rows (no U/M) are captured and attached to subsequent items.
+ * Reads the Pricing sheet and returns { vendors, items }.
+ * Vendor columns are read dynamically from the header row (E onwards),
+ * so adding a new vendor column to the sheet requires no code changes.
+ *
+ * Layout: A=Description, B=U/M, C=Best Price, D=empty, E+=Vendors
+ * Category header rows: description in A, everything else blank — no U/M and no prices.
  */
 function getPricingData() {
   try {
     var ss    = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName(PRICING_SHEET);
-    if (!sheet) return [];
+    if (!sheet) return { vendors: [], items: [] };
 
     var lastRow = sheet.getLastRow();
-    if (lastRow < 2) return [];
+    var lastCol = sheet.getLastColumn();
+    if (lastRow < 2 || lastCol < 5) return { vendors: [], items: [] };
 
-    // Columns: A=desc, B=um, C=bestPrice, D=empty, E-J=vendors
-    var data = sheet.getRange(2, 1, lastRow - 1, 10).getValues();
+    // Read header row to discover vendor columns (E onwards = index 4+)
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    var vendorCols = []; // [{ name, colIndex }]
+    for (var c = 4; c < headers.length; c++) {
+      var h = (headers[c] || '').toString().trim();
+      if (h) vendorCols.push({ name: h, colIndex: c });
+    }
+
+    // Read all data rows
+    var data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
     var items = [];
     var currentCategory = '';
 
@@ -313,18 +325,24 @@ function getPricingData() {
       var um   = (row[1] || '').toString().trim();
       if (!desc) return;
 
-      // Category header — no U/M value
-      if (!um) { currentCategory = desc; return; }
-
       var bestPrice = parseFloat(row[2]) || 0;
-      var prices    = {};
-      // Vendor columns: E=4, F=5, G=6, H=7, I=8, J=9 (0-based)
-      PRICING_VENDORS.forEach(function(vendor, i) {
-        var v = row[i + 4];
+
+      // Collect vendor prices from all discovered vendor columns
+      var prices = {};
+      vendorCols.forEach(function(vc) {
+        var v = row[vc.colIndex];
         if (v !== '' && v !== null && v !== undefined && v !== 0) {
-          prices[vendor] = parseFloat(v) || 0;
+          prices[vc.name] = parseFloat(v) || 0;
         }
       });
+
+      var hasPrices = bestPrice > 0 || Object.keys(prices).length > 0;
+
+      // Category header: description in A, no U/M, no prices
+      if (!um && !hasPrices) {
+        currentCategory = desc;
+        return;
+      }
 
       items.push({
         description:  desc,
@@ -332,11 +350,15 @@ function getPricingData() {
         bestPrice:    bestPrice,
         prices:       prices,
         category:     currentCategory,
-        rowIndex:     rowIdx + 2   // actual sheet row (1-based, +1 for header, +1 for 0-based)
+        rowIndex:     rowIdx + 2
       });
     });
 
-    return items;
+    var lastUpdated = DriveApp.getFileById(ss.getId()).getLastUpdated();
+    var tz = Session.getScriptTimeZone();
+    var lastUpdatedStr = Utilities.formatDate(lastUpdated, tz, "MMM d, yyyy");
+
+    return { vendors: vendorCols.map(function(vc){ return vc.name; }), items: items, lastUpdated: lastUpdatedStr };
   } catch(e) {
     return [];
   }

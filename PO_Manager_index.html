@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Panoramic Ops</title>
 
+  <!-- No cache — always load fresh from server -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+
   <!-- PWA / Add to Home Screen — hides the browser URL bar on iOS & Android -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -435,7 +440,7 @@
 
   <!-- ══ RECEIVE PO ══ -->
   <div class="tab" id="tab-receive">
-    <div class="card">
+    <div class="card" id="receive-po-card">
       <div class="card-title">Receive PO</div>
 
       <div class="form-group">
@@ -499,6 +504,12 @@
     </div>
 
     <div class="card" style="text-align:center;padding:24px 20px">
+      <div style="font-size:15px;font-weight:700;margin-bottom:6px">Office Notes</div>
+      <div style="font-size:13px;color:#A2A092;margin-bottom:16px">Send a quick note or update to the office task list.</div>
+      <button class="btn btn-secondary" style="width:100%;padding:14px;font-size:15px;border-radius:12px" onclick="openFormOverlay('officenotes-overlay')">Open Office Notes</button>
+    </div>
+
+    <div class="card" style="text-align:center;padding:24px 20px">
       <div style="font-size:15px;font-weight:700;margin-bottom:6px">Reimbursement Form</div>
       <div style="font-size:13px;color:#A2A092;margin-bottom:16px">Submit a reimbursement request.</div>
       <button class="btn btn-secondary" style="width:100%;padding:14px;font-size:15px;border-radius:12px" onclick="openFormOverlay('reimbursement-overlay')">Open Reimbursement Form</button>
@@ -527,6 +538,7 @@
         <button class="search-clear" id="p-clear" onclick="clearSearch('p-input','p-clear'); runPricingSearch()">✕</button>
       </div>
     </div>
+    <p id="p-last-updated" style="font-size:11px;color:#A2A092;padding:4px 16px 0;margin:0"></p>
     <div class="chip-row" id="p-cats" style="display:none"></div>
     <div id="p-loading" style="display:none">
       <div class="loading"><div class="spinner"></div><p>Loading prices…</p></div>
@@ -548,6 +560,38 @@
       <div class="loading"><div class="spinner"></div><p>Loading contacts…</p></div>
     </div>
     <div id="ct-results"><div class="empty">Loading contacts…</div></div>
+  </div>
+
+  <!-- ══ ADMIN ══ -->
+  <div class="tab" id="tab-admin">
+
+    <!-- Statement Reconcile Card -->
+    <div class="card">
+      <div class="card-title">Statement Reconcile</div>
+      <p style="font-size:14px;color:#8A887E;margin-bottom:18px;line-height:1.5">
+        Paste invoice numbers from a vendor statement to see which ones are missing from the PO database.
+      </p>
+      <div class="form-group">
+        <label class="form-label">Vendor</label>
+        <select class="form-control" id="recon-vendor">
+          <option value="">— All Vendors —</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Invoice Numbers</label>
+        <textarea class="form-control" id="recon-invoices" rows="7"
+          placeholder="Paste invoice numbers here, one per line or comma-separated&#10;&#10;34761&#10;34791&#10;34830&#10;..."></textarea>
+      </div>
+      <button class="btn btn-primary" id="recon-btn" onclick="runReconcile()">Check Against Database</button>
+    </div>
+
+    <!-- Reconcile Results -->
+    <div id="recon-results" style="display:none">
+      <div id="recon-summary-bar" style="background:#1F3971;color:white;border-radius:12px;padding:14px 18px;margin-bottom:14px;font-size:14px;font-weight:700;display:flex;justify-content:space-between"></div>
+      <div id="recon-missing-section"></div>
+      <div id="recon-found-section"></div>
+    </div>
+
   </div>
 
 </main>
@@ -575,6 +619,10 @@
   <button id="nav-contacts" class="nav-btn" onclick="showTab('contacts',this)">
     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
     Contacts
+  </button>
+  <button id="nav-admin" class="nav-btn" onclick="showTab('admin',this)" style="display:none">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>
+    Admin
   </button>
 
 </nav>
@@ -620,8 +668,9 @@ var G = {
   role:          'admin',
   userEmail:     '',
   perms:         { canDash:true, canCreate:true, canReceive:true, canSearch:true, canPricing:true, canEdit:true },
-  pricing:       [],
-  pricingLoaded:    false,
+  pricing:         [],
+  pricingVendors:  [],
+  pricingLoaded:   false,
   pricingCategory:  '',
   pricingIdx:    null,
   contacts:        [],
@@ -644,22 +693,36 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 });
 
+function showLoginScreen(msg) {
+  localStorage.removeItem('panoramic_ops_email');
+  var ls = document.getElementById('login-screen');
+  if (ls) ls.classList.remove('hidden');
+  if (msg) showToast(msg);
+  setTimeout(function() {
+    var el = document.getElementById('login-email');
+    if (el) el.focus();
+  }, 300);
+}
+
 function bootWithEmail(email) {
   google.script.run
     .withSuccessHandler(function(cfg) {
-      G.config    = cfg;
-      G.role      = cfg.userRole  || 'runner';
-      G.userEmail = cfg.userEmail || email;
-      applyRole(G.role);
-      fillSelects();
-      loadData();
+      try {
+        if (!cfg) throw new Error('No config returned');
+        G.config    = cfg;
+        G.role      = cfg.userRole  || 'runner';
+        G.userEmail = cfg.userEmail || email;
+        applyRole(G.role);
+        fillSelects();
+        loadData();
+      } catch(e) {
+        console.error('Boot error:', e);
+        showLoginScreen('Something went wrong. Please sign in again.');
+      }
     })
     .withFailureHandler(function(e) {
-      // Cache may be stale — force re-login
-      localStorage.removeItem('panoramic_ops_email');
-      document.getElementById('login-screen').classList.remove('hidden');
-      showToast('Session expired. Please sign in again.');
-      console.error(e);
+      console.error('getConfig failed:', e);
+      showLoginScreen('Could not connect. Please sign in again.');
     })
     .getConfig(email);
 }
@@ -731,21 +794,24 @@ function switchAccount() {
 }
 
 function fillSelects() {
-  // vendor selects
+  var vendorOpts = (G.config.vendorOptions || []);
+  var statusOpts = (G.config.statusOptions || []);
   ['c-vendor'].forEach(function(id) {
     var el = document.getElementById(id);
-    G.config.vendorOptions.forEach(function(v) {
+    if (!el) return;
+    vendorOpts.forEach(function(v) {
       el.insertAdjacentHTML('beforeend','<option value="'+esc(v)+'">'+esc(v)+'</option>');
     });
   });
-  // status selects
   ['c-status'].forEach(function(id) {
     var el = document.getElementById(id);
-    G.config.statusOptions.forEach(function(s) {
+    if (!el) return;
+    statusOpts.forEach(function(s) {
       el.insertAdjacentHTML('beforeend','<option value="'+esc(s)+'">'+esc(s)+'</option>');
     });
   });
-  document.getElementById('c-status').value = 'Pending Pickup';
+  var cs = document.getElementById('c-status');
+  if (cs) cs.value = 'Pending Pickup';
 }
 
 function loadData() {
@@ -775,28 +841,33 @@ function applyRole(role) {
   var p = {
     canDash:        role !== 'runner',
     canCreate:      role === 'admin' || role === 'office',
-    canReceive:     role !== 'accountant',
+    canReceive:     role !== 'accountant',                           // controls Log tab visibility
+    canReceivePO:   role !== 'accountant',                           // controls Receive PO form + actions
     canSearch:      role !== 'runner',
     canPricing:     role === 'admin',
-    canEdit:        role === 'admin' || role === 'office' || role === 'site_manager',
+    canEdit:        role === 'admin' || role === 'office',
     canViewInvoice: role !== 'site_manager' && role !== 'runner',
-    canContacts:    role === 'admin' || role === 'office' || role === 'site_manager',
-    canCleanup:     role === 'admin' || role === 'office' || role === 'site_manager' || role === 'runner'
+    canContacts:    role === 'admin' || role === 'office',
+    canCleanup:     role === 'admin' || role === 'office' || role === 'site_manager' || role === 'runner',
+    canAdmin:       role === 'admin'
   };
   G.perms = p;
 
-  // Show/hide nav buttons
-  document.getElementById('nav-dashboard').style.display = p.canDash     ? '' : 'none';
-  document.getElementById('nav-create').style.display    = p.canCreate   ? '' : 'none';
-  document.getElementById('nav-receive').style.display   = p.canReceive  ? '' : 'none';
-  document.getElementById('nav-pricing').style.display   = p.canPricing  ? '' : 'none';
-  document.getElementById('nav-contacts').style.display  = p.canContacts ? '' : 'none';
+  // Show/hide nav buttons (null-safe in case elements aren't in the deployed version yet)
+  function sd(id, show) { var el = document.getElementById(id); if (el) el.style.display = show ? '' : 'none'; }
+  sd('nav-dashboard',   p.canDash);
+  sd('nav-create',      p.canCreate);
+  sd('nav-receive',     p.canReceive);
+  sd('nav-pricing',     p.canPricing);
+  sd('nav-contacts',    p.canContacts);
+  sd('nav-admin',       p.canAdmin);
+  sd('receive-po-card', p.canReceivePO);
 
   // Show role badge in header
   var labels = { admin:'Admin', office:'Office', site_manager:'Site Manager', runner:'Runner', accountant:'Accountant' };
   var headerP = document.querySelector('.app-header p');
   if (headerP && labels[role]) {
-    headerP.innerHTML = 'Panoramic Building <span style="font-size:10px;opacity:0.5">v66</span>' +
+    headerP.innerHTML = 'Panoramic Building <span style="font-size:10px;opacity:0.5">v67</span>' +
       ' &nbsp;<span onclick="switchAccount()" style="cursor:pointer;font-size:11px;background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:6px" title="Switch account">' + labels[role] + '</span>';
   }
 
@@ -816,6 +887,7 @@ function showTabDirect(name, btn) {
   if (btn) btn.classList.add('active');
   if (name === 'pricing')  loadPricing();
   if (name === 'contacts') loadContacts();
+  if (name === 'admin')    loadAdmin();
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -1046,7 +1118,7 @@ function poCard(po, type) {
     : badge(po.status);
 
   // Swipe-to-receive hint arrow
-  var swipeBg = G.perms.canReceive
+  var swipeBg = G.perms.canReceivePO
     ? '<div class="swipe-bg"><svg width="22" height="22" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>'
     : '';
 
@@ -1061,7 +1133,7 @@ function poCard(po, type) {
     '<div class="po-actions">' +
       statusBadge +
       (G.perms.canEdit    ? '<button class="btn btn-sm btn-edit"    onclick="openEdit(\''+po.poNum+'\')">Edit</button>'            : '') +
-      (G.perms.canReceive ? '<button class="btn btn-sm btn-receive" onclick="quickReceive(\''+po.poNum+'\')">Receive</button>'     : '') +
+      (G.perms.canReceivePO ? '<button class="btn btn-sm btn-receive" onclick="quickReceive(\''+po.poNum+'\')">Receive</button>'     : '') +
       (po.invoiceLink && G.perms.canViewInvoice ? '<a href="'+esc(po.invoiceLink)+'" target="_blank" class="btn btn-sm" style="background:#fff8e1;color:#e65100;text-decoration:none">Invoice</a>' : '') +
       (po.issuedPOLink ? '<a href="'+esc(po.issuedPOLink)+'" target="_blank" class="btn btn-sm" style="background:#eaedfa;color:#1F3971;text-decoration:none">Issued PO</a>' : '') +
     '</div>' +
@@ -1634,11 +1706,16 @@ function loadPricing() {
   document.getElementById('p-results').style.display = 'none';
 
   google.script.run
-    .withSuccessHandler(function(items) {
-      G.pricing = items || [];
-      G.pricingLoaded = true;
+    .withSuccessHandler(function(result) {
+      G.pricing        = (result && result.items)   ? result.items   : [];
+      G.pricingVendors = (result && result.vendors) ? result.vendors : [];
+      G.pricingLoaded  = true;
       document.getElementById('p-loading').style.display = 'none';
       document.getElementById('p-results').style.display = 'block';
+      if (result && result.lastUpdated) {
+        var el = document.getElementById('p-last-updated');
+        if (el) el.textContent = 'Last updated ' + result.lastUpdated;
+      }
       buildPricingCategoryChips();
       runPricingSearch();
     })
@@ -1678,11 +1755,11 @@ function setPricingCategory(cat, btn) {
 
 function runPricingSearch() {
   var q         = (document.getElementById('p-input').value || '').toLowerCase().trim();
-  var cat       = G.pricingCategory;
+  var cat       = G.pricingCategory;  // '' = All, otherwise specific category
   var resultsEl = document.getElementById('p-results');
 
-  // Nothing selected yet
-  if (!q && !cat) {
+  // Nothing loaded yet
+  if (!G.pricingLoaded) {
     resultsEl.innerHTML = '<div class="empty">Select a category or search above.</div>';
     return;
   }
@@ -1709,7 +1786,7 @@ function runPricingSearch() {
 }
 
 function pricingCard(item, idx) {
-  var vendors = ['LW Supply','Allside','Timberline','LKL','Lansing','BFS'];
+  var vendors = G.pricingVendors;
   var best = item.bestPrice;
 
   // Build vendor price rows
@@ -1756,7 +1833,7 @@ function openPricingEdit(idx) {
   G.editRow     = item.rowIndex;
   G.pricingIdx  = idx;
 
-  var vendors = ['LW Supply','Allside','Timberline','LKL','Lansing','BFS'];
+  var vendors = G.pricingVendors;
   var fields  = vendors.map(function(v) {
     var price = item.prices[v] || '';
     return fg(v, '<input type="number" class="form-control" id="pe-' + v.replace(/ /g,'-') + '" value="' + price + '" step="0.01" min="0" placeholder="—">');
@@ -1775,7 +1852,7 @@ function openPricingEdit(idx) {
 }
 
 function submitPricingEdit() {
-  var vendors = ['LW Supply','Allside','Timberline','LKL','Lansing','BFS'];
+  var vendors = G.pricingVendors;
   var vendorPrices = {};
   vendors.forEach(function(v) {
     vendorPrices[v] = document.getElementById('pe-' + v.replace(/ /g,'-')).value;
@@ -1928,7 +2005,8 @@ var FORM_URLS = {
   'cleanup-overlay':          'https://form.asana.com/?k=kiMhpmASAeEg_D4e631yjA&d=1208027938795761',
   'reimbursement-overlay':    'https://form.asana.com/?k=_Klc2P6hcqrs1fOpBWIRWg&d=1208027938795761',
   'creditcard-overlay':       'https://form.asana.com/?k=op5VV1qG1S8SQoAHCs6t1w&d=1208027938795761',
-  'materialrequest-overlay':  'https://form.asana.com/?k=2jXgnoyqZUuRb5rd2_S27w&d=1208027938795761'
+  'materialrequest-overlay':  'https://form.asana.com/?k=2jXgnoyqZUuRb5rd2_S27w&d=1208027938795761',
+  'officenotes-overlay':      'https://form.asana.com/?k=BJAK9Zn4PVyId7MxMngYXA&d=1208027938795761'
 };
 
 function openFormOverlay(overlayId) {
@@ -2088,7 +2166,7 @@ function submitContactEdit() {
 
   document.addEventListener('touchstart', function(e) {
     var item = e.target.closest('.po-item');
-    if (!item || !G.perms.canReceive) { activeEl = null; return; }
+    if (!item || !G.perms.canReceivePO) { activeEl = null; return; }
     activeEl = item;
     startX   = e.touches[0].clientX;
     startY   = e.touches[0].clientY;
