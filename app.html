@@ -1,0 +1,2196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Panoramic Ops</title>
+
+  <!-- No cache — always load fresh from server -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+
+  <!-- PWA / Add to Home Screen — hides the browser URL bar on iOS & Android -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Panoramic Ops">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1F3971">
+  <style>
+    /* ── Reset ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 16px; background: #f0efe9; color: #2E2E2E; -webkit-tap-highlight-color: transparent; }
+
+    /* ── Header ── */
+    .app-header {
+      background: linear-gradient(135deg, #1F3971 0%, #2a4d96 100%);
+      color: white; padding: 16px 20px 14px;
+      position: sticky; top: 0; z-index: 90;
+      display: flex; align-items: center; justify-content: space-between;
+      box-shadow: 0 2px 8px rgba(0,0,0,.18);
+    }
+    .app-header h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.3px; }
+    .app-header p  { font-size: 13px; opacity: 0.65; margin-top: 2px; }
+    .refresh-btn { background: rgba(255,255,255,0.2); border: none; color: white; border-radius: 10px; padding: 10px 16px; font-size: 14px; font-weight: 600; cursor: pointer; min-height: 44px; }
+    .refresh-btn:active { opacity: 0.7; }
+
+    /* ── Bottom Nav ── */
+    .bottom-nav {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: white; border-top: 1px solid #e8e8e8;
+      display: flex; z-index: 90;
+      padding-bottom: env(safe-area-inset-bottom);
+      box-shadow: 0 -2px 12px rgba(0,0,0,.08);
+    }
+    .nav-btn {
+      flex: 1; padding: 12px 4px 14px;
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+      font-size: 11px; font-weight: 600; color: #A2A092;
+      background: none; border: none; cursor: pointer; transition: color 0.15s;
+      min-height: 60px;
+    }
+    .nav-btn.active { color: #1F3971; }
+    .nav-btn svg { width: 26px; height: 26px; stroke-width: 2; }
+
+    /* ── Content ── */
+    .content { padding: 8px 6px 100px; max-width: 100%; margin: 0 auto; }
+    .tab { display: none; }
+    .tab.active { display: block; }
+
+    /* ── Cards ── */
+    .card { background: white; border-radius: 16px; padding: 20px; margin-bottom: 14px; box-shadow: 0 1px 4px rgba(0,0,0,.07); }
+    .card-title { font-size: 16px; font-weight: 700; color: #2E2E2E; margin-bottom: 18px; }
+
+    /* ── Stats Grid ── */
+    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+    .stat-card { background: white; border-radius: 14px; padding: 16px 8px; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,.07); cursor: pointer; border: 2px solid transparent; transition: border-color 0.15s, box-shadow 0.15s; }
+    .stat-card:active { opacity: 0.8; }
+    .stat-card.active { border-color: #1F3971; box-shadow: 0 0 0 3px rgba(31,57,113,0.15); }
+    .dash-filter-bar { display: flex; align-items: center; justify-content: space-between; background: #1F3971; color: white; border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; font-size: 14px; font-weight: 600; }
+    .dash-filter-bar button { background: rgba(255,255,255,0.2); border: none; color: white; border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .stat-num   { font-size: 32px; font-weight: 800; line-height: 1; }
+    .stat-label { font-size: 10px; color: #A2A092; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 5px; }
+    .c-red   { color: #c62828; }
+    .c-amber { color: #e65100; }
+    .c-green { color: #1F3971; }
+    .c-blue  { color: #1F3971; }
+    .c-teal  { color: #1F3971; }
+    .c-gray  { color: #A2A092; }
+
+    /* ── Section Headers ── */
+    .sec-head { font-size: 14px; font-weight: 700; padding: 9px 14px; border-radius: 8px; margin: 18px 0 10px; }
+    .sh-green  { background: #eaedfa; color: #1F3971; }
+    .sh-blue   { background: #e8edf5; color: #1F3971; }
+    .sh-red    { background: #fbe9e7; color: #bf360c; }
+    .sh-amber  { background: #fff8e1; color: #e65100; }
+    .sh-teal   { background: #e0f2f1; color: #1F3971; }
+    .sh-indigo { background: #e8edf5; color: #152847; }
+
+    /* ── PO Items ── */
+    .po-item {
+      background: white; border-radius: 14px; padding: 15px 16px;
+      margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.06);
+      border-left: 4px solid #D1D0CB;
+    }
+    .po-item.delivery { border-left-color: #1F3971; }
+    .po-item.pickup   { border-left-color: #1F3971; }
+    .po-item.overdue  { border-left-color: #c62828; }
+    .po-item.missing  { border-left-color: #e65100; }
+    .po-item.reconcile{ border-left-color: #1F3971; }
+    .po-item.complete { border-left-color: #D1D0CB; }
+    .po-item.ordered  { border-left-color: #1F3971; }
+    .po-num  { font-size: 14px; font-weight: 700; color: #1F3971; font-family: monospace; }
+    .po-main { font-size: 19px; font-weight: 700; margin: 5px 0 4px; }
+    .po-sub  { font-size: 15px; color: #8A887E; }
+    .po-note { font-size: 14px; color: #8A887E; margin-top: 10px; padding-top: 10px; border-top: 1px solid #f0efe9; font-style: italic; }
+    .po-actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; align-items: center; }
+    .po-amount { font-size: 16px; font-family: monospace; font-weight: 700; color: #1F3971; }
+
+    /* ── Badges ── */
+    .badge { display: inline-block; padding: 5px 12px; border-radius: 10px; font-size: 13px; font-weight: 700; white-space: nowrap; }
+    .bd-red    { background: #ffcdd2; color: #b71c1c; }
+    .bd-green  { background: #c5d0e8; color: #152847; }
+    .bd-blue   { background: #c5d0e8; color: #152847; }
+    .bd-amber  { background: #fff3e0; color: #bf360c; }
+    .bd-teal   { background: #b2dfdb; color: #152847; }
+    .bd-indigo { background: #e8edf5; color: #152847; }
+    .bd-gray   { background: #f7f6f2; color: #757575; }
+    .bd-purple { background: #e8edf5; color: #152847; }
+
+    /* ── Buttons ── */
+    .btn { padding: 13px 20px; border-radius: 12px; border: none; font-size: 16px; font-weight: 600; cursor: pointer; transition: opacity 0.15s; min-height: 48px; }
+    .btn:active { opacity: 0.75; }
+    .btn-primary   { background: #1F3971; color: white; width: 100%; padding: 18px; font-size: 18px; border-radius: 14px; }
+    .btn-secondary { background: #f0efe9; color: #2E2E2E; }
+    .btn-sm        { padding: 9px 16px; font-size: 14px; border-radius: 9px; font-weight: 700; min-height: 40px; }
+    .btn-edit      { background: #e8edf5; color: #1F3971; }
+    .btn-receive   { background: #eaedfa; color: #1F3971; }
+    .btn-lookup    { background: #1F3971; color: white; white-space: nowrap; min-height: 54px; padding: 0 22px; font-size: 17px; }
+
+    /* ── Forms ── */
+    .form-group { margin-bottom: 20px; }
+    .form-label { display: block; font-size: 15px; font-weight: 700; color: #2E2E2E; margin-bottom: 9px; }
+    .form-control {
+      width: 100%; padding: 15px 16px; border: 2px solid #D1D0CB;
+      border-radius: 12px; font-size: 17px; background: white;
+      appearance: none; -webkit-appearance: none; transition: border-color 0.15s;
+      min-height: 54px;
+    }
+    .form-control:focus { outline: none; border-color: #1F3971; }
+    textarea.form-control { resize: vertical; min-height: 90px; }
+    select.form-control {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M5 7L0 2h10z' fill='%23888'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 14px center; padding-right: 40px;
+    }
+
+    /* ── Search ── */
+    .search-row { display: flex; gap: 8px; margin-bottom: 12px; }
+    .search-wrap { flex: 1; position: relative; }
+    .search-input {
+      width: 100%; padding: 15px 44px 15px 16px; border: 2px solid #D1D0CB;
+      border-radius: 12px; font-size: 17px; background: white; min-height: 54px;
+    }
+    .search-input:focus { outline: none; border-color: #1F3971; }
+    .search-clear {
+      position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+      background: #D1D0CB; border: none; border-radius: 50%;
+      width: 22px; height: 22px; font-size: 13px; font-weight: 700;
+      color: #666; cursor: pointer; display: none; align-items: center; justify-content: center;
+      line-height: 1;
+    }
+    .search-clear.visible { display: flex; }
+
+    /* ── Filter Chips ── */
+    .chip-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 14px; -webkit-overflow-scrolling: touch; }
+    .chip-row::-webkit-scrollbar { display: none; }
+    .chip {
+      padding: 10px 18px; border-radius: 22px; font-size: 15px; font-weight: 700;
+      white-space: nowrap; border: none; cursor: pointer; min-height: 42px;
+      background: white; color: #666; box-shadow: 0 1px 3px rgba(0,0,0,.12);
+    }
+    .chip.active { background: #1F3971; color: white; }
+
+    /* ── Loading / Empty ── */
+    .loading { text-align: center; padding: 50px 20px; }
+    .spinner { width: 36px; height: 36px; border: 3px solid #D1D0CB; border-top-color: #1F3971; border-radius: 50%; animation: spin 0.75s linear infinite; margin: 0 auto 14px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading p { color: #A2A092; font-size: 15px; }
+    .empty { text-align: center; color: #A2A092; padding: 24px 16px; font-size: 14px; font-style: italic; }
+
+    /* ── Toast ── */
+    .toast {
+      position: fixed; bottom: 88px; left: 50%; transform: translateX(-50%) translateY(10px);
+      background: #2E2E2E; color: white; padding: 11px 20px; border-radius: 22px;
+      font-size: 13px; font-weight: 500; z-index: 999; opacity: 0; transition: all 0.25s;
+      white-space: nowrap; pointer-events: none; max-width: 90vw;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* ── Modal ── */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 200;
+      display: none; align-items: flex-end; justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: white; border-radius: 24px 24px 0 0;
+      padding: 8px 20px 48px; width: 100%; max-width: 640px; max-height: 92vh;
+      overflow-y: auto; -webkit-overflow-scrolling: touch;
+    }
+    .modal-handle { width: 44px; height: 5px; background: #D1D0CB; border-radius: 3px; margin: 14px auto 20px; }
+    .modal-title  { font-size: 20px; font-weight: 700; margin-bottom: 20px; }
+    .modal-actions{ display: flex; gap: 10px; margin-top: 6px; }
+
+    /* ── Receive info box ── */
+    .info-box { background: #eef1fa; border: 1.5px solid #98aed6; border-radius: 10px; padding: 14px; margin-bottom: 16px; }
+
+    /* ── Camera / Photo UI ── */
+    .photo-zone { border: 2px dashed #c5d0e8; border-radius: 14px; padding: 24px 16px; text-align: center; background: #f7f6f2; }
+    .photo-zone.has-photo { border-style: solid; border-color: #98aed6; padding: 10px; }
+    .btn-camera { background: #1F3971; color: white; border: none; border-radius: 12px; padding: 14px 24px; font-size: 16px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 10px; min-height: 52px; }
+    .btn-camera:active { opacity: 0.8; }
+    .btn-retake { background: #f0efe9; color: #2E2E2E; border: none; border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 10px; min-height: 44px; }
+    .photo-preview-img { width: 100%; border-radius: 8px; display: block; max-height: 280px; object-fit: cover; }
+    .photo-status { font-size: 12px; margin-top: 8px; font-weight: 600; }
+    .photo-status.uploading { color: #e65100; }
+    .photo-status.done      { color: #1F3971; }
+    .photo-status.error     { color: #c62828; }
+    .upload-bar-wrap { height: 4px; background: #D1D0CB; border-radius: 2px; margin-top: 8px; overflow: hidden; }
+    .upload-bar { height: 100%; background: #1F3971; border-radius: 2px; width: 0%; transition: width 0.3s; }
+
+    /* ── Utility ── */
+    .row-between { display: flex; justify-content: space-between; align-items: flex-start; }
+
+    /* ── Mobile layout fixes ── */
+    html, body { width: 100%; min-height: 100vh; overflow-x: hidden; }
+    .content   { padding: 8px 6px 100px !important; max-width: 100% !important; }
+
+    /* ── Document link buttons ── */
+    .doc-links { display: flex; gap: 8px; margin-bottom: 18px; }
+    .doc-link {
+      flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 11px 10px; border-radius: 10px; font-size: 13px; font-weight: 700;
+      text-decoration: none; border: 1.5px solid;
+    }
+    .doc-link-invoice  { background: #fff8e1; color: #e65100; border-color: #ffe082; }
+    .doc-link-issued   { background: #eaedfa; color: #1F3971; border-color: #98aed6; }
+    .doc-link-disabled { background: #f7f6f2; color: #A2A092; border-color: #D1D0CB; pointer-events: none; }
+
+    /* ── Sort row ── */
+    .sort-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 10px; -webkit-overflow-scrolling: touch; align-items: center; }
+    .sort-row::-webkit-scrollbar { display: none; }
+    .sort-label { font-size: 12px; font-weight: 700; color: #A2A092; text-transform: uppercase; letter-spacing: 0.4px; white-space: nowrap; flex-shrink: 0; }
+    .sort-row .chip { padding: 8px 14px; font-size: 13px; min-height: 36px; }
+
+    /* ── Contact card ── */
+    .contact-card { background: white; border-radius: 14px; padding: 16px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+    .contact-name { font-size: 18px; font-weight: 700; color: #2E2E2E; margin-bottom: 6px; }
+    .contact-field { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #f0efe9; font-size: 15px; }
+    .contact-field:last-child { border-bottom: none; }
+    .contact-key { min-width: 80px; font-size: 11px; font-weight: 700; color: #A2A092; text-transform: uppercase; letter-spacing: 0.4px; flex-shrink: 0; }
+    .contact-field a { color: #1F3971; text-decoration: none; font-weight: 600; }
+
+    /* ── Login Screen ── */
+    .login-screen {
+      position: fixed; inset: 0; z-index: 400;
+      background: linear-gradient(135deg, #1F3971 0%, #2a4d96 100%);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 32px 24px;
+      padding-top: calc(32px + env(safe-area-inset-top));
+    }
+    .login-screen.hidden { display: none; }
+    .login-logo {
+      width: 72px; height: 72px;
+      background: rgba(255,255,255,0.15);
+      border-radius: 20px;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 24px;
+    }
+    .login-title { color: white; font-size: 26px; font-weight: 800; margin-bottom: 6px; }
+    .login-sub   { color: rgba(255,255,255,0.6); font-size: 15px; margin-bottom: 36px; }
+    .login-card  {
+      background: white; border-radius: 20px;
+      padding: 28px 24px; width: 100%; max-width: 380px;
+    }
+    .login-card label { font-size: 13px; font-weight: 700; color: #A2A092; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 8px; }
+    .login-card input { width: 100%; padding: 14px 16px; border: 2px solid #E8E8E8; border-radius: 12px; font-size: 16px; outline: none; box-sizing: border-box; }
+    .login-card input:focus { border-color: #1F3971; }
+    .login-field { margin-bottom: 16px; }
+    .login-error { color: #c62828; font-size: 13px; margin-top: 10px; display: none; }
+    .login-btn { width: 100%; margin-top: 4px; padding: 15px; background: #1F3971; color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 700; cursor: pointer; }
+    .login-btn:active { opacity: 0.85; }
+    .login-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Cleanup iframe modal ── */
+    .cleanup-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 300;
+      display: none; flex-direction: column;
+    }
+    .cleanup-overlay.open { display: flex; }
+    .cleanup-header {
+      background: #1F3971; color: white;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 16px; padding-top: calc(14px + env(safe-area-inset-top));
+      flex-shrink: 0;
+    }
+    .cleanup-header h2 { font-size: 17px; font-weight: 700; }
+    .cleanup-close {
+      background: rgba(255,255,255,0.2); border: none; color: white;
+      border-radius: 10px; padding: 8px 16px; font-size: 14px;
+      font-weight: 700; cursor: pointer; min-height: 40px;
+    }
+    .cleanup-overlay iframe {
+      flex: 1; border: none; width: 100%; background: white;
+    }
+
+    /* ── Quick status modal ── */
+    .status-btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
+    .status-option { padding: 12px 8px; border-radius: 10px; border: 2px solid #D1D0CB; background: white; font-size: 13px; font-weight: 700; cursor: pointer; text-align: center; color: #2E2E2E; transition: all 0.15s; min-height: 44px; }
+    .status-option:active { opacity: 0.7; }
+    .status-option.selected { border-color: #1F3971; background: #eaedfa; color: #1F3971; }
+
+    /* ── Swipe to receive ── */
+    .po-item { position: relative; }
+    .swipe-bg { position: absolute; left: 0; top: 0; bottom: 0; width: 100%; background: linear-gradient(90deg, #eaedfa 0%, transparent 60%); border-radius: 14px; opacity: 0; pointer-events: none; transition: opacity 0.15s; display: flex; align-items: center; padding-left: 14px; }
+    .swipe-bg svg { stroke: #1F3971; }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<header class="app-header">
+  <div>
+    <h1>Panoramic Ops</h1>
+    <p>Panoramic Building <span style="font-size:10px;opacity:0.5">v62</span></p>
+  </div>
+  <button class="refresh-btn" onclick="refreshData()">↻ Refresh</button>
+</header>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Edit Modal -->
+<div class="modal-overlay" id="edit-modal" onclick="maybeCloseModal(event)">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="edit-modal-title">Edit PO</div>
+    <div id="edit-modal-body"></div>
+  </div>
+</div>
+
+<!-- Content -->
+<main class="content">
+
+  <!-- ══ DASHBOARD ══ -->
+  <div class="tab active" id="tab-dashboard">
+    <!-- Search bar lives here now -->
+    <div class="search-row">
+      <div class="search-wrap">
+        <input type="text" class="search-input" id="s-input"
+               placeholder="Search POs, jobs, vendors…"
+               oninput="runSearch(); toggleClear('s-input','s-clear')">
+        <button class="search-clear" id="s-clear" onclick="clearSearch('s-input','s-clear'); runSearch()">✕</button>
+      </div>
+    </div>
+    <div class="chip-row" id="s-chips" style="display:none">
+      <button class="chip active" onclick="setChip('all',this)">All</button>
+      <button class="chip" onclick="setChip('Pending Pickup',this)">Pickup</button>
+      <button class="chip" onclick="setChip('Pending Delivery',this)">Delivery</button>
+      <button class="chip" onclick="setChip('Ready to Reconcile',this)">Reconcile</button>
+      <button class="chip" onclick="setChip('Complete',this)">Complete</button>
+    </div>
+    <div class="sort-row" id="s-sort" style="display:none">
+      <span class="sort-label">Sort:</span>
+      <button class="chip active" id="sort-newest" onclick="setSort('newest',this)">Newest</button>
+      <button class="chip" id="sort-oldest" onclick="setSort('oldest',this)">Oldest</button>
+      <button class="chip" id="sort-duedate" onclick="setSort('duedate',this)">Due Date</button>
+      <button class="chip" id="sort-vendor"  onclick="setSort('vendor',this)">Vendor</button>
+    </div>
+    <div id="s-results" style="display:none"></div>
+    <div class="loading" id="dash-loading">
+      <div class="spinner"></div>
+      <p>Loading POs…</p>
+    </div>
+    <div id="dash-content" style="display:none"></div>
+    <p style="text-align:center;font-size:12px;color:#A2A092;padding:12px 16px 20px;margin:0">
+      Please allow 24 hours for PO statuses to be updated.
+    </p>
+  </div>
+
+  <!-- ══ CREATE PO ══ -->
+  <div class="tab" id="tab-create">
+
+    <!-- Form -->
+    <div class="card" id="create-form-card">
+      <div class="card-title">New Purchase Order</div>
+
+      <div class="form-group">
+        <label class="form-label">Builder</label>
+        <input type="text" class="form-control" id="c-builder" placeholder="e.g. Craftsmen, Timberbrook">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Job Reference *</label>
+        <input type="text" class="form-control" id="c-job" placeholder="e.g. Wilson, Lot 56, Summer Clean">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Vendor *</label>
+        <select class="form-control" id="c-vendor" onchange="toggleOtherVendor('c-vendor','c-vendor-other')">
+          <option value="">— Select Vendor —</option>
+        </select>
+        <input type="text" class="form-control" id="c-vendor-other"
+               placeholder="Type vendor name…"
+               style="display:none;margin-top:10px">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Vendor Invoice #</label>
+        <input type="text" class="form-control" id="c-invoice" placeholder="Optional">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Status</label>
+        <select class="form-control" id="c-status" onchange="toggleOtherVendor('c-status','c-status-other')"></select>
+        <input type="text" class="form-control" id="c-status-other" placeholder="Enter custom status…" style="display:none;margin-top:8px">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Invoice Total ($)</label>
+        <input type="number" class="form-control" id="c-total" placeholder="0.00" step="0.01" min="0">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notes</label>
+        <textarea class="form-control" id="c-notes" placeholder="Details about this order…"></textarea>
+      </div>
+      <button class="btn btn-primary" id="create-btn" onclick="submitCreate()">Create PO</button>
+    </div>
+
+    <!-- Success screen (shown after PO is created) -->
+    <div id="create-success-card" style="display:none">
+      <div class="card" style="text-align:center;padding:32px 20px">
+        <div style="font-size:48px;margin-bottom:12px;color:#1F3971;font-weight:800">✓</div>
+        <div style="font-size:13px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:6px">PO Created</div>
+        <div id="success-po-num" style="font-size:36px;font-weight:800;color:#1F3971;font-family:monospace;letter-spacing:1px;margin-bottom:20px"></div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <button class="btn btn-primary" onclick="showCreateForm()">+ Create Another PO</button>
+          <button class="btn btn-secondary" style="width:100%;padding:14px;font-size:15px;border-radius:12px"
+                  onclick="showTab('dashboard', document.querySelectorAll('.nav-btn')[0])">← Back to Dashboard</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ══ RECEIVE PO ══ -->
+  <div class="tab" id="tab-receive">
+    <div class="card" id="receive-po-card">
+      <div class="card-title">Receive PO</div>
+
+      <div class="form-group">
+        <label class="form-label">PO Number</label>
+        <div style="display:flex;gap:8px">
+          <input type="text" class="form-control" id="r-ponum"
+                 placeholder="e.g. 26-02-954" style="flex:1"
+                 onkeydown="if(event.key==='Enter') lookupPO()">
+          <button class="btn btn-lookup" onclick="lookupPO()">Look Up</button>
+        </div>
+      </div>
+
+      <div id="r-info" style="display:none">
+        <div class="info-box" id="r-details"></div>
+
+        <div class="form-group">
+          <label class="form-label">Photo of Received Note</label>
+
+          <!-- Hidden file input — capture="environment" opens rear camera on mobile -->
+          <input type="file" id="photo-input" accept="image/*" capture="environment"
+                 style="display:none" onchange="handlePhoto(this)">
+
+          <!-- Initial state: just the camera button -->
+          <div class="photo-zone" id="photo-zone">
+            <button type="button" class="btn-camera" onclick="document.getElementById('photo-input').click()">
+              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
+                <circle cx="12" cy="13" r="3" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/>
+              </svg>
+              Take Photo
+            </button>
+            <p style="font-size:11px;color:#aaa;margin-top:8px">Or tap to choose from your gallery</p>
+          </div>
+
+          <!-- Preview + upload progress (shown after photo is taken) -->
+          <div id="photo-preview-area" style="display:none">
+            <div class="photo-zone has-photo">
+              <img id="photo-preview-img" class="photo-preview-img" alt="Received note photo">
+              <div class="upload-bar-wrap"><div class="upload-bar" id="upload-bar"></div></div>
+              <div class="photo-status" id="photo-status"></div>
+              <button type="button" class="btn-retake" onclick="retakePhoto()">↩ Retake Photo</button>
+            </div>
+          </div>
+
+          <!-- Hidden field that stores the final Drive URL -->
+          <input type="hidden" id="r-note">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Additional Notes</label>
+          <textarea class="form-control" id="r-notes" placeholder="Anything else to record…"></textarea>
+        </div>
+        <button class="btn btn-primary" id="receive-btn" onclick="submitReceive()">✓ Update PO</button>
+      </div>
+    </div>
+
+    <div class="card" style="text-align:center;padding:24px 20px">
+      <div style="font-size:15px;font-weight:700;margin-bottom:6px">Job Clean Up Checklist</div>
+      <div style="font-size:13px;color:#A2A092;margin-bottom:16px">Log OpenSpace, materials cleaned, and leftover material for a completed job.</div>
+      <button class="btn btn-secondary" style="width:100%;padding:14px;font-size:15px;border-radius:12px" onclick="openFormOverlay('cleanup-overlay')">Open Cleanup Form</button>
+    </div>
+
+    <div class="card" style="text-align:center;padding:24px 20px">
+      <div style="font-size:15px;font-weight:700;margin-bottom:6px">Office Notes</div>
+      <div style="font-size:13px;color:#A2A092;margin-bottom:16px">Send a quick note or update to the office task list.</div>
+      <button class="btn btn-secondary" style="width:100%;padding:14px;font-size:15px;border-radius:12px" onclick="openFormOverlay('officenotes-overlay')">Open Office Notes</button>
+    </div>
+
+    <div class="card" style="text-align:center;padding:24px 20px">
+      <div style="font-size:15px;font-weight:700;margin-bottom:6px">Reimbursement Form</div>
+      <div style="font-size:13px;color:#A2A092;margin-bottom:16px">Submit a reimbursement request.</div>
+      <button class="btn btn-secondary" style="width:100%;padding:14px;font-size:15px;border-radius:12px" onclick="openFormOverlay('reimbursement-overlay')">Open Reimbursement Form</button>
+    </div>
+
+    <div class="card" style="text-align:center;padding:24px 20px">
+      <div style="font-size:15px;font-weight:700;margin-bottom:6px">Company Credit Card</div>
+      <div style="font-size:13px;color:#A2A092;margin-bottom:16px">Log a company credit card charge.</div>
+      <button class="btn btn-secondary" style="width:100%;padding:14px;font-size:15px;border-radius:12px" onclick="openFormOverlay('creditcard-overlay')">Open CC Form</button>
+    </div>
+
+    <div class="card" style="text-align:center;padding:24px 20px">
+      <div style="font-size:15px;font-weight:700;margin-bottom:6px">Material Request</div>
+      <div style="font-size:13px;color:#A2A092;margin-bottom:16px">Submit a request for materials needed on a job.</div>
+      <button class="btn btn-secondary" style="width:100%;padding:14px;font-size:15px;border-radius:12px" onclick="openFormOverlay('materialrequest-overlay')">Open Material Request</button>
+    </div>
+  </div>
+
+  <!-- ══ PRICING ══ -->
+  <div class="tab" id="tab-pricing">
+    <div class="search-row">
+      <div class="search-wrap">
+        <input type="text" class="search-input" id="p-input"
+               placeholder="Search materials…"
+               oninput="runPricingSearch(); toggleClear('p-input','p-clear')">
+        <button class="search-clear" id="p-clear" onclick="clearSearch('p-input','p-clear'); runPricingSearch()">✕</button>
+      </div>
+    </div>
+    <p id="p-last-updated" style="font-size:11px;color:#A2A092;padding:4px 16px 0;margin:0"></p>
+    <div class="chip-row" id="p-cats" style="display:none"></div>
+    <div id="p-loading" style="display:none">
+      <div class="loading"><div class="spinner"></div><p>Loading prices…</p></div>
+    </div>
+    <div id="p-results"><div class="empty">Select a category or search above.</div></div>
+  </div>
+
+  <!-- ══ CONTACTS ══ -->
+  <div class="tab" id="tab-contacts">
+    <div class="search-row">
+      <div class="search-wrap">
+        <input type="text" class="search-input" id="ct-input"
+               placeholder="Search contacts…"
+               oninput="runContactSearch(); toggleClear('ct-input','ct-clear')">
+        <button class="search-clear" id="ct-clear" onclick="clearSearch('ct-input','ct-clear'); runContactSearch()">✕</button>
+      </div>
+    </div>
+    <div id="ct-loading" style="display:none">
+      <div class="loading"><div class="spinner"></div><p>Loading contacts…</p></div>
+    </div>
+    <div id="ct-results"><div class="empty">Loading contacts…</div></div>
+  </div>
+
+  <!-- ══ ADMIN ══ -->
+  <div class="tab" id="tab-admin">
+
+    <!-- Statement Reconcile Card -->
+    <div class="card">
+      <div class="card-title">Statement Reconcile</div>
+      <p style="font-size:14px;color:#8A887E;margin-bottom:18px;line-height:1.5">
+        Paste invoice numbers from a vendor statement to see which ones are missing from the PO database.
+      </p>
+      <div class="form-group">
+        <label class="form-label">Vendor</label>
+        <select class="form-control" id="recon-vendor">
+          <option value="">— All Vendors —</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Invoice Numbers</label>
+        <textarea class="form-control" id="recon-invoices" rows="7"
+          placeholder="Paste invoice numbers here, one per line or comma-separated&#10;&#10;34761&#10;34791&#10;34830&#10;..."></textarea>
+      </div>
+      <button class="btn btn-primary" id="recon-btn" onclick="runReconcile()">Check Against Database</button>
+    </div>
+
+    <!-- Reconcile Results -->
+    <div id="recon-results" style="display:none">
+      <div id="recon-summary-bar" style="background:#1F3971;color:white;border-radius:12px;padding:14px 18px;margin-bottom:14px;font-size:14px;font-weight:700;display:flex;justify-content:space-between"></div>
+      <div id="recon-missing-section"></div>
+      <div id="recon-found-section"></div>
+    </div>
+
+  </div>
+
+</main>
+
+
+
+<!-- Bottom Nav -->
+<nav class="bottom-nav">
+  <button id="nav-dashboard" class="nav-btn active" onclick="showTab('dashboard',this)">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+    Dashboard
+  </button>
+  <button id="nav-create" class="nav-btn" onclick="showTab('create',this)">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+    New PO
+  </button>
+  <button id="nav-receive" class="nav-btn" onclick="showTab('receive',this)">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+    Log
+  </button>
+  <button id="nav-pricing" class="nav-btn" onclick="showTab('pricing',this)">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z"/></svg>
+    Pricing
+  </button>
+  <button id="nav-contacts" class="nav-btn" onclick="showTab('contacts',this)">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+    Contacts
+  </button>
+  <button id="nav-admin" class="nav-btn" onclick="showTab('admin',this)" style="display:none">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>
+    Admin
+  </button>
+
+</nav>
+
+<!-- Login Screen -->
+<div class="login-screen hidden" id="login-screen">
+  <div class="login-logo">
+    <svg width="40" height="40" viewBox="0 0 64 64" fill="none">
+      <path d="M16 24l16-8 16 8v16l-16 8-16-8V24z" stroke="white" stroke-width="2.5" stroke-linejoin="round"/>
+      <path d="M16 24l16 8 16-8M32 32v16" stroke="white" stroke-width="2.5" stroke-linejoin="round"/>
+    </svg>
+  </div>
+  <div class="login-title">Panoramic Ops</div>
+  <div class="login-sub">Sign in to continue</div>
+  <div class="login-card">
+    <div class="login-field">
+      <label>Email</label>
+      <input type="email" id="login-email" placeholder="you@example.com"
+             autocomplete="email" autocapitalize="none"
+             onkeydown="if(event.key==='Enter') document.getElementById('login-password').focus()">
+    </div>
+    <div class="login-field">
+      <label>Password</label>
+      <input type="password" id="login-password" placeholder="••••••••"
+             autocomplete="current-password"
+             onkeydown="if(event.key==='Enter') submitLogin()">
+    </div>
+    <div class="login-error" id="login-error"></div>
+    <button class="login-btn" id="login-btn" onclick="submitLogin()">Sign In</button>
+  </div>
+</div>
+
+<!-- ══════════════════ JAVASCRIPT ══════════════════ -->
+<script>
+// ── State ────────────────────────────────────────────────────────────────────
+var G = {
+  pos:           [],
+  config:        { statusOptions: [], vendorOptions: [] },
+  filter:        'all',
+  dashFilter:    null,
+  receivePO:     null,
+  editRow:       null,
+  role:          'admin',
+  userEmail:     '',
+  perms:         { canDash:true, canCreate:true, canReceive:true, canSearch:true, canPricing:true, canEdit:true },
+  pricing:         [],
+  pricingVendors:  [],
+  pricingLoaded:   false,
+  pricingCategory:  '',
+  pricingIdx:    null,
+  contacts:        [],
+  contactsHeaders: [],
+  contactsLoaded:  false,
+  contactEditIdx:  null,
+  sort:            'newest'
+};
+
+// ── GAS endpoint (fetch() replaces google.script.run) ────────────────────────
+var GAS_URL = 'https://script.google.com/macros/s/AKfycbwvX4xv5kDofWEldpSRJP8O2yeVVgMcYVQsgtKmuFyKBZWTj0vfhFIIZAJp2UQob_XJ-Q/exec';
+
+function gasCall(action, payload, onSuccess, onFailure) {
+  fetch(GAS_URL, {
+    method: 'POST',
+    body: JSON.stringify({ action: action, payload: payload || {} }),
+    redirect: 'follow'
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) { if (onSuccess) onSuccess(data); })
+  .catch(function(err) {
+    console.error('gasCall [' + action + '] error:', err);
+    if (onFailure) onFailure(err);
+  });
+}
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+  var cachedEmail = localStorage.getItem('panoramic_ops_email');
+  if (cachedEmail) {
+    // Returning user — boot directly from cached email, no password needed
+    bootWithEmail(cachedEmail);
+  } else {
+    // New device / signed out — show login screen
+    document.getElementById('login-screen').classList.remove('hidden');
+    setTimeout(function(){ document.getElementById('login-email').focus(); }, 300);
+  }
+});
+
+function showLoginScreen(msg) {
+  localStorage.removeItem('panoramic_ops_email');
+  var ls = document.getElementById('login-screen');
+  if (ls) ls.classList.remove('hidden');
+  if (msg) showToast(msg);
+  setTimeout(function() {
+    var el = document.getElementById('login-email');
+    if (el) el.focus();
+  }, 300);
+}
+
+function bootWithEmail(email) {
+  gasCall('getConfig', { email: email }, function(cfg) {
+    try {
+      if (!cfg) throw new Error('No config returned');
+      G.config    = cfg;
+      G.role      = cfg.userRole  || 'runner';
+      G.userEmail = cfg.userEmail || email;
+      applyRole(G.role);
+      fillSelects();
+      loadData();
+    } catch(e) {
+      console.error('Boot error:', e);
+      showLoginScreen('Something went wrong. Please sign in again.');
+    }
+  }, function(e) {
+    console.error('getConfig failed:', e);
+    showLoginScreen('Could not connect. Please sign in again.');
+  });
+}
+
+function submitLogin() {
+  var email    = (document.getElementById('login-email').value    || '').trim().toLowerCase();
+  var password = (document.getElementById('login-password').value || '').trim();
+  var errEl    = document.getElementById('login-error');
+  var btn      = document.getElementById('login-btn');
+
+  if (!email || !email.includes('@')) {
+    errEl.textContent = 'Enter a valid email address.';
+    errEl.style.display = 'block';
+    return;
+  }
+  if (!password) {
+    errEl.textContent = 'Enter your password.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Signing in…';
+  errEl.style.display = 'none';
+
+  // Safety timeout — reset button if server never responds (e.g. not redeployed yet)
+  var loginTimeout = setTimeout(function() {
+    btn.disabled = false;
+    btn.textContent = 'Sign In';
+    errEl.textContent = 'Request timed out. Make sure the app is deployed and try again.';
+    errEl.style.display = 'block';
+  }, 15000);
+
+  gasCall('verifyLogin', { email: email, password: password }, function(result) {
+    clearTimeout(loginTimeout);
+    btn.disabled = false;
+    btn.textContent = 'Sign In';
+    if (result.success) {
+      localStorage.setItem('panoramic_ops_email', result.email);
+      document.getElementById('login-screen').classList.add('hidden');
+      document.getElementById('login-password').value = '';
+      G.config    = { statusOptions: [], vendorOptions: [] };
+      bootWithEmail(result.email);
+    } else {
+      errEl.textContent = result.error || 'Sign in failed.';
+      errEl.style.display = 'block';
+      document.getElementById('login-password').focus();
+    }
+  }, function(e) {
+    clearTimeout(loginTimeout);
+    btn.disabled = false;
+    btn.textContent = 'Sign In';
+    errEl.textContent = 'Could not connect. Try again.';
+    errEl.style.display = 'block';
+    console.error('verifyLogin failed:', e);
+  });
+}
+
+function switchAccount() {
+  localStorage.removeItem('panoramic_ops_email');
+  document.getElementById('login-email').value    = '';
+  document.getElementById('login-password').value = '';
+  document.getElementById('login-error').style.display = 'none';
+  document.getElementById('login-screen').classList.remove('hidden');
+  setTimeout(function(){ document.getElementById('login-email').focus(); }, 300);
+}
+
+function fillSelects() {
+  var vendorOpts = (G.config.vendorOptions || []);
+  var statusOpts = (G.config.statusOptions || []);
+  ['c-vendor'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    vendorOpts.forEach(function(v) {
+      el.insertAdjacentHTML('beforeend','<option value="'+esc(v)+'">'+esc(v)+'</option>');
+    });
+  });
+  ['c-status'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    statusOpts.forEach(function(s) {
+      el.insertAdjacentHTML('beforeend','<option value="'+esc(s)+'">'+esc(s)+'</option>');
+    });
+  });
+  var cs = document.getElementById('c-status');
+  if (cs) cs.value = 'Pending Pickup';
+}
+
+function loadData() {
+  document.getElementById('dash-loading').style.display = 'block';
+  document.getElementById('dash-content').style.display  = 'none';
+
+  gasCall('getSheetData', {}, function(pos) {
+    G.pos = pos || [];
+    renderDashboard();
+    runSearch();
+    document.getElementById('dash-loading').style.display = 'none';
+    document.getElementById('dash-content').style.display  = 'block';
+  }, function(e) {
+    document.getElementById('dash-loading').innerHTML =
+      '<p style="color:#c62828;font-size:14px">Error loading data.<br>Please refresh.</p>';
+    console.error(e);
+  });
+}
+
+function refreshData() { loadData(); showToast('Refreshing…'); }
+
+// ── Role-Based Access ─────────────────────────────────────────────────────────
+function applyRole(role) {
+  var p = {
+    canDash:        role !== 'runner',
+    canCreate:      role === 'admin' || role === 'office',
+    canReceive:     role !== 'accountant',                           // controls Log tab visibility
+    canReceivePO:   role !== 'accountant',                           // controls Receive PO form + actions
+    canSearch:      role !== 'runner',
+    canPricing:     role === 'admin',
+    canEdit:        role === 'admin' || role === 'office',
+    canViewInvoice: role !== 'site_manager' && role !== 'runner',
+    canContacts:    role === 'admin' || role === 'office',
+    canCleanup:     role === 'admin' || role === 'office' || role === 'site_manager' || role === 'runner',
+    canAdmin:       role === 'admin'
+  };
+  G.perms = p;
+
+  // Show/hide nav buttons (null-safe in case elements aren't in the deployed version yet)
+  function sd(id, show) { var el = document.getElementById(id); if (el) el.style.display = show ? '' : 'none'; }
+  sd('nav-dashboard',   p.canDash);
+  sd('nav-create',      p.canCreate);
+  sd('nav-receive',     p.canReceive);
+  sd('nav-pricing',     p.canPricing);
+  sd('nav-contacts',    p.canContacts);
+  sd('nav-admin',       p.canAdmin);
+  sd('receive-po-card', p.canReceivePO);
+
+  // Show role badge in header
+  var labels = { admin:'Admin', office:'Office', site_manager:'Site Manager', runner:'Runner', accountant:'Accountant' };
+  var headerP = document.querySelector('.app-header p');
+  if (headerP && labels[role]) {
+    headerP.innerHTML = 'Panoramic Building <span style="font-size:10px;opacity:0.5">v67</span>' +
+      ' &nbsp;<span onclick="switchAccount()" style="cursor:pointer;font-size:11px;background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:6px" title="Switch account">' + labels[role] + '</span>';
+  }
+
+  // Navigate to the correct default tab
+  if (role === 'runner') {
+    showTabDirect('receive', document.getElementById('nav-receive'));
+  } else {
+    showTabDirect('dashboard', document.getElementById('nav-dashboard'));
+  }
+}
+
+// Internal tab switch with no permission check (used by applyRole and boot)
+function showTabDirect(name, btn) {
+  document.querySelectorAll('.tab').forEach(function(t){ t.classList.remove('active'); });
+  document.querySelectorAll('.nav-btn').forEach(function(b){ b.classList.remove('active'); });
+  document.getElementById('tab-'+name).classList.add('active');
+  if (btn) btn.classList.add('active');
+  if (name === 'pricing')  loadPricing();
+  if (name === 'contacts') loadContacts();
+  if (name === 'admin')    loadAdmin();
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+function renderDashboard() {
+  var now = today();
+
+  var buckets = {
+    todayDel:[], todayPick:[],
+    upcomingDel:[], upcomingPick:[],   // within 7 days
+    futureDel:[], futurePick:[],        // date set but > 7 days out
+    overdueDel:[], overduePick:[],
+    missingDel:[], missingPick:[],      // truly no date
+    reconcile:[], ordered:[], inProd:[], draft:[]
+  };
+
+  var openCount = 0;
+
+  G.pos.forEach(function(po) {
+    var sl = po.status.toLowerCase();
+    var isPD     = sl === 'pending delivery';
+    var isPP     = sl === 'pending pickup';
+    var isRTR    = sl === 'ready to reconcile';
+    var isInProd = sl === 'being made' || sl === 'pending delivery to supplier';
+    var isOrd    = sl === 'ordered' || sl === 'currently picking up';
+    var isDraft  = sl === 'draft';
+
+    if (isRTR)    { buckets.reconcile.push(po); return; }
+    if (isInProd) { buckets.inProd.push(po);    return; }
+    if (isOrd)    { buckets.ordered.push(po);   return; }
+    if (isDraft)  { buckets.draft.push(po);     return; }
+    if (!isPD && !isPP) return;
+
+    openCount++;
+    var dd = po.deliveryDate ? parseMMDDYYYY(po.deliveryDate) : null;
+
+    if (!dd) {
+      isPD ? buckets.missingDel.push(po) : buckets.missingPick.push(po);
+    } else if (sameDay(dd, now)) {
+      isPD ? buckets.todayDel.push(po) : buckets.todayPick.push(po);
+    } else if (dd < now) {
+      isPD ? buckets.overdueDel.push(po) : buckets.overduePick.push(po);
+    } else if (dd <= addDays(now, 7)) {
+      isPD ? buckets.upcomingDel.push(po) : buckets.upcomingPick.push(po);
+    } else {
+      // Has a date but it's more than 7 days out — NOT missing a date
+      isPD ? buckets.futureDel.push(po) : buckets.futurePick.push(po);
+    }
+  });
+
+  var todayTotal   = buckets.todayDel.length + buckets.todayPick.length;
+  var overdueTotal = buckets.overdueDel.length + buckets.overduePick.length;
+  var missingTotal = buckets.missingDel.length + buckets.missingPick.length;
+
+  var h = '';
+
+  var pendingDelCount  = buckets.todayDel.concat(buckets.upcomingDel, buckets.futureDel, buckets.overdueDel, buckets.missingDel).length;
+  var pendingPickCount = buckets.todayPick.concat(buckets.upcomingPick, buckets.futurePick, buckets.overduePick, buckets.missingPick).length;
+
+  // Stats — 9 tiles, 3×3 grid
+  h += '<div class="stats-grid">';
+  h += stat(todayTotal,              'Today',          todayTotal        > 0 ? 'c-green' : 'c-gray',  'today');
+  h += stat(overdueTotal,            'Overdue',         overdueTotal      > 0 ? 'c-red'   : 'c-green', 'overdue');
+  h += stat(missingTotal,            'No Date',         missingTotal      > 0 ? 'c-amber' : 'c-green', 'nodate');
+  h += stat(pendingDelCount,         'Pending Delivery',pendingDelCount   > 0 ? 'c-blue'  : 'c-gray',  'pendingdel');
+  h += stat(pendingPickCount,        'Pending Pickup',  pendingPickCount  > 0 ? 'c-blue'  : 'c-gray',  'pendingpick');
+  h += stat(buckets.inProd.length,   'In Production',   buckets.inProd.length > 0 ? 'c-teal' : 'c-gray', 'inprod');
+  h += stat(buckets.draft.length,    'Draft',           buckets.draft.length  > 0 ? 'c-gray' : 'c-gray', 'draft');
+  h += stat(openCount,               'Open POs',        'c-gray', 'open');
+  h += stat(G.pos.length,            'Total POs',       'c-gray', 'total');
+  h += '</div>';
+
+  // Active filter bar
+  var filterLabels = { today:'Today', overdue:'Overdue', nodate:'No Date', pendingdel:'Pending Delivery', pendingpick:'Pending Pickup', inprod:'In Production', draft:'Draft', open:'Open POs', total:'All POs' };
+  if (G.dashFilter) {
+    h += '<div class="dash-filter-bar"><span>Showing: ' + filterLabels[G.dashFilter] + '</span>' +
+         '<button onclick="filterDash(G.dashFilter)">X Show All</button></div>';
+  }
+
+  var f = G.dashFilter;
+
+  // Pending Delivery filter — flat list sorted by date
+  if (f === 'pendingdel') {
+    var sortByDate = function(a,b){ return (parseMMDDYYYY(a.deliveryDate)||new Date(9e15)) - (parseMMDDYYYY(b.deliveryDate)||new Date(9e15)); };
+    var delSoon    = buckets.overdueDel.concat(buckets.todayDel, buckets.upcomingDel).sort(sortByDate);
+    var delFuture  = buckets.futureDel.slice().sort(sortByDate);
+    var delMissing = buckets.missingDel;
+    var delTotal   = delSoon.length + delFuture.length + delMissing.length;
+    h += secHead('Pending Delivery (' + delTotal + ')', 'sh-blue');
+    if (delSoon.length) {
+      h += '<div class="sec-head sh-green" style="font-size:12px;margin-top:8px">This Week / Overdue (' + delSoon.length + ')</div>';
+      delSoon.forEach(function(po){ h += poCard(po,'delivery'); });
+    }
+    if (delFuture.length) {
+      h += '<div class="sec-head sh-indigo" style="font-size:12px;margin-top:8px">Future (' + delFuture.length + ')</div>';
+      delFuture.forEach(function(po){ h += poCard(po,'delivery'); });
+    }
+    if (delMissing.length) {
+      h += '<div class="sec-head sh-amber" style="font-size:12px;margin-top:8px">No Date (' + delMissing.length + ')</div>';
+      delMissing.forEach(function(po){ h += poCard(po,'missing'); });
+    }
+  }
+
+  // Pending Pickup filter — split by this week / future / no date
+  if (f === 'pendingpick') {
+    var sortByDate2 = function(a,b){ return (parseMMDDYYYY(a.deliveryDate)||new Date(9e15)) - (parseMMDDYYYY(b.deliveryDate)||new Date(9e15)); };
+    var pickSoon    = buckets.overduePick.concat(buckets.todayPick, buckets.upcomingPick).sort(sortByDate2);
+    var pickFuture  = buckets.futurePick.slice().sort(sortByDate2);
+    var pickMissing = buckets.missingPick;
+    var pickTotal   = pickSoon.length + pickFuture.length + pickMissing.length;
+    h += secHead('Pending Pickup (' + pickTotal + ')', 'sh-blue');
+    if (pickSoon.length) {
+      h += '<div class="sec-head sh-green" style="font-size:12px;margin-top:8px">This Week / Overdue (' + pickSoon.length + ')</div>';
+      pickSoon.forEach(function(po){ h += poCard(po,'pickup'); });
+    }
+    if (pickFuture.length) {
+      h += '<div class="sec-head sh-indigo" style="font-size:12px;margin-top:8px">Future (' + pickFuture.length + ')</div>';
+      pickFuture.forEach(function(po){ h += poCard(po,'pickup'); });
+    }
+    if (pickMissing.length) {
+      h += '<div class="sec-head sh-amber" style="font-size:12px;margin-top:8px">No Date (' + pickMissing.length + ')</div>';
+      pickMissing.forEach(function(po){ h += poCard(po,'missing'); });
+    }
+  }
+
+  // Overdue
+  var overdueAll = buckets.overdueDel.concat(buckets.overduePick)
+                    .sort(function(a,b){ return parseMMDDYYYY(a.deliveryDate)-parseMMDDYYYY(b.deliveryDate); });
+  if (overdueAll.length && (!f || f==='overdue' || f==='open')) {
+    h += secHead('Overdue (' + overdueAll.length + ')', 'sh-red');
+    overdueAll.forEach(function(po){ h += poCard(po,'overdue'); });
+  }
+
+  // Today
+  if (todayTotal && (!f || f==='today' || f==='open')) {
+    h += secHead('Today (' + todayTotal + ')', 'sh-green');
+    buckets.todayDel.forEach(function(po){ h += poCard(po,'delivery'); });
+    buckets.todayPick.forEach(function(po){ h += poCard(po,'pickup'); });
+  }
+
+  // This week
+  var weekAll = buckets.upcomingDel.concat(buckets.upcomingPick)
+                  .sort(function(a,b){ return parseMMDDYYYY(a.deliveryDate)-parseMMDDYYYY(b.deliveryDate); });
+  if (weekAll.length && (!f || f==='open')) {
+    h += secHead('This Week (' + weekAll.length + ')', 'sh-blue');
+    weekAll.forEach(function(po){
+      h += poCard(po, po.status.toLowerCase()==='pending delivery' ? 'delivery' : 'pickup');
+    });
+  }
+
+  // Later (date set but > 7 days out)
+  var futureAll = buckets.futureDel.concat(buckets.futurePick)
+                    .sort(function(a,b){ return parseMMDDYYYY(a.deliveryDate)-parseMMDDYYYY(b.deliveryDate); });
+  if (futureAll.length && (!f || f==='open')) {
+    h += secHead('Later (' + futureAll.length + ')', 'sh-blue');
+    futureAll.forEach(function(po){
+      h += poCard(po, po.status.toLowerCase()==='pending delivery' ? 'delivery' : 'pickup');
+    });
+  }
+
+  // Ready to reconcile
+  if (buckets.reconcile.length && (!f)) {
+    h += secHead('Ready to Reconcile (' + buckets.reconcile.length + ')', 'sh-teal');
+    buckets.reconcile.forEach(function(po){ h += poCard(po,'reconcile'); });
+  }
+
+  // In Production
+  if (buckets.inProd.length && (!f || f==='inprod' || f==='open')) {
+    h += secHead('In Production (' + buckets.inProd.length + ')', 'sh-indigo');
+    buckets.inProd.forEach(function(po){ h += poCard(po,'ordered'); });
+  }
+
+  // Ordered / in progress
+  if (buckets.ordered.length && (!f || f==='open')) {
+    h += secHead('Ordered / In Progress (' + buckets.ordered.length + ')', 'sh-indigo');
+    buckets.ordered.forEach(function(po){ h += poCard(po,'ordered'); });
+  }
+
+  // Missing date
+  var missingAll = buckets.missingDel.concat(buckets.missingPick);
+  if (missingAll.length && (!f || f==='nodate' || f==='open')) {
+    h += secHead('Needs a Date (' + missingAll.length + ')', 'sh-amber');
+    missingAll.forEach(function(po){ h += poCard(po,'missing'); });
+  }
+
+  // Draft
+  if (buckets.draft.length && (!f || f==='draft')) {
+    h += secHead('Draft (' + buckets.draft.length + ')', 'sh-indigo');
+    buckets.draft.forEach(function(po){ h += poCard(po,'complete'); });
+  }
+
+  // Total — show all POs newest first
+  if (f === 'total') {
+    h += secHead('All POs (' + G.pos.length + ')', 'sh-indigo');
+    G.pos.slice().reverse().forEach(function(po){ h += poCard(po, po.status.toLowerCase().replace(/ /g,'-')); });
+  }
+
+  if (!f && !overdueAll.length && !todayTotal && !weekAll.length && !futureAll.length &&
+      !buckets.reconcile.length && !missingAll.length && !buckets.ordered.length &&
+      !buckets.inProd.length && !buckets.draft.length) {
+    h += '<div class="empty">All clear — no open POs need attention.</div>';
+  }
+
+  document.getElementById('dash-content').innerHTML = h;
+}
+
+function stat(val, lbl, cls, key) {
+  var active = G.dashFilter === key ? ' active' : '';
+  return '<div class="stat-card'+active+'" onclick="filterDash(\''+key+'\')">' +
+    '<div class="stat-num '+cls+'">'+val+'</div>' +
+    '<div class="stat-label">'+lbl+'</div>' +
+  '</div>';
+}
+function filterDash(key) {
+  G.dashFilter = (G.dashFilter === key) ? null : key;
+  renderDashboard();
+}
+function secHead(t, cls) { return '<div class="sec-head '+cls+'">'+t+'</div>'; }
+function more(n) { return '<p style="text-align:center;color:#aaa;font-size:12px;padding:6px 0">+'+n+' more — use Search tab</p>'; }
+
+function poCard(po, type) {
+  var amt   = po.invoiceTotal && parseFloat(po.invoiceTotal) > 0 && G.perms.canViewInvoice
+              ? '<span class="po-amount">$'+fmtCurrency(po.invoiceTotal)+'</span>' : '';
+  var dateStr = po.deliveryDate ? ' · '+po.deliveryDate : '';
+
+  // Clickable badge for quick status change (admin/office/site_manager)
+  var statusBadge = G.perms.canEdit
+    ? '<span class="badge '+badgeCls(po.status)+'" onclick="quickStatusChange(\''+po.poNum+'\','+po.rowIndex+')" style="cursor:pointer" title="Tap to change status">'+esc(po.status)+'</span>'
+    : badge(po.status);
+
+  // Swipe-to-receive hint arrow
+  var swipeBg = G.perms.canReceivePO
+    ? '<div class="swipe-bg"><svg width="22" height="22" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>'
+    : '';
+
+  return '<div class="po-item '+type+'" data-ponum="'+esc(po.poNum)+'" data-rowindex="'+po.rowIndex+'">' +
+    swipeBg +
+    '<div class="row-between">' +
+      '<span class="po-num">'+po.poNum+'</span>' + amt +
+    '</div>' +
+    '<div class="po-main">'+(po.jobRef||'—')+'</div>' +
+    '<div class="po-sub">'+(po.vendor||'—')+(po.builder?' · '+po.builder:'')+dateStr+'</div>' +
+    (po.notes ? '<div class="po-note">'+esc(po.notes)+'</div>' : '') +
+    '<div class="po-actions">' +
+      statusBadge +
+      (G.perms.canEdit    ? '<button class="btn btn-sm btn-edit"    onclick="openEdit(\''+po.poNum+'\')">Edit</button>'            : '') +
+      (G.perms.canReceivePO ? '<button class="btn btn-sm btn-receive" onclick="quickReceive(\''+po.poNum+'\')">Receive</button>'     : '') +
+      (po.invoiceLink && G.perms.canViewInvoice ? '<a href="'+esc(po.invoiceLink)+'" target="_blank" class="btn btn-sm" style="background:#fff8e1;color:#e65100;text-decoration:none">Invoice</a>' : '') +
+      (po.issuedPOLink ? '<a href="'+esc(po.issuedPOLink)+'" target="_blank" class="btn btn-sm" style="background:#eaedfa;color:#1F3971;text-decoration:none">Issued PO</a>' : '') +
+    '</div>' +
+  '</div>';
+}
+
+function badgeCls(status) {
+  var map = {
+    'Pending Pickup'            : 'bd-blue',
+    'Pending Delivery'          : 'bd-green',
+    'Pending Delivery to Supplier':'bd-teal',
+    'Ready to Reconcile'        : 'bd-teal',
+    'Invoice Missing'           : 'bd-red',
+    'Needs Review'              : 'bd-amber',
+    'Complete'                  : 'bd-gray',
+    'Ordered'                   : 'bd-indigo',
+    'Being made'                : 'bd-amber',
+    'Currently Picking Up'      : 'bd-purple',
+    'Draft'                     : 'bd-gray'
+  };
+  return map[status] || 'bd-gray';
+}
+
+function badge(status) {
+  return '<span class="badge '+badgeCls(status)+'">'+esc(status)+'</span>';
+}
+
+// ── Create PO ─────────────────────────────────────────────────────────────────
+function submitCreate() {
+  var job    = trim('c-job');
+  var vendor = getVendorValue('c-vendor', 'c-vendor-other');
+  if (!job || !vendor) { showToast('Job Reference and Vendor are required'); return; }
+
+  setBtnState('create-btn', 'Creating…', true);
+
+  gasCall('createPO', {
+    builder:       trim('c-builder'),
+    jobRef:        job,
+    vendor:        vendor,
+    vendorInvoice: trim('c-invoice'),
+    status:        getVendorValue('c-status', 'c-status-other'),
+    invoiceTotal:  val('c-total'),
+    notes:         trim('c-notes')
+  }, function(res) {
+    setBtnState('create-btn', 'Create PO', false);
+    if (res.success) {
+      clearCreate();
+      loadData();
+      // Show success screen with PO number
+      document.getElementById('success-po-num').textContent = res.poNumber;
+      document.getElementById('create-form-card').style.display    = 'none';
+      document.getElementById('create-success-card').style.display = 'block';
+    } else {
+      showToast('Error:' + res.error);
+    }
+  }, function() {
+    setBtnState('create-btn', 'Create PO', false);
+    showToast('Error:Error creating PO');
+  });
+}
+
+function clearCreate() {
+  ['c-builder','c-job','c-invoice','c-total','c-notes'].forEach(function(id){ document.getElementById(id).value=''; });
+  document.getElementById('c-vendor').value = '';
+  document.getElementById('c-vendor-other').value = '';
+  document.getElementById('c-vendor-other').style.display = 'none';
+  document.getElementById('c-status').value = 'Pending Pickup';
+  document.getElementById('c-status-other').value = '';
+  document.getElementById('c-status-other').style.display = 'none';
+}
+
+function showCreateForm() {
+  document.getElementById('create-form-card').style.display    = 'block';
+  document.getElementById('create-success-card').style.display = 'none';
+}
+
+// ── Receive PO ────────────────────────────────────────────────────────────────
+function lookupPO() {
+  var poNum = trim('r-ponum');
+  if (!poNum) { showToast('Enter a PO number first'); return; }
+
+  var found = G.pos.find(function(p){ return p.poNum === poNum; });
+  if (found) {
+    showReceiveInfo(found);
+  } else {
+    gasCall('findPOByNumber', { poNum: poNum }, function(p) {
+      p ? showReceiveInfo(p) : showToast('PO '+poNum+' not found');
+    }, function(){ showToast('Error:Lookup failed'); });
+  }
+}
+
+function showReceiveInfo(po) {
+  G.receivePO = po;
+  document.getElementById('r-details').innerHTML =
+    '<div class="po-num">'+po.poNum+'</div>' +
+    '<div class="po-main" style="margin:4px 0">'+(po.jobRef||'—')+'</div>' +
+    '<div class="po-sub">'+(po.vendor||'—')+(po.builder?' · '+po.builder:'')+'</div>' +
+    (po.notes ? '<div class="po-note">'+esc(po.notes)+'</div>' : '');
+
+  document.getElementById('r-note').value   = po.receivedNote || '';
+  document.getElementById('r-notes').value  = '';
+  document.getElementById('r-info').style.display = 'block';
+}
+
+function quickReceive(poNum) {
+  showTab('receive', document.getElementById('nav-receive'));
+  document.getElementById('r-ponum').value = poNum;
+  document.getElementById('r-info').style.display = 'none';
+  lookupPO();
+}
+
+function submitReceive() {
+  if (!G.receivePO) { showToast('Look up a PO first'); return; }
+
+  setBtnState('receive-btn', 'Saving…', true);
+
+  gasCall('updatePO', {
+    rowIndex: G.receivePO.rowIndex,
+    updates: {
+      status:       'Ready to Reconcile',
+      receivedNote: trim('r-note'),
+      notes:        trim('r-notes') || G.receivePO.notes
+    }
+  }, function(res) {
+    setBtnState('receive-btn', '✓ Update PO', false);
+    if (res.success) {
+      showToast('' + G.receivePO.poNum + ' updated!');
+      document.getElementById('r-ponum').value = '';
+      document.getElementById('r-info').style.display = 'none';
+      G.receivePO = null;
+      loadData();
+    } else {
+      showToast('Error:' + res.error);
+    }
+  }, function() {
+    setBtnState('receive-btn', '✓ Update PO', false);
+    showToast('Error:Error updating PO');
+  });
+}
+
+// ── Search ───────────────────────────────────────────────────────────────────
+function toggleClear(inputId, clearId) {
+  var hasVal = !!document.getElementById(inputId).value;
+  document.getElementById(clearId).classList.toggle('visible', hasVal);
+}
+
+function clearSearch(inputId, clearId) {
+  document.getElementById(inputId).value = '';
+  document.getElementById(clearId).classList.remove('visible');
+}
+
+function setChip(filter, el) {
+  G.filter = filter;
+  document.querySelectorAll('#s-chips .chip').forEach(function(c){ c.classList.remove('active'); });
+  el.classList.add('active');
+  runSearch();
+}
+
+function runSearch() {
+  var q          = (document.getElementById('s-input').value || '').toLowerCase().trim();
+  var isSearching = !!q || G.filter !== 'all';
+
+  var resultsEl   = document.getElementById('s-results');
+  var dashContent = document.getElementById('dash-content');
+  var chipsEl     = document.getElementById('s-chips');
+  var sortEl      = document.getElementById('s-sort');
+
+  // Show filter chips whenever there's any search activity; sort only when text typed
+  if (chipsEl) chipsEl.style.display = isSearching ? 'flex' : 'none';
+  if (sortEl)  sortEl.style.display  = q           ? 'flex' : 'none';
+
+  if (!isSearching) {
+    if (resultsEl)   resultsEl.style.display   = 'none';
+    // Only reveal dash-content once data has loaded (spinner handles pre-load)
+    if (dashContent) dashContent.style.display = G.pos.length ? 'block' : 'none';
+    return;
+  }
+
+  if (resultsEl)   resultsEl.style.display   = 'block';
+  if (dashContent) dashContent.style.display = 'none';
+
+  var tokens  = q.split(/\s+/).filter(Boolean);
+  var results = G.pos.filter(function(po) {
+    if (G.filter !== 'all' && po.status !== G.filter) return false;
+    if (!q) return true;
+    var text = (po.poNum+' '+po.jobRef+' '+po.vendor+' '+po.builder+' '+po.notes+' '+po.vendorInvoice).toLowerCase();
+    return tokens.every(function(t) { return text.includes(t); });
+  });
+
+  // Sort
+  if (G.sort === 'oldest') {
+    results.sort(function(a,b){ return a.rowIndex - b.rowIndex; });
+  } else if (G.sort === 'duedate') {
+    results.sort(function(a,b){
+      var da = parseMMDDYYYY(a.deliveryDate), db = parseMMDDYYYY(b.deliveryDate);
+      var ta = da ? da.getTime() : 9e15, tb = db ? db.getTime() : 9e15;
+      return ta - tb;
+    });
+  } else if (G.sort === 'vendor') {
+    results.sort(function(a,b){ return (a.vendor||'').localeCompare(b.vendor||''); });
+  } else {
+    results.sort(function(a,b){ return b.rowIndex - a.rowIndex; }); // newest
+  }
+
+  var h = '';
+  if (results.length === 0) {
+    h = '<div class="empty">No POs match your search.</div>';
+  } else {
+    h += '<p style="font-size:11px;color:#aaa;margin-bottom:8px">'+results.length+' result'+(results.length!==1?'s':'')+'</p>';
+    results.slice(0,60).forEach(function(po){
+      h += poCard(po, typeClass(po.status));
+    });
+    if (results.length > 60) h += '<div class="empty">Showing first 60 — refine your search.</div>';
+  }
+
+  resultsEl.innerHTML = h;
+}
+
+function typeClass(status) {
+  var m = {
+    'Pending Delivery':'delivery','Pending Pickup':'pickup',
+    'Ready to Reconcile':'reconcile','Complete':'complete',
+    'Ordered':'ordered','Being made':'ordered','Currently Picking Up':'pickup'
+  };
+  return m[status] || 'pickup';
+}
+
+// ── Edit Modal ────────────────────────────────────────────────────────────────
+function openEdit(poNum) {
+  var po = G.pos.find(function(p){ return p.poNum === poNum; });
+  if (!po) return;
+  G.editRow = po.rowIndex;
+
+  var isCustomStatus = po.status && G.config.statusOptions.indexOf(po.status) === -1;
+  var statusOpts = G.config.statusOptions.map(function(s){
+    var selected = isCustomStatus ? s === 'Other' : s === po.status;
+    return '<option value="'+esc(s)+'"'+(selected?' selected':'')+'>'+esc(s)+'</option>';
+  }).join('');
+
+  // If the stored vendor isn't in the standard list, treat it as a custom entry
+  var isCustomVendor = po.vendor && G.config.vendorOptions.indexOf(po.vendor) === -1;
+  var vendorOpts = G.config.vendorOptions.map(function(v){
+    var selected = isCustomVendor ? v === 'Other' : v === po.vendor;
+    return '<option value="'+esc(v)+'"'+(selected?' selected':'')+'>'+esc(v)+'</option>';
+  }).join('');
+
+  document.getElementById('edit-modal-title').textContent = poNum;
+
+  // Build document link buttons
+  var invoiceBtn = G.perms.canViewInvoice
+    ? (po.invoiceLink
+        ? '<a href="'+esc(po.invoiceLink)+'" target="_blank" class="doc-link doc-link-invoice">Invoice</a>'
+        : '<span class="doc-link doc-link-disabled">No Invoice</span>')
+    : '';
+
+  var issuedBtn = po.issuedPOLink
+    ? '<a href="'+esc(po.issuedPOLink)+'" target="_blank" class="doc-link doc-link-issued">Issued PO</a>'
+    : '<span class="doc-link doc-link-disabled">No Issued PO</span>';
+
+  var issuedField =
+    '<div class="form-group">' +
+      '<label class="form-label">' + (po.issuedPOLink ? 'Update Issued PO' : 'Add Issued PO') + '</label>' +
+      '<input type="url" class="form-control" id="e-issued" value="'+esc(po.issuedPOLink)+'" placeholder="Paste link, or upload file below…" style="margin-bottom:10px">' +
+      '<input type="file" id="e-issued-file" accept="image/*,.pdf" style="display:none" onchange="handleIssuedFile(this)">' +
+      '<button type="button" class="btn-camera" style="width:100%;justify-content:center" onclick="document.getElementById(\'e-issued-file\').click()">' +
+        '<svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>' +
+        ' Upload from Phone' +
+      '</button>' +
+      '<p id="e-issued-status" class="photo-status" style="margin-top:8px"></p>' +
+    '</div>';
+
+  document.getElementById('edit-modal-body').innerHTML =
+    '<div class="doc-links">' + invoiceBtn + issuedBtn + '</div>' +
+    fg('Builder',         '<input type="text"   class="form-control" id="e-builder"  value="'+esc(po.builder)+'">') +
+    fg('Job Reference',   '<input type="text"   class="form-control" id="e-job"      value="'+esc(po.jobRef)+'">') +
+    fg('Vendor',
+      '<select class="form-control" id="e-vendor" onchange="toggleOtherVendor(\'e-vendor\',\'e-vendor-other\')">' +
+        '<option value="">—</option>' + vendorOpts +
+      '</select>' +
+      '<input type="text" class="form-control" id="e-vendor-other" placeholder="Type vendor name…" ' +
+        'style="margin-top:10px;display:' + (isCustomVendor ? 'block' : 'none') + '" ' +
+        'value="' + (isCustomVendor ? esc(po.vendor) : '') + '">') +
+    fg('Vendor Invoice #','<input type="text"   class="form-control" id="e-vinvoice" value="'+esc(po.vendorInvoice)+'">') +
+    fg('Status',          '<select class="form-control" id="e-status" onchange="toggleOtherVendor(\'e-status\',\'e-status-other\')">'+statusOpts+'</select>' +
+      '<input type="text" class="form-control" id="e-status-other" placeholder="Enter custom status…" ' +
+        'style="margin-top:10px;display:' + (isCustomStatus ? 'block' : 'none') + '" ' +
+        'value="' + (isCustomStatus ? esc(po.status) : '') + '">') +
+    (G.perms.canViewInvoice ? fg('Invoice Total ($)','<input type="number" class="form-control" id="e-total" value="'+esc(po.invoiceTotal)+'" step="0.01" min="0">') : '') +
+    fg('Delivery / Pickup Date','<input type="date" class="form-control" id="e-date" value="'+esc(toInputDate(po.deliveryDate))+'">') +
+    issuedField +
+    fg('Notes',           '<textarea class="form-control" id="e-notes" rows="3">'+esc(po.notes)+'</textarea>') +
+    '<div class="modal-actions">' +
+      '<button class="btn btn-primary" style="flex:1" onclick="submitEdit()">Save</button>' +
+      '<button class="btn btn-secondary" style="flex:0 0 auto" onclick="closeEdit()">Cancel</button>' +
+    '</div>';
+
+  document.getElementById('edit-modal').classList.add('open');
+}
+
+function fg(label, input) {
+  return '<div class="form-group"><label class="form-label">'+label+'</label>'+input+'</div>';
+}
+
+function closeEdit() { document.getElementById('edit-modal').classList.remove('open'); }
+
+function maybeCloseModal(e) { if (e.target===document.getElementById('edit-modal')) closeEdit(); }
+
+function submitEdit() {
+  if (!G.editRow) return;
+
+  gasCall('updatePO', {
+    rowIndex: G.editRow,
+    updates: {
+      builder:       trim('e-builder'),
+      jobRef:        trim('e-job'),
+      vendor:        getVendorValue('e-vendor', 'e-vendor-other'),
+      vendorInvoice: trim('e-vinvoice'),
+      status:        getVendorValue('e-status', 'e-status-other'),
+      invoiceTotal:  G.perms.canViewInvoice ? val('e-total') : undefined,
+      deliveryDate:  fromInputDate(trim('e-date')),
+      issuedPO:      trim('e-issued'),
+      notes:         trim('e-notes')
+    }
+  }, function(res) {
+    if (res.success) {
+      closeEdit();
+      showToast('PO updated!');
+      loadData();
+    } else {
+      showToast('Error:' + (res.error||'Save failed'));
+    }
+  }, function(){ showToast('Error:Error saving changes'); });
+}
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+function showTab(name, btn) {
+  // Permission guard
+  var blocked = {
+    dashboard: !G.perms.canDash,
+    create:    !G.perms.canCreate,
+    receive:   !G.perms.canReceive,
+    pricing:   !G.perms.canPricing,
+    contacts:  !G.perms.canContacts
+  };
+  if (blocked[name]) { showToast("You don't have access to that."); return; }
+  showTabDirect(name, btn);
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+function showToast(msg) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(function(){ t.classList.remove('show'); }, 3000);
+}
+
+function setBtnState(id, label, disabled) {
+  var el = document.getElementById(id);
+  el.textContent = label;
+  el.disabled = disabled;
+}
+
+function val(id) { return (document.getElementById(id)||{}).value||''; }
+function trim(id){ return val(id).trim(); }
+
+function esc(s) {
+  if (!s) return '';
+  return s.toString()
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function today() { var d=new Date(); d.setHours(0,0,0,0); return d; }
+function addDays(d, n) { var r=new Date(d); r.setDate(r.getDate()+n); return r; }
+function sameDay(a, b) { return a.getTime()===b.getTime(); }
+
+function parseMMDDYYYY(s) {
+  if (!s) return null;
+  var m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (!m) return null;
+  var d = new Date(+m[3] < 100 ? 2000 + (+m[3]) : +m[3], +m[1]-1, +m[2]);
+  d.setHours(0,0,0,0);
+  return isNaN(d)?null:d;
+}
+
+function fmtCurrency(n) {
+  var v = parseFloat(n);
+  if (isNaN(v)) return n;
+  return v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+
+// ── Photo Capture & Upload ────────────────────────────────────────────────────
+
+/**
+ * Called when the user picks/takes a photo.
+ * 1. Shows the preview immediately.
+ * 2. Compresses the image via Canvas (keeps file size small for the GAS payload).
+ * 3. Uploads the base64 to Drive via savePhotoToDrive().
+ * 4. Stores the returned URL in the hidden #r-note input.
+ */
+function handlePhoto(input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+
+  // Reset any previous upload
+  setPhotoStatus('', '');
+  document.getElementById('r-note').value = '';
+
+  // Show preview zone
+  document.getElementById('photo-zone').style.display         = 'none';
+  document.getElementById('photo-preview-area').style.display = 'block';
+
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    // Show the preview image immediately
+    var previewImg = document.getElementById('photo-preview-img');
+    previewImg.src = e.target.result;
+
+    // Compress via canvas before uploading
+    var img = new Image();
+    img.onload = function() {
+      var MAX_W = 1600, MAX_H = 1600, QUALITY = 0.82;
+      var w = img.width, h = img.height;
+
+      if (w > MAX_W) { h = Math.round(h * MAX_W / w); w = MAX_W; }
+      if (h > MAX_H) { w = Math.round(w * MAX_H / h); h = MAX_H; }
+
+      var canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+
+      var dataUrl  = canvas.toDataURL('image/jpeg', QUALITY);
+      var base64   = dataUrl.split(',')[1];
+      var mimeType = 'image/jpeg';
+      var filename = 'PO-' + (G.receivePO ? G.receivePO.poNum : 'received') +
+                     '-' + new Date().toISOString().slice(0,19).replace(/[T:]/g,'-') + '.jpg';
+
+      animateBar();
+      setPhotoStatus('Uploading…', 'uploading');
+
+      gasCall('savePhotoToDrive', { base64Data: base64, mimeType: mimeType, filename: filename }, function(res) {
+        stopBar();
+        if (res.success) {
+          document.getElementById('r-note').value = res.url;
+          setPhotoStatus('Photo uploaded to Drive', 'done');
+        } else {
+          setPhotoStatus('Upload failed:' + res.error, 'error');
+        }
+      }, function(err) {
+        stopBar();
+        setPhotoStatus('Upload error — check connection', 'error');
+        console.error(err);
+      });
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+/**
+ * Handles file upload for the Issued PO field in the Edit modal.
+ * Accepts images (compressed via canvas) and PDFs (uploaded raw).
+ * On success, populates #e-issued with the Drive URL.
+ */
+function handleIssuedFile(input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+
+  var statusEl = document.getElementById('e-issued-status');
+  statusEl.textContent = 'Uploading…';
+  statusEl.className   = 'photo-status uploading';
+
+  var poNum = document.getElementById('edit-modal-title').textContent || 'issued';
+  var ext   = file.name.split('.').pop() || 'bin';
+  var filename = 'IssuedPO-' + poNum + '-' + new Date().toISOString().slice(0,19).replace(/[T:]/g,'-') + '.' + ext;
+
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var dataUrl = e.target.result;
+
+    function uploadBase64(b64, mime) {
+      gasCall('savePhotoToDrive', { base64Data: b64, mimeType: mime, filename: filename }, function(res) {
+        if (res.success) {
+          document.getElementById('e-issued').value = res.url;
+          statusEl.textContent = 'Uploaded — link filled in above';
+          statusEl.className   = 'photo-status done';
+        } else {
+          statusEl.textContent = 'Upload failed:' + res.error;
+          statusEl.className   = 'photo-status error';
+        }
+      }, function(err) {
+        statusEl.textContent = 'Upload error — check connection';
+        statusEl.className   = 'photo-status error';
+      });
+    }
+
+    // Images: compress via canvas first; everything else (PDF etc) upload raw
+    if (file.type.startsWith('image/')) {
+      var img = new Image();
+      img.onload = function() {
+        var MAX = 1600, QUALITY = 0.82;
+        var w = img.width, h = img.height;
+        if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
+        if (h > MAX) { w = Math.round(w * MAX / h); h = MAX; }
+        var canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        var compressed = canvas.toDataURL('image/jpeg', QUALITY);
+        uploadBase64(compressed.split(',')[1], 'image/jpeg');
+      };
+      img.src = dataUrl;
+    } else {
+      uploadBase64(dataUrl.split(',')[1], file.type || 'application/octet-stream');
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+function retakePhoto() {
+  // Reset everything so the user can pick again
+  document.getElementById('photo-zone').style.display         = 'block';
+  document.getElementById('photo-preview-area').style.display = 'none';
+  document.getElementById('photo-input').value                = '';
+  document.getElementById('r-note').value                     = '';
+  setPhotoStatus('', '');
+  stopBar();
+}
+
+function setPhotoStatus(msg, cls) {
+  var el = document.getElementById('photo-status');
+  el.textContent  = msg;
+  el.className    = 'photo-status' + (cls ? ' ' + cls : '');
+}
+
+// Animates the upload bar while waiting for the server
+var _barTimer = null;
+function animateBar() {
+  var bar = document.getElementById('upload-bar');
+  var pct = 0;
+  bar.style.width = '0%';
+  _barTimer = setInterval(function() {
+    // Creep toward 90% (the last 10% waits for the real response)
+    pct = pct < 90 ? pct + (90 - pct) * 0.04 : pct;
+    bar.style.width = pct + '%';
+  }, 120);
+}
+function stopBar() {
+  clearInterval(_barTimer);
+  var bar = document.getElementById('upload-bar');
+  bar.style.width = '100%';
+  setTimeout(function(){ bar.style.width = '0%'; }, 1200);
+}
+
+// ── Pricing ───────────────────────────────────────────────────────────────────
+function loadPricing() {
+  if (G.pricingLoaded) { runPricingSearch(); return; }
+  document.getElementById('p-loading').style.display = 'block';
+  document.getElementById('p-results').style.display = 'none';
+
+  gasCall('getPricingData', {}, function(result) {
+    G.pricing        = (result && result.items)   ? result.items   : [];
+    G.pricingVendors = (result && result.vendors) ? result.vendors : [];
+    G.pricingLoaded  = true;
+    document.getElementById('p-loading').style.display = 'none';
+    document.getElementById('p-results').style.display = 'block';
+    if (result && result.lastUpdated) {
+      var el = document.getElementById('p-last-updated');
+      if (el) el.textContent = 'Last updated ' + result.lastUpdated;
+    }
+    buildPricingCategoryChips();
+    runPricingSearch();
+  }, function() {
+    document.getElementById('p-loading').style.display = 'none';
+    document.getElementById('p-results').innerHTML = '<div class="empty">Could not load pricing data.</div>';
+    document.getElementById('p-results').style.display = 'block';
+  });
+}
+
+function buildPricingCategoryChips() {
+  var seen = {};
+  var cats = [];
+  G.pricing.forEach(function(item) {
+    var c = (item.category || '').trim();
+    if (c && !seen[c]) { seen[c] = true; cats.push(c); }
+  });
+  if (!cats.length) return;
+  cats.sort();
+
+  var html = '<button class="chip active" id="pcat-all" onclick="setPricingCategory(\'\',this)">All</button>';
+  cats.forEach(function(c) {
+    html += '<button class="chip" onclick="setPricingCategory(\'' + esc(c) + '\',this)">' + esc(c) + '</button>';
+  });
+  var el = document.getElementById('p-cats');
+  el.innerHTML = html;
+  el.style.display = 'flex';
+}
+
+function setPricingCategory(cat, btn) {
+  G.pricingCategory = cat;
+  document.querySelectorAll('#p-cats .chip').forEach(function(b){ b.classList.remove('active'); });
+  if (btn) btn.classList.add('active');
+  runPricingSearch();
+}
+
+function runPricingSearch() {
+  var q         = (document.getElementById('p-input').value || '').toLowerCase().trim();
+  var cat       = G.pricingCategory;  // '' = All, otherwise specific category
+  var resultsEl = document.getElementById('p-results');
+
+  // Nothing loaded yet
+  if (!G.pricingLoaded) {
+    resultsEl.innerHTML = '<div class="empty">Select a category or search above.</div>';
+    return;
+  }
+
+  var tokens  = q ? q.split(/\s+/).filter(Boolean) : [];
+  var matches = G.pricing.filter(function(item) {
+    if (cat && (item.category || '').trim() !== cat) return false;
+    if (!tokens.length) return true;
+    var text = (item.description + ' ' + item.category).toLowerCase();
+    return tokens.every(function(t) { return text.includes(t); });
+  });
+
+  if (!matches.length) {
+    resultsEl.innerHTML = '<div class="empty">No materials match' + (cat ? ' in ' + esc(cat) : '') + (q ? ' "' + esc(q) + '"' : '') + '.</div>';
+    return;
+  }
+
+  var h = '<p style="font-size:11px;color:#aaa;margin-bottom:8px">' + matches.length + ' result' + (matches.length !== 1 ? 's' : '') + '</p>';
+  matches.forEach(function(item) {
+    var origIdx = G.pricing.indexOf(item);
+    h += pricingCard(item, origIdx);
+  });
+  resultsEl.innerHTML = h;
+}
+
+function pricingCard(item, idx) {
+  var vendors = G.pricingVendors;
+  var best = item.bestPrice;
+
+  // Build vendor price rows
+  var vendorRows = '';
+  vendors.forEach(function(v) {
+    var price = item.prices[v];
+    if (price === undefined) return;
+    var isBest = best > 0 && Math.abs(price - best) < 0.001;
+    vendorRows +=
+      '<div style="display:flex;justify-content:space-between;align-items:center;' +
+        'padding:7px 10px;border-radius:8px;margin-bottom:4px;' +
+        'background:' + (isBest ? '#eaedfa' : '#f7f6f2') + '">' +
+        '<span style="font-size:14px;font-weight:' + (isBest ? '700' : '500') + ';color:' + (isBest ? '#1F3971' : '#555') + '">' + v + '</span>' +
+        '<span style="font-size:14px;font-weight:700;color:' + (isBest ? '#1F3971' : '#2E2E2E') + '">' +
+          '$' + price.toFixed(2) + (isBest ? ' ✓' : '') +
+        '</span>' +
+      '</div>';
+  });
+
+  if (!vendorRows) vendorRows = '<div class="empty" style="padding:8px 0">No vendor prices on file.</div>';
+
+  return '<div class="po-item">' +
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">' +
+      '<span style="font-size:12px;font-weight:600;color:#A2A092;text-transform:uppercase;letter-spacing:0.4px">' + esc(item.category) + '</span>' +
+      '<div style="display:flex;gap:6px;align-items:center">' +
+        '<span class="badge bd-indigo" style="font-size:11px;padding:3px 9px">' + esc(item.um) + '</span>' +
+        '<button class="btn btn-sm btn-edit" onclick="openPricingEdit(' + idx + ')">Edit</button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="po-main" style="font-size:16px;margin-bottom:10px">' + esc(item.description) + '</div>' +
+    (best > 0 ?
+      '<div style="margin-bottom:12px">' +
+        '<span style="font-size:26px;font-weight:800;color:#1F3971">$' + best.toFixed(2) + '</span>' +
+        '<span style="font-size:12px;color:#A2A092;margin-left:6px">best price</span>' +
+      '</div>' : '') +
+    vendorRows +
+  '</div>';
+}
+
+// ── Pricing Edit ──────────────────────────────────────────────────────────────
+function openPricingEdit(idx) {
+  var item = G.pricing[idx];
+  if (!item) return;
+  G.editRow     = item.rowIndex;
+  G.pricingIdx  = idx;
+
+  var vendors = G.pricingVendors;
+  var fields  = vendors.map(function(v) {
+    var price = item.prices[v] || '';
+    return fg(v, '<input type="number" class="form-control" id="pe-' + v.replace(/ /g,'-') + '" value="' + price + '" step="0.01" min="0" placeholder="—">');
+  }).join('');
+
+  document.getElementById('edit-modal-title').textContent = item.description;
+  document.getElementById('edit-modal-body').innerHTML =
+    '<p style="font-size:13px;color:#A2A092;margin-bottom:16px">Best price is auto-calculated as the lowest vendor price on save.</p>' +
+    fields +
+    '<div class="modal-actions">' +
+      '<button class="btn btn-primary" style="flex:1" onclick="submitPricingEdit()">Save Prices</button>' +
+      '<button class="btn btn-secondary" style="flex:0 0 auto" onclick="closeEdit()">Cancel</button>' +
+    '</div>';
+
+  document.getElementById('edit-modal').classList.add('open');
+}
+
+function submitPricingEdit() {
+  var vendors = G.pricingVendors;
+  var vendorPrices = {};
+  vendors.forEach(function(v) {
+    vendorPrices[v] = document.getElementById('pe-' + v.replace(/ /g,'-')).value;
+  });
+
+  var saveBtn = document.querySelector('#edit-modal-body .btn-primary');
+  if (saveBtn) { saveBtn.textContent = 'Saving…'; saveBtn.disabled = true; }
+
+  gasCall('updatePricing', { rowIndex: G.editRow, vendorPrices: vendorPrices }, function(res) {
+    if (res.success) {
+      // Update local cache
+      var item = G.pricing[G.pricingIdx];
+      vendors.forEach(function(v) {
+        var p = parseFloat(vendorPrices[v]);
+        if (!isNaN(p) && p > 0) { item.prices[v] = p; }
+        else { delete item.prices[v]; }
+      });
+      item.bestPrice = res.bestPrice || 0;
+      closeEdit();
+      showToast('Prices updated!');
+      runPricingSearch();
+    } else {
+      showToast('Error:' + (res.error || 'Save failed'));
+      if (saveBtn) { saveBtn.textContent = 'Save Prices'; saveBtn.disabled = false; }
+    }
+  }, function() {
+    showToast('Error:Error saving prices');
+    if (saveBtn) { saveBtn.textContent = 'Save Prices'; saveBtn.disabled = false; }
+  });
+}
+
+// ── Reset photo UI whenever the user looks up a new PO
+var _origShowReceiveInfo = showReceiveInfo;
+showReceiveInfo = function(po) {
+  retakePhoto();
+  _origShowReceiveInfo(po);
+};
+
+// ── Vendor "Other" helpers ────────────────────────────────────────────────────
+function toggleOtherVendor(selectId, inputId) {
+  var sel = document.getElementById(selectId);
+  var inp = document.getElementById(inputId);
+  if (!inp) return;
+  var isOther = sel.value === 'Other';
+  inp.style.display = isOther ? 'block' : 'none';
+  if (!isOther) inp.value = '';
+  if (isOther)  inp.focus();
+}
+
+// Returns the actual vendor string — either the selected option or the typed value
+function getVendorValue(selectId, inputId) {
+  var sel = document.getElementById(selectId);
+  if (!sel) return '';
+  if (sel.value === 'Other') {
+    var inp = document.getElementById(inputId);
+    return inp ? inp.value.trim() : 'Other';
+  }
+  return sel.value;
+}
+
+// ── Sort ──────────────────────────────────────────────────────────────────────
+function setSort(sort, el) {
+  G.sort = sort;
+  document.querySelectorAll('.sort-row .chip').forEach(function(c){ c.classList.remove('active'); });
+  el.classList.add('active');
+  runSearch();
+}
+
+// ── Date helpers ─────────────────────────────────────────────────────────────
+// MM/DD/YYYY → YYYY-MM-DD (for <input type="date">)
+function toInputDate(mmddyyyy) {
+  if (!mmddyyyy) return '';
+  var m = mmddyyyy.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return '';
+  return m[3] + '-' + ('0'+m[1]).slice(-2) + '-' + ('0'+m[2]).slice(-2);
+}
+// YYYY-MM-DD → MM/DD/YYYY (back to sheet format)
+function fromInputDate(yyyymmdd) {
+  if (!yyyymmdd) return '';
+  var m = yyyymmdd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return yyyymmdd;
+  return m[2] + '/' + m[3] + '/' + m[1];
+}
+
+// ── Quick Status Change ───────────────────────────────────────────────────────
+function quickStatusChange(poNum, rowIndex) {
+  var po = G.pos.find(function(p){ return p.poNum === poNum; });
+  if (!po) return;
+  G.editRow = rowIndex;
+
+  var statusBtns = G.config.statusOptions.map(function(s) {
+    var isCurrent = s === po.status;
+    if (s === 'Other') {
+      return '<button class="status-option" onclick="showQuickStatusOther(this)">' + esc(s) + '</button>';
+    }
+    return '<button class="status-option'+(isCurrent?' selected':'')+'" onclick="submitQuickStatus(\''+esc(s)+'\')">' + esc(s) + '</button>';
+  }).join('');
+
+  document.getElementById('edit-modal-title').textContent = poNum;
+  document.getElementById('edit-modal-body').innerHTML =
+    '<p style="font-size:13px;color:#A2A092;margin-bottom:12px">Current: <strong>' + esc(po.status) + '</strong></p>' +
+    '<div class="status-btn-grid">' + statusBtns + '</div>' +
+    '<div id="qs-other-wrap" style="display:none;margin-top:12px">' +
+      '<input type="text" class="form-control" id="qs-other-input" placeholder="Enter custom status…">' +
+      '<button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="submitQuickStatusOther()">Save</button>' +
+    '</div>' +
+    '<div class="modal-actions" style="margin-top:16px">' +
+      '<button class="btn btn-secondary" style="width:100%" onclick="closeEdit()">Cancel</button>' +
+    '</div>';
+
+  document.getElementById('edit-modal').classList.add('open');
+}
+
+function showQuickStatusOther(btn) {
+  document.querySelectorAll('.status-option').forEach(function(b){ b.classList.remove('selected'); });
+  btn.classList.add('selected');
+  var wrap = document.getElementById('qs-other-wrap');
+  wrap.style.display = 'block';
+  document.getElementById('qs-other-input').focus();
+}
+
+function submitQuickStatusOther() {
+  var val = (document.getElementById('qs-other-input').value || '').trim();
+  if (!val) { showToast('Enter a status first.'); return; }
+  submitQuickStatus(val);
+}
+
+function submitQuickStatus(newStatus) {
+  var rowIndex = G.editRow;
+  if (!rowIndex) return;
+
+  // Optimistic update
+  var po = G.pos.find(function(p){ return p.rowIndex === rowIndex; });
+  if (po) po.status = newStatus;
+  closeEdit();
+  showToast('Status → ' + newStatus);
+  renderDashboard();
+  runSearch();
+
+  gasCall('updatePO', { rowIndex: rowIndex, updates: { status: newStatus } }, null, function() {
+    showToast('Error:Error saving status — refresh to sync');
+  });
+}
+
+// ── Form Overlays (Cleanup / Reimbursement / Credit Card / Material Request) ───
+var FORM_URLS = {
+  'cleanup-overlay':          'https://form.asana.com/?k=kiMhpmASAeEg_D4e631yjA&d=1208027938795761',
+  'reimbursement-overlay':    'https://form.asana.com/?k=_Klc2P6hcqrs1fOpBWIRWg&d=1208027938795761',
+  'creditcard-overlay':       'https://form.asana.com/?k=op5VV1qG1S8SQoAHCs6t1w&d=1208027938795761',
+  'materialrequest-overlay':  'https://form.asana.com/?k=2jXgnoyqZUuRb5rd2_S27w&d=1208027938795761',
+  'officenotes-overlay':      'https://form.asana.com/?k=BJAK9Zn4PVyId7MxMngYXA&d=1208027938795761'
+};
+
+function openFormOverlay(overlayId) {
+  var url = FORM_URLS[overlayId];
+  if (url) window.open(url, '_blank');
+}
+
+function closeFormOverlay(overlayId) {
+  // No-op — kept so existing Close buttons don't error
+}
+
+// ── Contacts ──────────────────────────────────────────────────────────────────
+function loadContacts() {
+  if (G.contactsLoaded) { runContactSearch(); return; }
+  document.getElementById('ct-loading').style.display = 'block';
+  document.getElementById('ct-results').style.display = 'none';
+
+  gasCall('getContacts', {}, function(data) {
+    G.contacts        = data.contacts || [];
+    G.contactsHeaders = data.headers  || [];
+    G.contactsLoaded  = true;
+    document.getElementById('ct-loading').style.display = 'none';
+    document.getElementById('ct-results').style.display = 'block';
+    runContactSearch();
+  }, function() {
+    document.getElementById('ct-loading').style.display = 'none';
+    document.getElementById('ct-results').innerHTML = '<div class="empty">⚠️ Could not load contacts.</div>';
+    document.getElementById('ct-results').style.display = 'block';
+  });
+}
+
+function runContactSearch() {
+  var q = (document.getElementById('ct-input').value || '').toLowerCase().trim();
+  var el = document.getElementById('ct-results');
+  if (!G.contacts.length) { el.innerHTML = '<div class="empty">No contacts found. Add people to the Contacts tab in the database.</div>'; return; }
+
+  var tokens = q.split(/\s+/).filter(Boolean);
+  var filtered = G.contacts.filter(function(c) {
+    if (!q) return true;
+    var text = Object.values(c).join(' ').toLowerCase();
+    return tokens.every(function(t){ return text.includes(t); });
+  });
+
+  if (!filtered.length) { el.innerHTML = '<div class="empty">No contacts match "' + esc(q) + '".</div>'; return; }
+
+  // Pass the index in G.contacts so the edit button knows which contact to open
+  el.innerHTML = filtered.map(function(c) {
+    return contactCard(c, G.contacts.indexOf(c));
+  }).join('');
+}
+
+function contactCard(c, idx) {
+  // Try common name keys, fall back to first non-internal field
+  var name = c['Name'] || c['name'] || c['Full Name'] || c['Contact'] || '';
+  if (!name) {
+    var keys = Object.keys(c).filter(function(k){ return !k.startsWith('_'); });
+    name = c[keys[0]] || '—';
+  }
+  var fields = '';
+
+  Object.keys(c).forEach(function(key) {
+    if (key.startsWith('_')) return; // skip internal fields like _rowIndex
+    var v = c[key];
+    if (!v) return;
+    // Skip the field used as the name header
+    if (v === name && (key === 'Name' || key === 'name' || key === 'Full Name' || key === 'Contact')) return;
+
+    var lk = key.toLowerCase();
+    var content;
+    if (lk.includes('phone') || lk.includes('cell') || lk.includes('mobile') || lk.includes('fax')) {
+      content = '<a href="tel:' + v.replace(/\s/g,'') + '">' + esc(v) + '</a>';
+    } else if (lk.includes('email') || v.includes('@')) {
+      content = '<a href="mailto:' + esc(v) + '">' + esc(v) + '</a>';
+    } else {
+      content = esc(v);
+    }
+    fields += '<div class="contact-field"><span class="contact-key">' + esc(key) + '</span>' + content + '</div>';
+  });
+
+  var editBtn = G.perms.canEdit
+    ? '<button class="btn btn-sm btn-edit" onclick="openContactEdit(' + idx + ')" style="margin-top:12px">Edit</button>'
+    : '';
+
+  return '<div class="contact-card">' +
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start">' +
+      '<div class="contact-name">' + esc(name) + '</div>' +
+    '</div>' +
+    fields +
+    editBtn +
+  '</div>';
+}
+
+// ── Contact Edit ──────────────────────────────────────────────────────────────
+function openContactEdit(idx) {
+  var c = G.contacts[idx];
+  if (!c) return;
+  G.contactEditIdx = idx;
+
+  var fields = G.contactsHeaders.map(function(h) {
+    var val = c[h] || '';
+    return fg(h, '<input type="text" class="form-control" id="ce-' + esc(h.replace(/\s+/g,'-')) + '" value="' + esc(val) + '" placeholder="' + esc(h) + '">');
+  }).join('');
+
+  var name = c['Name'] || c['name'] || c['Full Name'] || c['Contact'] || 'Contact';
+  document.getElementById('edit-modal-title').textContent = name;
+  document.getElementById('edit-modal-body').innerHTML =
+    fields +
+    '<div class="modal-actions">' +
+      '<button class="btn btn-primary" style="flex:1" id="contact-save-btn" onclick="submitContactEdit()">Save</button>' +
+      '<button class="btn btn-secondary" style="flex:0 0 auto" onclick="closeEdit()">Cancel</button>' +
+    '</div>';
+
+  document.getElementById('edit-modal').classList.add('open');
+}
+
+function submitContactEdit() {
+  var c = G.contacts[G.contactEditIdx];
+  if (!c) return;
+
+  var values = {};
+  G.contactsHeaders.forEach(function(h) {
+    var el = document.getElementById('ce-' + h.replace(/\s+/g,'-'));
+    if (el) values[h] = el.value.trim();
+  });
+
+  var btn = document.getElementById('contact-save-btn');
+  if (btn) { btn.textContent = 'Saving…'; btn.disabled = true; }
+
+  gasCall('updateContact', { rowIndex: c._rowIndex, values: values }, function(res) {
+    if (res.success) {
+      // Update local cache
+      G.contactsHeaders.forEach(function(h) { if (values[h] !== undefined) c[h] = values[h]; });
+      closeEdit();
+      showToast('Contact updated!');
+      runContactSearch();
+    } else {
+      showToast('Error:' + (res.error || 'Save failed'));
+      if (btn) { btn.textContent = 'Save'; btn.disabled = false; }
+    }
+  }, function() {
+    showToast('Error:Error saving contact');
+    if (btn) { btn.textContent = 'Save'; btn.disabled = false; }
+  });
+}
+
+// ── Swipe to Receive ──────────────────────────────────────────────────────────
+(function() {
+  var startX = 0, startY = 0, activeEl = null, moved = 0;
+  var THRESHOLD = 72;
+  var swipeBg = null;
+
+  document.addEventListener('touchstart', function(e) {
+    var item = e.target.closest('.po-item');
+    if (!item || !G.perms.canReceivePO) { activeEl = null; return; }
+    activeEl = item;
+    startX   = e.touches[0].clientX;
+    startY   = e.touches[0].clientY;
+    moved    = 0;
+    swipeBg  = item.querySelector('.swipe-bg');
+    item.style.transition = 'none';
+  }, { passive: true });
+
+  document.addEventListener('touchmove', function(e) {
+    if (!activeEl) return;
+    var dx = e.touches[0].clientX - startX;
+    var dy = Math.abs(e.touches[0].clientY - startY);
+    // Abort if more vertical than horizontal (user is scrolling)
+    if (dy > Math.abs(dx) * 1.3 && Math.abs(dx) < 15) { activeEl = null; return; }
+    moved = dx;
+    if (dx > 0 && dx < 140) {
+      activeEl.style.transform = 'translateX(' + dx + 'px)';
+      if (swipeBg) swipeBg.style.opacity = Math.min(dx / THRESHOLD, 1).toString();
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchend', function() {
+    if (!activeEl) return;
+    activeEl.style.transition = 'transform 0.25s ease';
+    activeEl.style.transform  = 'translateX(0)';
+    if (swipeBg) swipeBg.style.opacity = '0';
+
+    if (moved >= THRESHOLD) {
+      var poNum = activeEl.getAttribute('data-ponum');
+      if (poNum) {
+        quickReceive(poNum);
+        showToast('📋 Opening receive for ' + poNum);
+      }
+    }
+    activeEl = null;
+    swipeBg  = null;
+    moved    = 0;
+  });
+})();
+</script>
+</body>
+</html>
+                                                                                                                                                                                                                                                                                          
