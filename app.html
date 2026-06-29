@@ -10,6 +10,11 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
 
+  <!-- PWA manifest + icons -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+
   <!-- PWA / Add to Home Screen — hides the browser URL bar on iOS & Android -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -657,6 +662,8 @@
 
 <!-- ══════════════════ JAVASCRIPT ══════════════════ -->
 <script>
+if ('serviceWorker' in navigator) { navigator.serviceWorker.register('./sw.js'); }
+
 // ── State ────────────────────────────────────────────────────────────────────
 var G = {
   pos:           [],
