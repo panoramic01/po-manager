@@ -69,6 +69,10 @@ function doPost(e) {
     else if (action === 'getContacts')         result = getContacts();
     else if (action === 'updateContact')       result = updateContact(payload.rowIndex, payload.values);
     else if (action === 'reconcileStatement')  result = reconcileStatement(payload.invoiceNumbers);
+    else if (action === 'getJobList')          result = getJobList();
+    else if (action === 'getJobCostSummary')   result = getJobCostSummary(payload.jobRef);
+    else if (action === 'getMissingInvoices')  result = getMissingInvoices();
+    else if (action === 'getVendorSpend')      result = getVendorSpend(payload.startDate, payload.endDate);
     else                                       result = { error: 'Unknown action: ' + action };
 
     return ContentService
@@ -537,75 +541,100 @@ function updateContact(rowIndex, values) {
       if (key && values[key] !== undefined) {
         sheet.getRange(rowIndex, i + 1).setValue(values[key]);
       }
-    });
-    return { success: true };
-  } catch(e) { return { success: false, error: e.toString() }; }
+
+// ── Job List ─────────────────────────────────────────────────────────────────
+function getJobList() {
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+    if (!sheet) return { error: 'PO Database sheet not found' };
+    var data = sheet.getDataRange().getValues();
+    var jobs = {};
+    for (var i = 1; i < data.length; i++) {
+      var job = (data[i][3] || '').toString().trim();
+      if (job) jobs[job] = true;
+    }
+    return { success: true, jobs: Object.keys(jobs).sort() };
+  } catch(e) { return { error: e.toString() }; }
 }
 
-// ─── Statement Reconciliation ──────────────────────────────────────────────────
-
-/**
- * Cross-references a list of vendor invoice numbers against the PO Database.
- * Returns matched POs and a list of unmatched invoice numbers.
- */
-function reconcileStatement(invoiceNumbers) {
+// ── Job Cost Summary ──────────────────────────────────────────────────────────
+function getJobCostSummary(jobRef) {
   try {
-    var ss     = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet  = ss.getSheetByName(SHEET_NAME);
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
     if (!sheet) return { error: 'PO Database sheet not found' };
-
-    var data    = sheet.getDataRange().getValues();
-    var headers = data[0].map(function(h){ return h.toString().trim(); });
-
-    var colPoNum   = headers.indexOf('PO Num');
-    var colVendor  = headers.indexOf('Vendor');
-    var colJob     = headers.indexOf('Job Reference');
-    var colInvoice = headers.indexOf('Vendor Invoice');
-    var colStatus  = headers.indexOf('Status');
-    var colTotal   = headers.indexOf('Invoice Total');
-
-    if (colInvoice === -1) return { error: '"Vendor Invoice" column not found in PO Database' };
-
-    // Build map: normalised invoice# → row data
-    var dbMap = {};
+    var data = sheet.getDataRange().getValues();
+    var rows = [], totalSpend = 0;
+    var target = (jobRef || '').toString().trim().toLowerCase();
     for (var i = 1; i < data.length; i++) {
-      var inv = (data[i][colInvoice] || '').toString().trim();
-      if (!inv) continue;
-      dbMap[inv.toLowerCase()] = {
-        poNum:   colPoNum  !== -1 ? data[i][colPoNum]  : '',
-        vendor:  colVendor !== -1 ? data[i][colVendor] : '',
-        job:     colJob    !== -1 ? data[i][colJob]    : '',
-        status:  colStatus !== -1 ? data[i][colStatus] : '',
-        total:   colTotal  !== -1 ? data[i][colTotal]  : '',
-        invNum:  inv
-      };
+      var job = (data[i][3] || '').toString().trim();
+      if (job.toLowerCase() !== target) continue;
+      var total = parseFloat(data[i][7]) || 0;
+      totalSpend += total;
+      rows.push({
+        poNum:      data[i][0],
+        dateIssued: data[i][1] ? Utilities.formatDate(new Date(data[i][1]), Session.getScriptTimeZone(), 'MM/dd/yy') : '',
+        vendor:     data[i][4],
+        invoiceNum: data[i][5],
+        status:     data[i][6],
+        total:      total
+      });
     }
+    return { success: true, rows: rows, totalSpend: totalSpend };
+  } catch(e) { return { error: e.toString() }; }
+}
 
-    var matched   = [];
-    var unmatched = [];
-
-    (invoiceNumbers || []).forEach(function(inv) {
-      var key   = inv.toString().trim().toLowerCase();
-      var found = dbMap[key];
-      // Also try partial match (statement may truncate trailing digits)
-      if (!found) {
-        var keys = Object.keys(dbMap);
-        for (var k = 0; k < keys.length; k++) {
-          if (keys[k].indexOf(key) === 0 || key.indexOf(keys[k]) === 0) {
-            found = dbMap[keys[k]];
-            break;
-          }
-        }
+// ── Missing Invoices ──────────────────────────────────────────────────────────
+function getMissingInvoices() {
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+    if (!sheet) return { error: 'PO Database sheet not found' };
+    var data = sheet.getDataRange().getValues();
+    var missing = [];
+    for (var i = 1; i < data.length; i++) {
+      var poNum   = (data[i][0] || '').toString().trim();
+      var status  = (data[i][6] || '').toString().trim().toLowerCase();
+      var invoice = (data[i][5] || '').toString().trim();
+      if (!poNum) continue;
+      if (status === 'draft' || status === 'ordered') continue;
+      if (!invoice) {
+        missing.push({
+          poNum:      poNum,
+          dateIssued: data[i][1] ? Utilities.formatDate(new Date(data[i][1]), Session.getScriptTimeZone(), 'MM/dd/yy') : '',
+          vendor:     data[i][4],
+          job:        data[i][3],
+          status:     data[i][6]
+        });
       }
-      if (found) {
-        matched.push({ invoiceNumber: inv, poNum: found.poNum, vendor: found.vendor, job: found.job, status: found.status, total: found.total });
-      } else {
-        unmatched.push(inv);
-      }
-    });
+    }
+    return { success: true, missing: missing };
+  } catch(e) { return { error: e.toString() }; }
+}
 
-    return { success: true, matched: matched, unmatched: unmatched };
-  } catch(e) {
-    return { error: e.toString() };
-  }
+// ── Vendor Spend ──────────────────────────────────────────────────────────────
+function getVendorSpend(startDate, endDate) {
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+    if (!sheet) return { error: 'PO Database sheet not found' };
+    var data = sheet.getDataRange().getValues();
+    var start = startDate ? new Date(startDate + 'T00:00:00') : null;
+    var end   = endDate   ? new Date(endDate   + 'T23:59:59') : null;
+    var vendors = {}, grandTotal = 0;
+    for (var i = 1; i < data.length; i++) {
+      var vendor = (data[i][4] || '').toString().trim();
+      var total  = parseFloat(data[i][7]) || 0;
+      if (!vendor || total === 0) continue;
+      if (start || end) {
+        var d = data[i][1] instanceof Date ? data[i][1] : new Date(data[i][1]);
+        if (isNaN(d.getTime())) continue;
+        if (start && d < start) continue;
+        if (end   && d > end)   continue;
+      }
+      vendors[vendor] = (vendors[vendor] || 0) + total;
+      grandTotal += total;
+    }
+    var result = Object.keys(vendors).map(function(v) {
+      return { vendor: v, total: vendors[v] };
+    }).sort(function(a, b) { return b.total - a.total; });
+    return { success: true, vendors: result, grandTotal: grandTotal };
+  } catch(e) { return { error: e.toString() }; }
 }

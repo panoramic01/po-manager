@@ -655,6 +655,71 @@
 
   </div>
 
+
+    <!-- Job Cost Summary sub-panel -->
+    <div id="other-panel-job-cost" style="display:none">
+      <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #f0f0f0;background:#fff;position:sticky;top:0;z-index:1">
+      <button onclick="showOtherHome()" style="background:none;border:none;font-size:14px;font-weight:600;color:#1F3971;cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
+    </div>
+      <div style="padding:16px;max-width:680px;margin:0 auto">
+        <div style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:12px">
+          <p style="font-size:13px;color:#666;margin:0 0 14px">Select a job to see all POs, total spend, and status breakdown.</p>
+          <div style="display:flex;gap:8px;margin-bottom:4px">
+            <input id="jc-input" list="jc-jobs-list" placeholder="Type or pick a job…" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none;flex:1">
+            <datalist id="jc-jobs-list"></datalist>
+            <button onclick="loadJobCost()" style="background:#1F3971;color:#fff;border:none;border-radius:8px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap">Load</button>
+          </div>
+        </div>
+        <div id="jc-loading" style="display:none;text-align:center;padding:20px">
+          <div class="spinner" style="margin:0 auto 8px"></div>
+          <p style="font-size:13px;color:#666">Loading…</p>
+        </div>
+        <div id="jc-results" style="display:none"></div>
+      </div>
+    </div>
+
+    <!-- Missing Invoices sub-panel -->
+    <div id="other-panel-missing-inv" style="display:none">
+      <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #f0f0f0;background:#fff;position:sticky;top:0;z-index:1">
+      <button onclick="showOtherHome()" style="background:none;border:none;font-size:14px;font-weight:600;color:#1F3971;cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
+    </div>
+      <div style="padding:16px;max-width:680px;margin:0 auto">
+        <div id="mi-loading" style="text-align:center;padding:20px">
+          <div class="spinner" style="margin:0 auto 8px"></div>
+          <p style="font-size:13px;color:#666">Scanning PO database…</p>
+        </div>
+        <div id="mi-results" style="display:none"></div>
+      </div>
+    </div>
+
+    <!-- Vendor Spend sub-panel -->
+    <div id="other-panel-vendor-spend" style="display:none">
+      <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #f0f0f0;background:#fff;position:sticky;top:0;z-index:1">
+      <button onclick="showOtherHome()" style="background:none;border:none;font-size:14px;font-weight:600;color:#1F3971;cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
+    </div>
+      <div style="padding:16px;max-width:680px;margin:0 auto">
+        <div style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:12px">
+          <p style="font-size:13px;color:#666;margin:0 0 14px">Total spend per vendor for a date range (based on Date Issued).</p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <div style="flex:1;min-width:130px">
+              <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">From</label>
+              <input type="date" id="vs-start" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none">
+            </div>
+            <div style="flex:1;min-width:130px">
+              <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">To</label>
+              <input type="date" id="vs-end" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none">
+            </div>
+          </div>
+          <button onclick="loadVendorSpend()" style="background:#1F3971;color:#fff;border:none;border-radius:8px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap;margin-top:12px;width:100%">Load</button>
+        </div>
+        <div id="vs-loading" style="display:none;text-align:center;padding:20px">
+          <div class="spinner" style="margin:0 auto 8px"></div>
+          <p style="font-size:13px;color:#666">Loading…</p>
+        </div>
+        <div id="vs-results" style="display:none"></div>
+      </div>
+    </div>
+
   </div>
 
 
@@ -1027,6 +1092,9 @@ function applyRole(role) {
   sd('other-card-pricing',   p.canPricing);
   sd('other-card-contacts',  p.canContacts);
   sd('other-card-reconcile', role === 'admin');
+  sd('other-card-job-cost',   role === 'admin');
+  sd('other-card-missing-inv', role === 'admin');
+  sd('other-card-vendor-spend', role === 'admin');
   sd('receive-po-card', p.canReceivePO);
 
   // Show role badge in header
@@ -2350,21 +2418,154 @@ function submitContactEdit() {
 
 function showOtherPanel(name) {
   document.getElementById('other-home').style.display = 'none';
-  ['pricing', 'contacts', 'reconcile'].forEach(function(p) {
+  ['pricing', 'contacts', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
     if (el) el.style.display = p === name ? '' : 'none';
   });
-  if (name === 'pricing')  loadPricing();
-  if (name === 'contacts') loadContacts();
-  if (name === 'reconcile') initStmtDrop();
+  if (name === 'pricing')    loadPricing();
+  if (name === 'contacts')   loadContacts();
+  if (name === 'reconcile')  initStmtDrop();
+  if (name === 'job-cost')   openJobCostPanel();
+  if (name === 'missing-inv') loadMissingInvoices();
+  if (name === 'vendor-spend') openVendorSpendPanel();
 }
 
 function showOtherHome() {
   document.getElementById('other-home').style.display = '';
-  ['pricing', 'contacts', 'reconcile'].forEach(function(p) {
+  ['pricing', 'contacts', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
     if (el) el.style.display = 'none';
   });
+}
+
+
+// ── Job Cost Summary ──────────────────────────────────────────────────────────
+function openJobCostPanel() {
+  var dl = document.getElementById('jc-jobs-list');
+  if (dl && dl.children.length === 0) {
+    gasCall('getJobList', {}, function(r) {
+      if (r.jobs) {
+        r.jobs.forEach(function(j) {
+          var o = document.createElement('option'); o.value = j; dl.appendChild(o);
+        });
+      }
+    });
+  }
+}
+
+function loadJobCost() {
+  var job = document.getElementById('jc-input').value.trim();
+  if (!job) { showToast('Enter a job name'); return; }
+  document.getElementById('jc-loading').style.display = 'block';
+  document.getElementById('jc-results').style.display = 'none';
+  gasCall('getJobCostSummary', { jobRef: job }, function(r) {
+    document.getElementById('jc-loading').style.display = 'none';
+    if (r.error) { showToast('Error: ' + r.error); return; }
+    var statuses = {}, open = 0;
+    r.rows.forEach(function(row) {
+      var s = (row.status || 'Unknown');
+      statuses[s] = (statuses[s] || 0) + 1;
+      if (s !== 'Reconcile' && s !== 'Closed') open++;
+    });
+    var statusHtml = Object.keys(statuses).map(function(s) {
+      return '<span style="display:inline-block;background:#eef2ff;border-radius:6px;padding:2px 8px;font-size:12px;margin:2px">' + s + ' (' + statuses[s] + ')</span>';
+    }).join(' ');
+    var rowsHtml = r.rows.map(function(row) {
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #f5f5f5;gap:8px">'
+        + '<div style="flex:1;min-width:0">'
+        + '<div style="font-size:13px;font-weight:600;color:#222">' + (row.vendor || '—') + '</div>'
+        + '<div style="font-size:11px;color:#888">PO #' + row.poNum + (row.invoiceNum ? ' · Inv ' + row.invoiceNum : ' · <span style="color:#e57373">No invoice</span>') + ' · ' + row.dateIssued + '</div>'
+        + '</div>'
+        + '<div style="text-align:right;flex-shrink:0">'
+        + '<div style="font-size:13px;font-weight:700;color:#1F3971">$' + (row.total ? row.total.toFixed(2) : '—') + '</div>'
+        + '<div style="font-size:11px;color:#888">' + (row.status || '') + '</div>'
+        + '</div></div>';
+    }).join('');
+    document.getElementById('jc-results').innerHTML =
+      '<div style="background:#1F3971;color:#fff;border-radius:12px;padding:16px 20px;margin-bottom:12px">'
+      + '<div style="font-size:13px;opacity:.8;margin-bottom:2px">' + job + ' — ' + r.rows.length + ' PO' + (r.rows.length !== 1 ? 's' : '') + (open ? ' · ' + open + ' open' : '') + '</div>'
+      + '<div style="font-size:24px;font-weight:700">$' + r.totalSpend.toFixed(2) + '</div>'
+      + '<div style="margin-top:8px">' + statusHtml + '</div>'
+      + '</div>'
+      + '<div style="background:#fff;border-radius:12px;padding:4px 16px;box-shadow:0 1px 4px rgba(0,0,0,0.08)">' + (rowsHtml || '<p style="text-align:center;color:#888;padding:16px">No POs found for this job.</p>') + '</div>';
+    document.getElementById('jc-results').style.display = 'block';
+  }, function() { document.getElementById('jc-loading').style.display = 'none'; showToast('Failed to load'); });
+}
+
+// ── Missing Invoices ──────────────────────────────────────────────────────────
+function loadMissingInvoices() {
+  document.getElementById('mi-loading').style.display = 'block';
+  document.getElementById('mi-results').style.display = 'none';
+  gasCall('getMissingInvoices', {}, function(r) {
+    document.getElementById('mi-loading').style.display = 'none';
+    if (r.error) { showToast('Error: ' + r.error); return; }
+    var html = '';
+    if (!r.missing.length) {
+      html = '<div style="background:#e8f5e9;border-radius:12px;padding:24px;text-align:center">'
+           + '<div style="font-size:28px;margin-bottom:8px">✅</div>'
+           + '<p style="font-size:15px;font-weight:600;color:#2e7d32;margin:0">All received POs have invoice numbers!</p></div>';
+    } else {
+      html = '<div style="background:#fff3e0;border-radius:12px;padding:12px 16px;margin-bottom:12px;display:flex;align-items:center;gap:10px">'
+           + '<span style="font-size:22px">⚠️</span>'
+           + '<div><div style="font-size:14px;font-weight:700;color:#e65100">' + r.missing.length + ' PO' + (r.missing.length !== 1 ? 's' : '') + ' missing invoice numbers</div>'
+           + '<div style="font-size:12px;color:#bf360c">These won't match on a vendor statement reconcile.</div></div></div>'
+           + '<div style="background:#fff;border-radius:12px;padding:4px 16px;box-shadow:0 1px 4px rgba(0,0,0,0.08)">'
+           + r.missing.map(function(row) {
+               return '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #f5f5f5;gap:8px">'
+                 + '<div style="flex:1;min-width:0">'
+                 + '<div style="font-size:13px;font-weight:600;color:#222">' + (row.vendor || '—') + '</div>'
+                 + '<div style="font-size:11px;color:#888">PO #' + row.poNum + ' · ' + (row.job || '—') + ' · ' + row.dateIssued + '</div>'
+                 + '</div>'
+                 + '<span style="font-size:11px;background:#fce4ec;color:#c62828;border-radius:6px;padding:3px 8px;white-space:nowrap">' + (row.status || '') + '</span>'
+                 + '</div>';
+             }).join('')
+           + '</div>';
+    }
+    document.getElementById('mi-results').innerHTML = html;
+    document.getElementById('mi-results').style.display = 'block';
+  }, function() { document.getElementById('mi-loading').style.display = 'none'; showToast('Failed to load'); });
+}
+
+// ── Vendor Spend ──────────────────────────────────────────────────────────────
+function openVendorSpendPanel() {
+  if (!document.getElementById('vs-start').value) {
+    var now = new Date();
+    var y = now.getFullYear(), m = String(now.getMonth() + 1).padStart(2, '0');
+    document.getElementById('vs-start').value = y + '-' + m + '-01';
+    document.getElementById('vs-end').value   = y + '-' + m + '-' + String(new Date(y, now.getMonth()+1, 0).getDate()).padStart(2,'0');
+  }
+}
+
+function loadVendorSpend() {
+  var start = document.getElementById('vs-start').value;
+  var end   = document.getElementById('vs-end').value;
+  document.getElementById('vs-loading').style.display = 'block';
+  document.getElementById('vs-results').style.display = 'none';
+  gasCall('getVendorSpend', { startDate: start, endDate: end }, function(r) {
+    document.getElementById('vs-loading').style.display = 'none';
+    if (r.error) { showToast('Error: ' + r.error); return; }
+    var maxTotal = r.vendors.length ? r.vendors[0].total : 1;
+    var rows = r.vendors.map(function(v) {
+      var pct = Math.round((v.total / maxTotal) * 100);
+      return '<div style="margin-bottom:14px">'
+        + '<div style="display:flex;justify-content:space-between;margin-bottom:4px">'
+        + '<span style="font-size:13px;font-weight:600;color:#222">' + v.vendor + '</span>'
+        + '<span style="font-size:13px;font-weight:700;color:#1F3971">$' + v.total.toFixed(2) + '</span>'
+        + '</div>'
+        + '<div style="background:#eef2ff;border-radius:4px;height:6px">'
+        + '<div style="background:#1F3971;border-radius:4px;height:6px;width:' + pct + '%"></div></div></div>';
+    }).join('');
+    document.getElementById('vs-results').innerHTML =
+      '<div style="background:#1F3971;color:#fff;border-radius:12px;padding:16px 20px;margin-bottom:12px">'
+      + '<div style="font-size:13px;opacity:.8;margin-bottom:2px">' + (start || 'All time') + (end ? ' → ' + end : '') + '</div>'
+      + '<div style="font-size:24px;font-weight:700">$' + r.grandTotal.toFixed(2) + '</div>'
+      + '<div style="font-size:12px;opacity:.7;margin-top:2px">' + r.vendors.length + ' vendor' + (r.vendors.length !== 1 ? 's' : '') + '</div>'
+      + '</div>'
+      + '<div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08)">'
+      + (rows || '<p style="text-align:center;color:#888">No spend found for this period.</p>')
+      + '</div>';
+    document.getElementById('vs-results').style.display = 'block';
+  }, function() { document.getElementById('vs-loading').style.display = 'none'; showToast('Failed to load'); });
 }
 
 function initStmtDrop() {
