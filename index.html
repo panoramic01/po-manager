@@ -570,11 +570,14 @@
     <div class="tab-content" style="padding:16px;max-width:680px;margin:0 auto">
       <div style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:20px">
         <h2 style="font-size:17px;font-weight:700;color:#1F3971;margin-bottom:4px">Reconcile Vendor Statement</h2>
-        <p style="font-size:13px;color:#666;margin-bottom:16px">Upload a vendor statement PDF. The app will extract invoice numbers and check which ones have a matching PO in the database.</p>
-        <label style="display:block;margin-bottom:12px">
-          <span style="font-size:13px;font-weight:600;color:#444;display:block;margin-bottom:6px">Statement PDF</span>
-          <input type="file" id="stmt-file" accept=".pdf" onchange="onStatementFile(this)" style="font-size:13px;width:100%">
-        </label>
+        <p style="font-size:13px;color:#666;margin-bottom:16px">Upload one or more vendor statement PDFs. Invoice numbers from all files will be combined and cross-referenced against the PO database.</p>
+        <div id="stmt-drop-zone" onclick="document.getElementById('stmt-file').click()"
+          style="border:2px dashed #b0bdd6;border-radius:10px;padding:28px 16px;text-align:center;cursor:pointer;margin-bottom:16px;transition:background .15s,border-color .15s">
+          <div style="font-size:28px;margin-bottom:6px">📄</div>
+          <p style="font-size:14px;font-weight:600;color:#1F3971;margin:0 0 4px">Drop PDFs here or tap to choose</p>
+          <p id="stmt-drop-label" style="font-size:12px;color:#888;margin:0">One or more statement PDFs</p>
+        </div>
+        <input type="file" id="stmt-file" accept=".pdf" multiple onchange="onStatementFile(this)" style="display:none">
         <div id="stmt-parsing" style="display:none;text-align:center;padding:20px">
           <div class="spinner" style="margin:0 auto 8px"></div>
           <p style="font-size:13px;color:#666">Extracting text from PDF…</p>
@@ -797,6 +800,7 @@ function gasCall(action, payload, onSuccess, onFailure) {
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', function() {
+  initStmtDrop();
   var cachedEmail = localStorage.getItem('panoramic_ops_email');
   if (cachedEmail) {
     // Returning user — boot directly from cached email, no password needed
@@ -2312,50 +2316,115 @@ function submitContactEdit() {
 })();
 // ── Statement Reconciliation ─────────────────────────────────────────────────────────
 
+function initStmtDrop() {
+  var zone = document.getElementById('stmt-drop-zone');
+  if (!zone || zone._dropWired) return;
+  zone._dropWired = true;
+  zone.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    zone.style.background = '#eef2ff';
+    zone.style.borderColor = '#1F3971';
+  });
+  zone.addEventListener('dragleave', function() {
+    zone.style.background = '';
+    zone.style.borderColor = '';
+  });
+  zone.addEventListener('drop', function(e) {
+    e.preventDefault();
+    zone.style.background = '';
+    zone.style.borderColor = '';
+    var files = Array.from(e.dataTransfer.files).filter(function(f) {
+      return f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf');
+    });
+    if (files.length) {
+      processStatementFiles(files);
+    } else {
+      showToast('Please drop PDF files.');
+    }
+  });
+}
+
 function onStatementFile(input) {
-  var file = input.files[0];
-  if (!file) return;
+  var files = Array.from(input.files);
+  if (!files.length) return;
+  processStatementFiles(files);
+}
+
+function processStatementFiles(files) {
+  var pdfs = files.filter(function(f) {
+    return f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf');
+  });
+  if (!pdfs.length) { showToast('Please select PDF files.'); return; }
+
   document.getElementById('stmt-detected').style.display = 'none';
   document.getElementById('stmt-results').style.display  = 'none';
   document.getElementById('stmt-parsing').style.display  = 'block';
-  var reader = new FileReader();
-  reader.onload = function(e) {
-    if (!window.pdfjsLib) {
+
+  var label = pdfs.length === 1 ? pdfs[0].name : pdfs.length + ' files selected';
+  document.getElementById('stmt-drop-label').textContent = label;
+  var parsingMsg = document.querySelector('#stmt-parsing p');
+
+  function readFile(file) {
+    return new Promise(function(resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function(e) { resolve(e.target.result); };
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  function ensurePdfJs() {
+    return new Promise(function(resolve) {
+      if (window.pdfjsLib) return resolve();
       var s = document.createElement('script');
       s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
       s.onload = function() {
         window.pdfjsLib.GlobalWorkerOptions.workerSrc =
           'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-        extractPdfText(e.target.result);
+        resolve();
       };
       document.head.appendChild(s);
-    } else {
-      extractPdfText(e.target.result);
-    }
-  };
-  reader.readAsArrayBuffer(file);
-}
+    });
+  }
 
-function extractPdfText(arrayBuffer) {
-  pdfjsLib.getDocument({ data: arrayBuffer }).promise.then(function(pdf) {
-    var pagePromises = [];
-    for (var i = 1; i <= pdf.numPages; i++) {
-      pagePromises.push(pdf.getPage(i).then(function(page) {
-        return page.getTextContent().then(function(tc) {
-          return tc.items.map(function(item){ return item.str; }).join(' ');
+  function parsePdf(buf) {
+    return pdfjsLib.getDocument({ data: buf }).promise.then(function(pdf) {
+      var pages = [];
+      for (var i = 1; i <= pdf.numPages; i++) {
+        pages.push(pdf.getPage(i).then(function(page) {
+          return page.getTextContent().then(function(tc) {
+            return tc.items.map(function(item){ return item.str; }).join(' ');
+          });
+        }));
+      }
+      return Promise.all(pages);
+    }).then(function(texts) { return texts.join('\n'); });
+  }
+
+  ensurePdfJs().then(function() {
+    var allInvoices = {};
+    var chain = Promise.resolve();
+    pdfs.forEach(function(file, i) {
+      chain = chain.then(function() {
+        parsingMsg.textContent = pdfs.length > 1
+          ? 'Extracting text from PDF ' + (i + 1) + ' of ' + pdfs.length + '…'
+          : 'Extracting text from PDF…';
+        return readFile(file).then(parsePdf).then(function(text) {
+          detectInvoiceNumbers(text).forEach(function(inv) { allInvoices[inv] = true; });
+        }).catch(function(err) {
+          showToast('Skipped ' + file.name + ': ' + err.message);
         });
-      }));
-    }
-    return Promise.all(pagePromises);
-  }).then(function(pages) {
-    var fullText = pages.join('\n');
-    var invoices = detectInvoiceNumbers(fullText);
+      });
+    });
+    return chain;
+  }).then(function() {
+    var merged = Object.keys(allInvoices).sort();
     document.getElementById('stmt-parsing').style.display   = 'none';
-    document.getElementById('stmt-invoice-list').value      = invoices.join('\n');
+    document.getElementById('stmt-invoice-list').value      = merged.join('\n');
     document.getElementById('stmt-detected').style.display  = 'block';
   }).catch(function(err) {
     document.getElementById('stmt-parsing').style.display = 'none';
-    showToast('Could not read PDF: ' + err.message);
+    showToast('Error reading PDFs: ' + err.message);
   });
 }
 
