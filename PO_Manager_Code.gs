@@ -66,9 +66,10 @@ function doPost(e) {
     else if (action === 'savePhotoToDrive')  result = savePhotoToDrive(payload.base64Data, payload.mimeType, payload.filename);
     else if (action === 'getPricingData')    result = getPricingData();
     else if (action === 'updatePricing')     result = updatePricing(payload.rowIndex, payload.vendorPrices);
-    else if (action === 'getContacts')       result = getContacts();
-    else if (action === 'updateContact')     result = updateContact(payload.rowIndex, payload.values);
-    else                                     result = { error: 'Unknown action: ' + action };
+    else if (action === 'getContacts')         result = getContacts();
+    else if (action === 'updateContact')       result = updateContact(payload.rowIndex, payload.values);
+    else if (action === 'reconcileStatement')  result = reconcileStatement(payload.invoiceNumbers);
+    else                                       result = { error: 'Unknown action: ' + action };
 
     return ContentService
       .createTextOutput(JSON.stringify(result))
@@ -539,4 +540,72 @@ function updateContact(rowIndex, values) {
     });
     return { success: true };
   } catch(e) { return { success: false, error: e.toString() }; }
+}
+
+// ─── Statement Reconciliation ──────────────────────────────────────────────────
+
+/**
+ * Cross-references a list of vendor invoice numbers against the PO Database.
+ * Returns matched POs and a list of unmatched invoice numbers.
+ */
+function reconcileStatement(invoiceNumbers) {
+  try {
+    var ss     = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet  = ss.getSheetByName(SHEET_NAME);
+    if (!sheet) return { error: 'PO Database sheet not found' };
+
+    var data    = sheet.getDataRange().getValues();
+    var headers = data[0].map(function(h){ return h.toString().trim(); });
+
+    var colPoNum   = headers.indexOf('PO Num');
+    var colVendor  = headers.indexOf('Vendor');
+    var colJob     = headers.indexOf('Job Reference');
+    var colInvoice = headers.indexOf('Vendor Invoice');
+    var colStatus  = headers.indexOf('Status');
+    var colTotal   = headers.indexOf('Invoice Total');
+
+    if (colInvoice === -1) return { error: '"Vendor Invoice" column not found in PO Database' };
+
+    // Build map: normalised invoice# → row data
+    var dbMap = {};
+    for (var i = 1; i < data.length; i++) {
+      var inv = (data[i][colInvoice] || '').toString().trim();
+      if (!inv) continue;
+      dbMap[inv.toLowerCase()] = {
+        poNum:   colPoNum  !== -1 ? data[i][colPoNum]  : '',
+        vendor:  colVendor !== -1 ? data[i][colVendor] : '',
+        job:     colJob    !== -1 ? data[i][colJob]    : '',
+        status:  colStatus !== -1 ? data[i][colStatus] : '',
+        total:   colTotal  !== -1 ? data[i][colTotal]  : '',
+        invNum:  inv
+      };
+    }
+
+    var matched   = [];
+    var unmatched = [];
+
+    (invoiceNumbers || []).forEach(function(inv) {
+      var key   = inv.toString().trim().toLowerCase();
+      var found = dbMap[key];
+      // Also try partial match (statement may truncate trailing digits)
+      if (!found) {
+        var keys = Object.keys(dbMap);
+        for (var k = 0; k < keys.length; k++) {
+          if (keys[k].indexOf(key) === 0 || key.indexOf(keys[k]) === 0) {
+            found = dbMap[keys[k]];
+            break;
+          }
+        }
+      }
+      if (found) {
+        matched.push({ invoiceNumber: inv, poNum: found.poNum, vendor: found.vendor, job: found.job, status: found.status, total: found.total });
+      } else {
+        unmatched.push(inv);
+      }
+    });
+
+    return { success: true, matched: matched, unmatched: unmatched };
+  } catch(e) {
+    return { error: e.toString() };
+  }
 }

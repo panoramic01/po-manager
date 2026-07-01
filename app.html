@@ -565,6 +565,40 @@
     <div id="p-results"><div class="empty">Select a category or search above.</div></div>
   </div>
 
+  <!-- ══ OTHER (admin) ══ -->
+  <div class="tab" id="tab-other">
+    <div class="tab-content" style="padding:16px;max-width:680px;margin:0 auto">
+      <div style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:20px">
+        <h2 style="font-size:17px;font-weight:700;color:#1F3971;margin-bottom:4px">Reconcile Vendor Statement</h2>
+        <p style="font-size:13px;color:#666;margin-bottom:16px">Upload a vendor statement PDF. The app will extract invoice numbers and check which ones have a matching PO in the database.</p>
+        <label style="display:block;margin-bottom:12px">
+          <span style="font-size:13px;font-weight:600;color:#444;display:block;margin-bottom:6px">Statement PDF</span>
+          <input type="file" id="stmt-file" accept=".pdf" onchange="onStatementFile(this)" style="font-size:13px;width:100%">
+        </label>
+        <div id="stmt-parsing" style="display:none;text-align:center;padding:20px">
+          <div class="spinner" style="margin:0 auto 8px"></div>
+          <p style="font-size:13px;color:#666">Extracting text from PDF…</p>
+        </div>
+        <div id="stmt-detected" style="display:none">
+          <p style="font-size:13px;font-weight:600;color:#444;margin-bottom:6px">Detected invoice numbers <span style="font-weight:400;color:#888">(edit if needed, one per line)</span></p>
+          <textarea id="stmt-invoice-list" rows="6" style="width:100%;font-size:13px;font-family:monospace;padding:10px;border:1px solid #ddd;border-radius:8px;resize:vertical"></textarea>
+          <p style="font-size:12px;color:#999;margin-top:4px">Finance charges and entries without an invoice number are excluded automatically.</p>
+          <button class="btn btn-primary" style="margin-top:12px;width:100%" onclick="runReconcile()">Cross-Reference Against PO Database</button>
+        </div>
+        <div id="stmt-results" style="display:none;margin-top:20px">
+          <div id="stmt-matched-section">
+            <h3 style="font-size:14px;font-weight:700;color:#2e7d32;margin-bottom:8px">✅ Matched in PO Database (<span id="stmt-matched-count">0</span>)</h3>
+            <div id="stmt-matched-list" style="font-size:13px"></div>
+          </div>
+          <div id="stmt-unmatched-section" style="margin-top:16px">
+            <h3 style="font-size:14px;font-weight:700;color:#c62828;margin-bottom:8px">❌ Not Found in PO Database (<span id="stmt-unmatched-count">0</span>)</h3>
+            <div id="stmt-unmatched-list" style="font-size:13px"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ══ CONTACTS ══ -->
   <div class="tab" id="tab-contacts">
     <div class="search-row">
@@ -607,6 +641,11 @@
   <button id="nav-contacts" class="nav-btn" onclick="showTab('contacts',this)">
     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
     Contacts
+  </button>
+
+  <button id="nav-other" class="nav-btn" onclick="showTab('other',this)">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h7"/></svg>
+    Other
   </button>
 
 </nav>
@@ -936,6 +975,7 @@ function applyRole(role) {
     canEdit:        role === 'admin' || role === 'office',
     canViewInvoice: role !== 'site_manager' && role !== 'runner',
     canContacts:    role === 'admin' || role === 'office',
+    canOther:       role === 'admin',
     canCleanup:     role === 'admin' || role === 'office' || role === 'site_manager' || role === 'runner',
     canAdmin:       false
   };
@@ -948,6 +988,7 @@ function applyRole(role) {
   sd('nav-receive',     p.canReceive);
   sd('nav-pricing',     p.canPricing);
   sd('nav-contacts',    p.canContacts);
+  sd('nav-other',       p.canOther);
   sd('receive-po-card', p.canReceivePO);
 
   // Show role badge in header
@@ -1562,7 +1603,8 @@ function showTab(name, btn) {
     create:    !G.perms.canCreate,
     receive:   !G.perms.canReceive,
     pricing:   !G.perms.canPricing,
-    contacts:  !G.perms.canContacts
+    contacts:  !G.perms.canContacts,
+    other:     !G.perms.canOther
   };
   if (blocked[name]) { showToast("You don't have access to that."); return; }
   showTabDirect(name, btn);
@@ -2268,6 +2310,119 @@ function submitContactEdit() {
     moved    = 0;
   });
 })();
+// ── Statement Reconciliation ─────────────────────────────────────────────────────────
+
+var INVOICE_PATTERNS = [
+  /\b([A-Z]{2,4}\d{7,12}-\d{3})\b/g,
+  /\b(\d{10}-\d{3})\b/g,
+  /\b(1\d{8,11})\b/g,
+  /\b([2-9]\d{4,5})\b/g
+];
+
+function onStatementFile(input) {
+  var file = input.files[0];
+  if (!file) return;
+  document.getElementById('stmt-detected').style.display = 'none';
+  document.getElementById('stmt-results').style.display  = 'none';
+  document.getElementById('stmt-parsing').style.display  = 'block';
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    if (!window.pdfjsLib) {
+      var s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+      s.onload = function() {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+          'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        extractPdfText(e.target.result);
+      };
+      document.head.appendChild(s);
+    } else {
+      extractPdfText(e.target.result);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function extractPdfText(arrayBuffer) {
+  pdfjsLib.getDocument({ data: arrayBuffer }).promise.then(function(pdf) {
+    var pagePromises = [];
+    for (var i = 1; i <= pdf.numPages; i++) {
+      pagePromises.push(pdf.getPage(i).then(function(page) {
+        return page.getTextContent().then(function(tc) {
+          return tc.items.map(function(item){ return item.str; }).join(' ');
+        });
+      }));
+    }
+    return Promise.all(pagePromises);
+  }).then(function(pages) {
+    var fullText = pages.join('\n');
+    var invoices = detectInvoiceNumbers(fullText);
+    document.getElementById('stmt-parsing').style.display   = 'none';
+    document.getElementById('stmt-invoice-list').value      = invoices.join('\n');
+    document.getElementById('stmt-detected').style.display  = 'block';
+  }).catch(function(err) {
+    document.getElementById('stmt-parsing').style.display = 'none';
+    showToast('Could not read PDF: ' + err.message);
+  });
+}
+
+function detectInvoiceNumbers(text) {
+  var found = {};
+  INVOICE_PATTERNS.forEach(function(re) {
+    var cloned = new RegExp(re.source, re.flags);
+    var m;
+    while ((m = cloned.exec(text)) !== null) { found[m[1]] = true; }
+  });
+  return Object.keys(found).filter(function(n) {
+    if (/^\d{5}$/.test(n) && parseInt(n) < 10000) return false;
+    return true;
+  }).sort();
+}
+
+function runReconcile() {
+  var raw = document.getElementById('stmt-invoice-list').value;
+  var invoices = raw.split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
+  if (!invoices.length) { showToast('No invoice numbers to check.'); return; }
+  document.getElementById('stmt-results').style.display = 'none';
+  showToast('Cross-referencing ' + invoices.length + ' invoices…');
+  gasCall('reconcileStatement', { invoiceNumbers: invoices }, function(res) {
+    if (res.error) { showToast('Error: ' + res.error); return; }
+    renderReconcileResults(res.matched || [], res.unmatched || []);
+  }, function() { showToast('Connection error. Try again.'); });
+}
+
+function renderReconcileResults(matched, unmatched) {
+  document.getElementById('stmt-matched-count').textContent   = matched.length;
+  document.getElementById('stmt-unmatched-count').textContent = unmatched.length;
+  var matchedHtml = '';
+  if (matched.length) {
+    matchedHtml = '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
+      '<tr style="background:#f5f5f5"><th style="text-align:left;padding:6px 8px;border-bottom:1px solid #ddd">Invoice #</th>' +
+      '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid #ddd">PO #</th>' +
+      '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid #ddd">Job</th>' +
+      '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid #ddd">Status</th></tr>';
+    matched.forEach(function(r) {
+      matchedHtml += '<tr style="border-bottom:1px solid #f0f0f0">' +
+        '<td style="padding:6px 8px;font-family:monospace">' + esc(r.invoiceNumber) + '</td>' +
+        '<td style="padding:6px 8px;color:#1F3971;font-weight:600">' + esc(r.poNum) + '</td>' +
+        '<td style="padding:6px 8px">' + esc(r.job) + '</td>' +
+        '<td style="padding:6px 8px">' + esc(r.status) + '</td></tr>';
+    });
+    matchedHtml += '</table>';
+  } else { matchedHtml = '<p style="color:#888;font-size:13px">None matched.</p>'; }
+  document.getElementById('stmt-matched-list').innerHTML = matchedHtml;
+  var unmatchedHtml = '';
+  if (unmatched.length) {
+    unmatchedHtml = '<div style="background:#fff5f5;border:1px solid #ffcdd2;border-radius:8px;padding:12px">' +
+      unmatched.map(function(inv){ return '<div style="font-family:monospace;font-size:13px;padding:3px 0;color:#c62828">' + esc(inv) + '</div>'; }).join('') +
+      '</div><p style="font-size:12px;color:#888;margin-top:6px">These invoices are on the vendor statement but have no matching PO.</p>';
+  } else {
+    unmatchedHtml = '<p style="color:#2e7d32;font-size:13px;font-weight:600">All invoices accounted for! ✅</p>';
+  }
+  document.getElementById('stmt-unmatched-list').innerHTML = unmatchedHtml;
+  document.getElementById('stmt-results').style.display = 'block';
+}
+
 </script>
 </body>
 </html>
