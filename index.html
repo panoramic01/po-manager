@@ -2312,13 +2312,6 @@ function submitContactEdit() {
 })();
 // ── Statement Reconciliation ─────────────────────────────────────────────────────────
 
-var INVOICE_PATTERNS = [
-  /\b([A-Z]{2,4}\d{7,12}-\d{3})\b/g,
-  /\b(\d{10}-\d{3})\b/g,
-  /\b(1\d{8,11})\b/g,
-  /\b([2-9]\d{4,5})\b/g
-];
-
 function onStatementFile(input) {
   var file = input.files[0];
   if (!file) return;
@@ -2368,15 +2361,53 @@ function extractPdfText(arrayBuffer) {
 
 function detectInvoiceNumbers(text) {
   var found = {};
-  INVOICE_PATTERNS.forEach(function(re) {
-    var cloned = new RegExp(re.source, re.flags);
-    var m;
-    while ((m = cloned.exec(text)) !== null) { found[m[1]] = true; }
-  });
-  return Object.keys(found).filter(function(n) {
-    if (/^\d{5}$/.test(n) && parseInt(n) < 10000) return false;
-    return true;
-  }).sort();
+  var m, re;
+
+  function grab(pattern, flags) {
+    re = new RegExp(pattern, flags || 'g');
+    while ((m = re.exec(text)) !== null) { found[m[1]] = true; }
+  }
+
+  // TIER 1: Explicitly labeled — "Invoice #XXXXX" / "INV #XXXXX"
+  // Covers: Castalite (INV #113457), G.S. Harris (INV #260093), Leak Tech (Invoice #35573)
+  // Negative lookahead skips finance charges: "INV #FC 14338"
+  grab('(?:Invoice|INV)\\s*#\\s*(?!FC\\b)(\\d{4,8})', 'gi');
+
+  // TIER 2: Alpha-prefix + long numeric + 3-digit suffix (LKL Associates)
+  // Covers: HVN0000137365-001, WST0000268730-001
+  // FC entries (FC0626-010000140) have only 4 digits before dash — won't match \d{7,12}
+  grab('\\b([A-Z]{2,3}\\d{7,12}-\\d{3})\\b');
+
+  // TIER 3: 10-digit numeric + 3-digit suffix (ABC Supply Interiors)
+  // Covers: 1017103300-001, 1017112304-002
+  grab('\\b(\\d{10}-\\d{3})\\b');
+
+  // TIER 4: 8-digit numeric + 2-digit suffix (Lansing Building Products)
+  // Covers: 85286455-00, 85515447-00
+  // Service charges (53126-99) are only 5-digit prefix — won't match \d{8}
+  grab('\\b(\\d{8}-\\d{2})\\b');
+
+  var keys = Object.keys(found);
+  if (keys.length > 0) return filterZips(keys);
+
+  // TIER 5: Pure 8-digit starting with 1 (Associated Materials / Alside)
+  // Covers: 15641518, 15647574
+  grab('\\b(1\\d{7})\\b');
+  keys = Object.keys(found);
+  if (keys.length > 0) return filterZips(keys);
+
+  // TIER 6: 5-6 digit fallback (Timberline Exteriors)
+  // Covers: 35277, 35362, 35363
+  grab('\\b([2-9]\\d{4,5})\\b');
+  return filterZips(Object.keys(found));
+
+  function filterZips(nums) {
+    return nums.filter(function(n) {
+      if (new RegExp('\\b[A-Z]{2}\\s+' + n + '\\b').test(text)) return false;
+      if (new RegExp('\\b' + n + '-\\d{4}\\b').test(text)) return false;
+      return true;
+    }).sort();
+  }
 }
 
 function runReconcile() {
