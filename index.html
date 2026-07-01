@@ -2401,8 +2401,8 @@ function processStatementFiles(files) {
     }).then(function(texts) { return texts.join('\n'); });
   }
 
+  var allInvoices = {};
   ensurePdfJs().then(function() {
-    var allInvoices = {};
     var chain = Promise.resolve();
     pdfs.forEach(function(file, i) {
       chain = chain.then(function() {
