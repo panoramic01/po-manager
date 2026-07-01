@@ -2588,7 +2588,7 @@ function renderVendorSpend() {
     + ['bar-h','bar-v','pie'].reduce(function(acc, t) {
         var labels = {'bar-h':'Bars','bar-v':'Column','pie':'Pie'};
         var active = t === vsChartType;
-        return acc + '<button id="vs-toggle-' + t + '" onclick="setVsChartType('' + t + '')"'
+        return acc + '<button id="vs-toggle-' + t + '" onclick="setVsChartType(\'' + t + '\')"'
           + ' style="flex:1;border:none;border-radius:8px;padding:7px 0;font-size:13px;font-weight:600;cursor:pointer;'
           + 'background:' + (active ? '#1F3971' : '#eef2ff') + ';color:' + (active ? '#fff' : '#1F3971') + '">'
           + labels[t] + '</button>';
