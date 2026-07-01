@@ -548,75 +548,116 @@
   </div>
 
   <!-- ══ PRICING ══ -->
-  <div class="tab" id="tab-pricing">
-    <div class="search-row">
-      <div class="search-wrap">
-        <input type="text" class="search-input" id="p-input"
-               placeholder="Search materials…"
-               oninput="runPricingSearch(); toggleClear('p-input','p-clear')">
-        <button class="search-clear" id="p-clear" onclick="clearSearch('p-input','p-clear'); runPricingSearch()">✕</button>
-      </div>
-    </div>
-    <p id="p-last-updated" style="font-size:11px;color:#A2A092;padding:4px 16px 0;margin:0"></p>
-    <div class="chip-row" id="p-cats" style="display:none"></div>
-    <div id="p-loading" style="display:none">
-      <div class="loading"><div class="spinner"></div><p>Loading prices…</p></div>
-    </div>
-    <div id="p-results"><div class="empty">Select a category or search above.</div></div>
-  </div>
-
-  <!-- ══ OTHER (admin) ══ -->
+<!-- ══ OTHER (admin/office) ══ -->
   <div class="tab" id="tab-other">
-    <div class="tab-content" style="padding:16px;max-width:680px;margin:0 auto">
-      <div style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:20px">
-        <h2 style="font-size:17px;font-weight:700;color:#1F3971;margin-bottom:4px">Reconcile Vendor Statement</h2>
-        <p style="font-size:13px;color:#666;margin-bottom:16px">Upload one or more vendor statement PDFs. Invoice numbers from all files will be combined and cross-referenced against the PO database.</p>
-        <div id="stmt-drop-zone" onclick="document.getElementById('stmt-file').click()"
-          style="border:2px dashed #b0bdd6;border-radius:10px;padding:28px 16px;text-align:center;cursor:pointer;margin-bottom:16px;transition:background .15s,border-color .15s">
-          <div style="font-size:28px;margin-bottom:6px">📄</div>
-          <p style="font-size:14px;font-weight:600;color:#1F3971;margin:0 0 4px">Drop PDFs here or tap to choose</p>
-          <p id="stmt-drop-label" style="font-size:12px;color:#888;margin:0">One or more statement PDFs</p>
+
+    <!-- Home grid -->
+    <div id="other-home" style="padding:16px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+
+        <div id="other-card-pricing" onclick="showOtherPanel('pricing')" style="background:#fff;border-radius:12px;padding:22px 12px;text-align:center;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.08);display:flex;flex-direction:column;align-items:center;gap:10px">
+          <svg width="32" height="32" fill="none" stroke="#1F3971" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z"/></svg>
+          <span style="font-size:13px;font-weight:600;color:#1F3971">Pricing</span>
         </div>
-        <input type="file" id="stmt-file" accept=".pdf" multiple onchange="onStatementFile(this)" style="display:none">
-        <div id="stmt-parsing" style="display:none;text-align:center;padding:20px">
-          <div class="spinner" style="margin:0 auto 8px"></div>
-          <p style="font-size:13px;color:#666">Extracting text from PDF…</p>
+
+        <div id="other-card-contacts" onclick="showOtherPanel('contacts')" style="background:#fff;border-radius:12px;padding:22px 12px;text-align:center;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.08);display:flex;flex-direction:column;align-items:center;gap:10px">
+          <svg width="32" height="32" fill="none" stroke="#1F3971" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          <span style="font-size:13px;font-weight:600;color:#1F3971">Contacts</span>
         </div>
-        <div id="stmt-detected" style="display:none">
-          <p style="font-size:13px;font-weight:600;color:#444;margin-bottom:6px">Detected invoice numbers <span style="font-weight:400;color:#888">(edit if needed, one per line)</span></p>
-          <textarea id="stmt-invoice-list" rows="6" style="width:100%;font-size:13px;font-family:monospace;padding:10px;border:1px solid #ddd;border-radius:8px;resize:vertical"></textarea>
-          <p style="font-size:12px;color:#999;margin-top:4px">Finance charges and entries without an invoice number are excluded automatically.</p>
-          <button class="btn btn-primary" style="margin-top:12px;width:100%" onclick="runReconcile()">Cross-Reference Against PO Database</button>
+
+        <div id="other-card-reconcile" onclick="showOtherPanel('reconcile')" style="background:#fff;border-radius:12px;padding:22px 12px;text-align:center;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.08);display:flex;flex-direction:column;align-items:center;gap:10px">
+          <svg width="32" height="32" fill="none" stroke="#1F3971" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          <span style="font-size:13px;font-weight:600;color:#1F3971">Reconcile Statement</span>
         </div>
-        <div id="stmt-results" style="display:none;margin-top:20px">
-          <div id="stmt-unmatched-section">
-            <h3 style="font-size:14px;font-weight:700;color:#c62828;margin-bottom:8px">❌ Not Found in PO Database (<span id="stmt-unmatched-count">0</span>)</h3>
-            <div id="stmt-unmatched-list" style="font-size:13px"></div>
+
+      </div>
+    </div>
+
+    <!-- Pricing sub-panel -->
+    <div id="other-panel-pricing" style="display:none">
+      <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #f0f0f0;background:#fff;position:sticky;top:0;z-index:1">
+      <button onclick="showOtherHome()" style="background:none;border:none;font-size:14px;font-weight:600;color:#1F3971;cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
+    </div>
+      <div class="search-row">
+        <div class="search-wrap">
+          <input type="text" class="search-input" id="p-input"
+                 placeholder="Search materials…"
+                 oninput="runPricingSearch(); toggleClear('p-input','p-clear')">
+          <button class="search-clear" id="p-clear" onclick="clearSearch('p-input','p-clear'); runPricingSearch()">✕</button>
+        </div>
+      </div>
+      <p id="p-last-updated" style="font-size:11px;color:#A2A092;padding:4px 16px 0;margin:0"></p>
+      <div class="chip-row" id="p-cats" style="display:none"></div>
+      <div id="p-loading" style="display:none">
+        <div class="loading"><div class="spinner"></div><p>Loading prices…</p></div>
+      </div>
+      <div id="p-results"><div class="empty">Select a category or search above.</div></div>
+    </div>
+
+    <!-- Contacts sub-panel -->
+    <div id="other-panel-contacts" style="display:none">
+      <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #f0f0f0;background:#fff;position:sticky;top:0;z-index:1">
+      <button onclick="showOtherHome()" style="background:none;border:none;font-size:14px;font-weight:600;color:#1F3971;cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
+    </div>
+      <div class="search-row">
+        <div class="search-wrap">
+          <input type="text" class="search-input" id="ct-input"
+                 placeholder="Search contacts…"
+                 oninput="runContactSearch(); toggleClear('ct-input','ct-clear')">
+          <button class="search-clear" id="ct-clear" onclick="clearSearch('ct-input','ct-clear'); runContactSearch()">✕</button>
+        </div>
+      </div>
+      <div id="ct-loading" style="display:none">
+        <div class="loading"><div class="spinner"></div><p>Loading contacts…</p></div>
+      </div>
+      <div id="ct-results"><div class="empty">Loading contacts…</div></div>
+    </div>
+
+    <!-- Reconcile sub-panel -->
+    <div id="other-panel-reconcile" style="display:none">
+      <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #f0f0f0;background:#fff;position:sticky;top:0;z-index:1">
+      <button onclick="showOtherHome()" style="background:none;border:none;font-size:14px;font-weight:600;color:#1F3971;cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
+    </div>
+      <div class="tab-content" style="padding:16px;max-width:680px;margin:0 auto">
+        <div style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:20px">
+          <h2 style="font-size:17px;font-weight:700;color:#1F3971;margin-bottom:4px">Reconcile Vendor Statement</h2>
+          <p style="font-size:13px;color:#666;margin-bottom:16px">Upload one or more vendor statement PDFs. Invoice numbers from all files will be combined and cross-referenced against the PO database.</p>
+          <div id="stmt-drop-zone" onclick="document.getElementById('stmt-file').click()"
+            style="border:2px dashed #b0bdd6;border-radius:10px;padding:28px 16px;text-align:center;cursor:pointer;margin-bottom:16px;transition:background .15s,border-color .15s">
+            <div style="font-size:28px;margin-bottom:6px">📄</div>
+            <p style="font-size:14px;font-weight:600;color:#1F3971;margin:0 0 4px">Drop PDFs here or tap to choose</p>
+            <p id="stmt-drop-label" style="font-size:12px;color:#888;margin:0">One or more statement PDFs</p>
           </div>
-          <div id="stmt-matched-section" style="margin-top:16px">
-            <h3 style="font-size:14px;font-weight:700;color:#2e7d32;margin-bottom:8px">✅ Matched in PO Database (<span id="stmt-matched-count">0</span>)</h3>
-            <div id="stmt-matched-list" style="font-size:13px"></div>
+          <input type="file" id="stmt-file" accept=".pdf" multiple onchange="onStatementFile(this)" style="display:none">
+          <div id="stmt-parsing" style="display:none;text-align:center;padding:20px">
+            <div class="spinner" style="margin:0 auto 8px"></div>
+            <p style="font-size:13px;color:#666">Extracting text from PDF…</p>
+          </div>
+          <div id="stmt-detected" style="display:none">
+            <p style="font-size:13px;font-weight:600;color:#444;margin-bottom:6px">Detected invoice numbers <span style="font-weight:400;color:#888">(edit if needed, one per line)</span></p>
+            <textarea id="stmt-invoice-list" rows="6" style="width:100%;font-size:13px;font-family:monospace;padding:10px;border:1px solid #ddd;border-radius:8px;resize:vertical"></textarea>
+            <p style="font-size:12px;color:#999;margin-top:4px">Finance charges and entries without an invoice number are excluded automatically.</p>
+            <button class="btn btn-primary" style="margin-top:12px;width:100%" onclick="runReconcile()">Cross-Reference Against PO Database</button>
+          </div>
+          <div id="stmt-results" style="display:none;margin-top:20px">
+            <div id="stmt-unmatched-section">
+              <h3 style="font-size:14px;font-weight:700;color:#c62828;margin-bottom:8px">❌ Not Found in PO Database (<span id="stmt-unmatched-count">0</span>)</h3>
+              <div id="stmt-unmatched-list" style="font-size:13px"></div>
+            </div>
+            <div id="stmt-matched-section" style="margin-top:16px">
+              <h3 style="font-size:14px;font-weight:700;color:#2e7d32;margin-bottom:8px">✅ Matched in PO Database (<span id="stmt-matched-count">0</span>)</h3>
+              <div id="stmt-matched-list" style="font-size:13px"></div>
+            </div>
           </div>
         </div>
       </div>
     </div>
+
   </div>
 
-  <!-- ══ CONTACTS ══ -->
-  <div class="tab" id="tab-contacts">
-    <div class="search-row">
-      <div class="search-wrap">
-        <input type="text" class="search-input" id="ct-input"
-               placeholder="Search contacts…"
-               oninput="runContactSearch(); toggleClear('ct-input','ct-clear')">
-        <button class="search-clear" id="ct-clear" onclick="clearSearch('ct-input','ct-clear'); runContactSearch()">✕</button>
-      </div>
-    </div>
-    <div id="ct-loading" style="display:none">
-      <div class="loading"><div class="spinner"></div><p>Loading contacts…</p></div>
-    </div>
-    <div id="ct-results"><div class="empty">Loading contacts…</div></div>
   </div>
+
+
 
 
 </main>
@@ -636,14 +677,6 @@
   <button id="nav-receive" class="nav-btn" onclick="showTab('receive',this)">
     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
     Log
-  </button>
-  <button id="nav-pricing" class="nav-btn" onclick="showTab('pricing',this)">
-    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z"/></svg>
-    Pricing
-  </button>
-  <button id="nav-contacts" class="nav-btn" onclick="showTab('contacts',this)">
-    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-    Contacts
   </button>
 
   <button id="nav-other" class="nav-btn" onclick="showTab('other',this)">
@@ -979,7 +1012,7 @@ function applyRole(role) {
     canEdit:        role === 'admin' || role === 'office',
     canViewInvoice: role !== 'site_manager' && role !== 'runner',
     canContacts:    role === 'admin' || role === 'office',
-    canOther:       role === 'admin',
+    canOther:       role === 'admin' || role === 'office',
     canCleanup:     role === 'admin' || role === 'office' || role === 'site_manager' || role === 'runner',
     canAdmin:       false
   };
@@ -990,9 +1023,10 @@ function applyRole(role) {
   sd('nav-dashboard',   p.canDash);
   sd('nav-create',      p.canCreate);
   sd('nav-receive',     p.canReceive);
-  sd('nav-pricing',     p.canPricing);
-  sd('nav-contacts',    p.canContacts);
   sd('nav-other',       p.canOther);
+  sd('other-card-pricing',   p.canPricing);
+  sd('other-card-contacts',  p.canContacts);
+  sd('other-card-reconcile', role === 'admin');
   sd('receive-po-card', p.canReceivePO);
 
   // Show role badge in header
@@ -1017,8 +1051,7 @@ function showTabDirect(name, btn) {
   document.querySelectorAll('.nav-btn').forEach(function(b){ b.classList.remove('active'); });
   document.getElementById('tab-'+name).classList.add('active');
   if (btn) btn.classList.add('active');
-  if (name === 'pricing')  loadPricing();
-  if (name === 'contacts') loadContacts();
+  // pricing/contacts now loaded via showOtherPanel()
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -1606,8 +1639,6 @@ function showTab(name, btn) {
     dashboard: !G.perms.canDash,
     create:    !G.perms.canCreate,
     receive:   !G.perms.canReceive,
-    pricing:   !G.perms.canPricing,
-    contacts:  !G.perms.canContacts,
     other:     !G.perms.canOther
   };
   if (blocked[name]) { showToast("You don't have access to that."); return; }
@@ -2316,6 +2347,26 @@ function submitContactEdit() {
 })();
 // ── Statement Reconciliation ─────────────────────────────────────────────────────────
 
+
+function showOtherPanel(name) {
+  document.getElementById('other-home').style.display = 'none';
+  ['pricing', 'contacts', 'reconcile'].forEach(function(p) {
+    var el = document.getElementById('other-panel-' + p);
+    if (el) el.style.display = p === name ? '' : 'none';
+  });
+  if (name === 'pricing')  loadPricing();
+  if (name === 'contacts') loadContacts();
+  if (name === 'reconcile') initStmtDrop();
+}
+
+function showOtherHome() {
+  document.getElementById('other-home').style.display = '';
+  ['pricing', 'contacts', 'reconcile'].forEach(function(p) {
+    var el = document.getElementById('other-panel-' + p);
+    if (el) el.style.display = 'none';
+  });
+}
+
 function initStmtDrop() {
   var zone = document.getElementById('stmt-drop-zone');
   if (!zone || zone._dropWired) return;
@@ -2526,3 +2577,4 @@ function renderReconcileResults(matched, unmatched) {
 </script>
 </body>
 </html>
+  
