@@ -2559,7 +2559,59 @@ function loadVendorSpend() {
   gasCall('getVendorSpend', { startDate: start, endDate: end }, function(r) {
     document.getElementById('vs-loading').style.display = 'none';
     if (r.error) { showToast('Error: ' + r.error); return; }
-    var maxTotal = r.vendors.length ? r.vendors[0].total : 1;
+    vsData = r;
+    vsData.dateRange = (start || 'All time') + (end ? ' → ' + end : '');
+    renderVendorSpend();
+  }, function() { document.getElementById('vs-loading').style.display = 'none'; showToast('Failed to load'); });
+}
+
+function setVsChartType(type) {
+  vsChartType = type;
+  ['bar-h','bar-v','pie'].forEach(function(t) {
+    var btn = document.getElementById('vs-toggle-' + t);
+    if (btn) {
+      btn.style.background  = t === type ? '#1F3971' : '#eef2ff';
+      btn.style.color       = t === type ? '#fff'    : '#1F3971';
+    }
+  });
+  renderVendorSpend();
+}
+
+function renderVendorSpend() {
+  if (!vsData) return;
+  var r = vsData;
+  // Destroy existing Chart.js instance if any
+  if (window._vsChart) { window._vsChart.destroy(); window._vsChart = null; }
+
+  // Summary header + toggle row
+  var toggleBar = '<div style="display:flex;gap:6px;margin-bottom:12px">'
+    + ['bar-h','bar-v','pie'].reduce(function(acc, t) {
+        var labels = {'bar-h':'Bars','bar-v':'Column','pie':'Pie'};
+        var active = t === vsChartType;
+        return acc + '<button id="vs-toggle-' + t + '" onclick="setVsChartType('' + t + '')"'
+          + ' style="flex:1;border:none;border-radius:8px;padding:7px 0;font-size:13px;font-weight:600;cursor:pointer;'
+          + 'background:' + (active ? '#1F3971' : '#eef2ff') + ';color:' + (active ? '#fff' : '#1F3971') + '">'
+          + labels[t] + '</button>';
+      }, '')
+    + '</div>';
+
+  var summary = '<div style="background:#1F3971;color:#fff;border-radius:12px;padding:16px 20px;margin-bottom:12px">'
+    + '<div style="font-size:13px;opacity:.8;margin-bottom:2px">' + r.dateRange + '</div>'
+    + '<div style="font-size:24px;font-weight:700">$' + r.grandTotal.toFixed(2) + '</div>'
+    + '<div style="font-size:12px;opacity:.7;margin-top:2px">' + r.vendors.length + ' vendor' + (r.vendors.length !== 1 ? 's' : '') + '</div>'
+    + '</div>';
+
+  if (!r.vendors.length) {
+    document.getElementById('vs-results').innerHTML = summary
+      + '<div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08)">'
+      + '<p style="text-align:center;color:#888">No spend found for this period.</p></div>';
+    document.getElementById('vs-results').style.display = 'block';
+    return;
+  }
+
+  if (vsChartType === 'bar-h') {
+    // Original horizontal bar rows
+    var maxTotal = r.vendors[0].total || 1;
     var rows = r.vendors.map(function(v) {
       var pct = Math.round((v.total / maxTotal) * 100);
       return '<div style="margin-bottom:14px">'
@@ -2570,17 +2622,70 @@ function loadVendorSpend() {
         + '<div style="background:#eef2ff;border-radius:4px;height:6px">'
         + '<div style="background:#1F3971;border-radius:4px;height:6px;width:' + pct + '%"></div></div></div>';
     }).join('');
-    document.getElementById('vs-results').innerHTML =
-      '<div style="background:#1F3971;color:#fff;border-radius:12px;padding:16px 20px;margin-bottom:12px">'
-      + '<div style="font-size:13px;opacity:.8;margin-bottom:2px">' + (start || 'All time') + (end ? ' → ' + end : '') + '</div>'
-      + '<div style="font-size:24px;font-weight:700">$' + r.grandTotal.toFixed(2) + '</div>'
-      + '<div style="font-size:12px;opacity:.7;margin-top:2px">' + r.vendors.length + ' vendor' + (r.vendors.length !== 1 ? 's' : '') + '</div>'
-      + '</div>'
-      + '<div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08)">'
-      + (rows || '<p style="text-align:center;color:#888">No spend found for this period.</p>')
-      + '</div>';
+    document.getElementById('vs-results').innerHTML = summary + toggleBar
+      + '<div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08)">' + rows + '</div>';
     document.getElementById('vs-results').style.display = 'block';
-  }, function() { document.getElementById('vs-loading').style.display = 'none'; showToast('Failed to load'); });
+  } else {
+    // Chart.js for bar-v and pie
+    document.getElementById('vs-results').innerHTML = summary + toggleBar
+      + '<div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08)">'
+      + '<canvas id="vs-canvas" style="max-height:340px"></canvas></div>';
+    document.getElementById('vs-results').style.display = 'block';
+
+    function drawVsChart() {
+      var labels = r.vendors.map(function(v) { return v.vendor; });
+      var values = r.vendors.map(function(v) { return v.total; });
+      var COLORS = ['#1F3971','#2E5CA8','#3B74D5','#5B8FE5','#7AAAF0','#A0BEF7','#C5D8FF',
+                    '#0D2A57','#4E7BD0','#8AABD8','#B3C8EF','#D4E2F9','#1A4D8A','#264F87'];
+      var ctx = document.getElementById('vs-canvas').getContext('2d');
+      if (vsChartType === 'pie') {
+        window._vsChart = new Chart(ctx, {
+          type: 'pie',
+          data: {
+            labels: labels,
+            datasets: [{ data: values, backgroundColor: COLORS.slice(0, values.length), borderWidth: 1 }]
+          },
+          options: {
+            responsive: true,
+            plugins: {
+              legend: { position: 'bottom', labels: { font: { size: 12 }, padding: 12 } },
+              tooltip: { callbacks: { label: function(ctx) {
+                return ' ' + ctx.label + ': $' + ctx.raw.toFixed(2);
+              }}}
+            }
+          }
+        });
+      } else {
+        window._vsChart = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: labels,
+            datasets: [{ label: 'Spend ($)', data: values, backgroundColor: '#1F3971', borderRadius: 6 }]
+          },
+          options: {
+            responsive: true,
+            plugins: {
+              legend: { display: false },
+              tooltip: { callbacks: { label: function(ctx) { return ' $' + ctx.raw.toFixed(2); }}}
+            },
+            scales: {
+              y: { ticks: { callback: function(v) { return '$' + v.toLocaleString(); } }, grid: { color: '#f0f0f0' } },
+              x: { ticks: { font: { size: 11 } } }
+            }
+          }
+        });
+      }
+    }
+
+    if (window.Chart) {
+      drawVsChart();
+    } else {
+      var s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js';
+      s.onload = drawVsChart;
+      document.head.appendChild(s);
+    }
+  }
 }
 
 function initStmtDrop() {
@@ -2755,42 +2860,4 @@ function runReconcile() {
   gasCall('reconcileStatement', { invoiceNumbers: invoices }, function(res) {
     if (res.error) { showToast('Error: ' + res.error); return; }
     renderReconcileResults(res.matched || [], res.unmatched || []);
-  }, function() { showToast('Connection error. Try again.'); });
-}
-
-function renderReconcileResults(matched, unmatched) {
-  document.getElementById('stmt-matched-count').textContent   = matched.length;
-  document.getElementById('stmt-unmatched-count').textContent = unmatched.length;
-  var matchedHtml = '';
-  if (matched.length) {
-    matchedHtml = '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
-      '<tr style="background:#f5f5f5"><th style="text-align:left;padding:6px 8px;border-bottom:1px solid #ddd">Invoice #</th>' +
-      '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid #ddd">PO #</th>' +
-      '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid #ddd">Job</th>' +
-      '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid #ddd">Status</th></tr>';
-    matched.forEach(function(r) {
-      matchedHtml += '<tr style="border-bottom:1px solid #f0f0f0">' +
-        '<td style="padding:6px 8px;font-family:monospace">' + esc(r.invoiceNumber) + '</td>' +
-        '<td style="padding:6px 8px;color:#1F3971;font-weight:600">' + esc(r.poNum) + '</td>' +
-        '<td style="padding:6px 8px">' + esc(r.job) + '</td>' +
-        '<td style="padding:6px 8px">' + esc(r.status) + '</td></tr>';
-    });
-    matchedHtml += '</table>';
-  } else { matchedHtml = '<p style="color:#888;font-size:13px">None matched.</p>'; }
-  document.getElementById('stmt-matched-list').innerHTML = matchedHtml;
-  var unmatchedHtml = '';
-  if (unmatched.length) {
-    unmatchedHtml = '<div style="background:#fff5f5;border:1px solid #ffcdd2;border-radius:8px;padding:12px">' +
-      unmatched.map(function(inv){ return '<div style="font-family:monospace;font-size:13px;padding:3px 0;color:#c62828">' + esc(inv) + '</div>'; }).join('') +
-      '</div><p style="font-size:12px;color:#888;margin-top:6px">These invoices are on the vendor statement but have no matching PO.</p>';
-  } else {
-    unmatchedHtml = '<p style="color:#2e7d32;font-size:13px;font-weight:600">All invoices accounted for! ✅</p>';
-  }
-  document.getElementById('stmt-unmatched-list').innerHTML = unmatchedHtml;
-  document.getElementById('stmt-results').style.display = 'block';
-}
-
-</script>
-</body>
-</html>
-  
+  }, function() { showToast('Connection error. Try again.'); 

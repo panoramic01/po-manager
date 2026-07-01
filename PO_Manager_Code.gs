@@ -541,6 +541,54 @@ function updateContact(rowIndex, values) {
       if (key && values[key] !== undefined) {
         sheet.getRange(rowIndex, i + 1).setValue(values[key]);
       }
+    });
+    SpreadsheetApp.flush();
+    return { success: true };
+  } catch(e) { return { error: e.toString() }; }
+}
+
+// ── Reconcile Statement ───────────────────────────────────────────────────────
+function reconcileStatement(invoiceNumbers) {
+  try {
+    var ss    = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(SHEET_NAME);
+    if (!sheet) return { error: 'PO Database sheet not found' };
+    var data = sheet.getDataRange().getValues();
+    var colPoNum   = 0;  // A
+    var colJob     = 3;  // D
+    var colVendor  = 4;  // E
+    var colInvoice = 5;  // F - Vendor Invoice
+    var colStatus  = 6;  // G
+    var dbMap = {};
+    for (var i = 1; i < data.length; i++) {
+      var inv = (data[i][colInvoice] || '').toString().trim();
+      if (!inv) continue;
+      dbMap[inv.toLowerCase()] = {
+        poNum:  data[i][colPoNum],
+        vendor: data[i][colVendor],
+        job:    data[i][colJob],
+        status: data[i][colStatus],
+        invNum: inv
+      };
+    }
+    var matched = [], unmatched = [];
+    (invoiceNumbers || []).forEach(function(inv) {
+      var key = inv.toString().trim().toLowerCase();
+      var found = dbMap[key];
+      if (!found) {
+        var keys = Object.keys(dbMap);
+        for (var k = 0; k < keys.length; k++) {
+          if (keys[k].indexOf(key) === 0 || key.indexOf(keys[k]) === 0) {
+            found = dbMap[keys[k]]; break;
+          }
+        }
+      }
+      if (found) matched.push({ invoiceNumber: inv, poNum: found.poNum, vendor: found.vendor, job: found.job, status: found.status });
+      else unmatched.push(inv);
+    });
+    return { success: true, matched: matched, unmatched: unmatched };
+  } catch(e) { return { error: e.toString() }; }
+}
 
 // ── Job List ─────────────────────────────────────────────────────────────────
 function getJobList() {
@@ -549,7 +597,8 @@ function getJobList() {
     if (!sheet) return { error: 'PO Database sheet not found' };
     var data = sheet.getDataRange().getValues();
     var jobs = {};
-    for (var i = 1; i < data.length; i++) {
+    for (var i = 0; i < data.length; i++) {
+      if (!isValidPONumber((data[i][0] || '').toString().trim())) continue;
       var job = (data[i][3] || '').toString().trim();
       if (job) jobs[job] = true;
     }
@@ -565,14 +614,15 @@ function getJobCostSummary(jobRef) {
     var data = sheet.getDataRange().getValues();
     var rows = [], totalSpend = 0;
     var target = (jobRef || '').toString().trim().toLowerCase();
-    for (var i = 1; i < data.length; i++) {
+    for (var i = 0; i < data.length; i++) {
+      if (!isValidPONumber((data[i][0] || '').toString().trim())) continue;
       var job = (data[i][3] || '').toString().trim();
       if (job.toLowerCase() !== target) continue;
       var total = parseFloat(data[i][7]) || 0;
       totalSpend += total;
       rows.push({
         poNum:      data[i][0],
-        dateIssued: data[i][1] ? Utilities.formatDate(new Date(data[i][1]), Session.getScriptTimeZone(), 'MM/dd/yy') : '',
+        dateIssued: data[i][1] instanceof Date ? Utilities.formatDate(data[i][1], Session.getScriptTimeZone(), 'MM/dd/yy') : '',
         vendor:     data[i][4],
         invoiceNum: data[i][5],
         status:     data[i][6],
@@ -590,19 +640,23 @@ function getMissingInvoices() {
     if (!sheet) return { error: 'PO Database sheet not found' };
     var data = sheet.getDataRange().getValues();
     var missing = [];
-    for (var i = 1; i < data.length; i++) {
-      var poNum   = (data[i][0] || '').toString().trim();
-      var status  = (data[i][6] || '').toString().trim().toLowerCase();
+    // Statuses where we don't yet expect an invoice
+    var skipStatuses = { 'draft': true, 'ordered': true, 'being made': true,
+                         'pending pickup': true, 'pending delivery': true,
+                         'pending delivery to supplier': true, 'currently picking up': true };
+    for (var i = 0; i < data.length; i++) {
+      var poNum = (data[i][0] || '').toString().trim();
+      if (!isValidPONumber(poNum)) continue;
+      var status  = (data[i][6] || '').toString().trim();
       var invoice = (data[i][5] || '').toString().trim();
-      if (!poNum) continue;
-      if (status === 'draft' || status === 'ordered') continue;
+      if (skipStatuses[status.toLowerCase()]) continue;
       if (!invoice) {
         missing.push({
           poNum:      poNum,
-          dateIssued: data[i][1] ? Utilities.formatDate(new Date(data[i][1]), Session.getScriptTimeZone(), 'MM/dd/yy') : '',
+          dateIssued: data[i][1] instanceof Date ? Utilities.formatDate(data[i][1], Session.getScriptTimeZone(), 'MM/dd/yy') : '',
           vendor:     data[i][4],
           job:        data[i][3],
-          status:     data[i][6]
+          status:     status
         });
       }
     }
@@ -616,16 +670,18 @@ function getVendorSpend(startDate, endDate) {
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
     if (!sheet) return { error: 'PO Database sheet not found' };
     var data = sheet.getDataRange().getValues();
+    var tz    = Session.getScriptTimeZone();
     var start = startDate ? new Date(startDate + 'T00:00:00') : null;
     var end   = endDate   ? new Date(endDate   + 'T23:59:59') : null;
     var vendors = {}, grandTotal = 0;
-    for (var i = 1; i < data.length; i++) {
+    for (var i = 0; i < data.length; i++) {
+      if (!isValidPONumber((data[i][0] || '').toString().trim())) continue;
       var vendor = (data[i][4] || '').toString().trim();
       var total  = parseFloat(data[i][7]) || 0;
       if (!vendor || total === 0) continue;
       if (start || end) {
-        var d = data[i][1] instanceof Date ? data[i][1] : new Date(data[i][1]);
-        if (isNaN(d.getTime())) continue;
+        var d = data[i][1] instanceof Date ? data[i][1] : null;
+        if (!d || isNaN(d.getTime())) continue;
         if (start && d < start) continue;
         if (end   && d > end)   continue;
       }

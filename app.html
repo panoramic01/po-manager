@@ -2312,13 +2312,6 @@ function submitContactEdit() {
 })();
 // ── Statement Reconciliation ─────────────────────────────────────────────────────────
 
-var INVOICE_PATTERNS = [
-  /\b([A-Z]{2,4}\d{7,12}-\d{3})\b/g,
-  /\b(\d{10}-\d{3})\b/g,
-  /\b(1\d{8,11})\b/g,
-  /\b([2-9]\d{4,5})\b/g
-];
-
 function onStatementFile(input) {
   var file = input.files[0];
   if (!file) return;
@@ -2368,13 +2361,34 @@ function extractPdfText(arrayBuffer) {
 
 function detectInvoiceNumbers(text) {
   var found = {};
-  INVOICE_PATTERNS.forEach(function(re) {
-    var cloned = new RegExp(re.source, re.flags);
-    var m;
+
+  // Priority 1: Explicit "Invoice #XXXXX" labels — most reliable, no false positives
+  var explicit = text.match(/[Ii]nv(?:oice)?\s*#\s*(\d{4,8})/g) || [];
+  explicit.forEach(function(m) {
+    var num = m.match(/(\d{4,8})/)[1];
+    found[num] = true;
+  });
+
+  // Always grab alphanumeric invoice numbers — LKL/ABC style, very distinctive
+  [/\b([A-Z]{2,4}\d{7,12}-\d{3})\b/g, /\b(\d{10}-\d{3})\b/g].forEach(function(re) {
+    var cloned = new RegExp(re.source, re.flags), m;
     while ((m = cloned.exec(text)) !== null) { found[m[1]] = true; }
   });
+
+  // Only fall back to pure-numeric patterns if nothing else found
+  if (Object.keys(found).length === 0) {
+    [/\b(1\d{8,11})\b/g, /\b([2-9]\d{4,5})\b/g].forEach(function(re) {
+      var cloned = new RegExp(re.source, re.flags), m;
+      while ((m = cloned.exec(text)) !== null) { found[m[1]] = true; }
+    });
+  }
+
+  // Filter: skip anything that looks like a zip code (appears after a US state abbreviation)
   return Object.keys(found).filter(function(n) {
-    if (/^\d{5}$/.test(n) && parseInt(n) < 10000) return false;
+    var zipCtx = new RegExp('\\b[A-Z]{2}\\s+' + n + '\\b');
+    if (zipCtx.test(text)) return false;
+    var zipPlus4 = new RegExp('\\b' + n + '-\\d{4}\\b');
+    if (zipPlus4.test(text)) return false;
     return true;
   }).sort();
 }

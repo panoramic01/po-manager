@@ -1,4 +1,4 @@
-var CACHE = 'po-manager-v22';
+var CACHE = 'po-manager-v23';
 var SHELL = ['/po-manager/', '/po-manager/index.html', '/po-manager/manifest.json', '/po-manager/icon-192.png', '/po-manager/icon-512.png', '/po-manager/apple-touch-icon.png'];
 
 self.addEventListener('install', function(e) {
@@ -16,23 +16,4 @@ self.addEventListener('activate', function(e) {
         .then(function() {
           if (isUpdate) {
             return self.clients.matchAll({ type: 'window' }).then(function(cls) {
-              cls.forEach(function(c) { c.postMessage({ type: 'SW_UPDATED' }); });
-            });
-          }
-        });
-    })
-  );
-});
-
-// Fetch handler — required for Chrome PWA installability
-self.addEventListener('fetch', function(e) {
-  // Only intercept same-origin requests (GitHub Pages shell)
-  // Let all Google Script requests pass through normally
-  if (e.request.url.startsWith(self.location.origin)) {
-    e.respondWith(
-      caches.match(e.request).then(function(cached) {
-        return cached || fetch(e.request);
-      })
-    );
-  }
-});
+              cls.forEach(function
