@@ -745,7 +745,7 @@
         <button onclick="showOtherHome()" style="background:none;border:none;font-size:14px;font-weight:600;color:#1F3971;cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
         <span style="font-size:16px;font-weight:700;color:#1F3971">Material Report</span>
       </div>
-      <div style="padding:16px;max-width:680px;margin:0 auto">
+      <div style="padding:16px 24px;max-width:1200px;margin:0 auto">
 
         <!-- Step: setup -->
         <div id="mr-step-setup">
@@ -782,6 +782,15 @@
           </div>
           <input id="mr-files" type="file" multiple accept=".pdf" style="display:none" onchange="mrOnFiles(this)">
           <div id="mr-file-list" style="margin-bottom:12px"></div>
+          <div id="mr-custom-cats-section" style="background:#fff;border-radius:12px;padding:16px 20px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:12px">
+            <p style="font-size:13px;font-weight:700;color:#1F3971;margin:0 0 10px">Categories</p>
+            <div id="mr-cat-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
+            <div style="display:flex;gap:8px">
+              <input id="mr-new-cat" placeholder="Add custom category…" style="flex:1;padding:8px 12px;border:1px solid #ddd;border-radius:8px;font-size:13px;outline:none"
+                onkeydown="if(event.key==='Enter'){mrAddCategory();event.preventDefault();}">
+              <button onclick="mrAddCategory()" style="background:#eef2ff;color:#1F3971;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer">Add</button>
+            </div>
+          </div>
           <button onclick="mrProcessInvoices()" style="background:#1F3971;color:#fff;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:600;cursor:pointer;width:100%">Process Invoices with AI →</button>
         </div>
 
@@ -2989,14 +2998,67 @@ function mrEnsurePdfJs() {
   });
 }
 
-var MR_CATEGORIES = ['Siding Lap','Siding B&B','Siding Flashing','Metal','Masonry','Vinyl','Vinyl Extras','Stucco','Angle Iron'];
+var MR_CATEGORIES_BASE = ['Siding Lap','Siding B&B','Siding Flashing','Metal','Masonry','Vinyl','Vinyl Extras','Stucco','Angle Iron'];
+var MR_CATEGORIES_CUSTOM = [];  // user-added categories
+function mrAllCats() { return MR_CATEGORIES_BASE.concat(MR_CATEGORIES_CUSTOM).concat(['Beam & Post Wrap']); }
+// Keep MR_CATEGORIES as alias for legacy references
+Object.defineProperty(window, 'MR_CATEGORIES', { get: function(){ return MR_CATEGORIES_BASE.concat(MR_CATEGORIES_CUSTOM); } });
 var mrLineItems = [];
 var mrFiles = [];
+
+function mrAddCategory() {
+  var input = document.getElementById('mr-new-cat');
+  if (!input) return;
+  var val = input.value.trim();
+  if (!val) return;
+  if (mrAllCats().indexOf(val) !== -1) { showToast('Category already exists'); return; }
+  MR_CATEGORIES_CUSTOM.push(val);
+  input.value = '';
+  mrRenderCatChips();
+  // Refresh any open dropdowns
+  var tbody = document.getElementById('mr-tbody');
+  if (tbody) {
+    var allCats = mrAllCats();
+    tbody.innerHTML = mrLineItems.map(function(item,i){ return mrRowHtml(item, i, allCats); }).join('');
+  }
+  showToast('Category "' + val + '" added');
+}
+
+function mrRemoveCategory(cat) {
+  var idx = MR_CATEGORIES_CUSTOM.indexOf(cat);
+  if (idx === -1) return;
+  MR_CATEGORIES_CUSTOM.splice(idx, 1);
+  // Reset any items using this category
+  mrLineItems.forEach(function(item){ if (item.category === cat) item.category = ''; });
+  mrRenderCatChips();
+  var tbody = document.getElementById('mr-tbody');
+  if (tbody) {
+    var allCats = mrAllCats();
+    tbody.innerHTML = mrLineItems.map(function(item,i){ return mrRowHtml(item, i, allCats); }).join('');
+  }
+}
+
+function mrRenderCatChips() {
+  var container = document.getElementById('mr-cat-chips');
+  if (!container) return;
+  var allBase = MR_CATEGORIES_BASE.concat(['Beam & Post Wrap']);
+  var chips = allBase.map(function(c) {
+    return '<span style="display:inline-flex;align-items:center;gap:4px;background:#eef2ff;color:#1F3971;border-radius:20px;padding:4px 10px;font-size:12px;font-weight:500">' + c + '</span>';
+  });
+  var customChips = MR_CATEGORIES_CUSTOM.map(function(c) {
+    var q = "'";
+    return '<span style="display:inline-flex;align-items:center;gap:4px;background:#1F3971;color:#fff;border-radius:20px;padding:4px 10px;font-size:12px;font-weight:500">'
+      + c + '<button onclick="mrRemoveCategory(' + q + c.replace(/'/g,"\'") + q + ')" style="background:none;border:none;color:rgba(255,255,255,0.8);cursor:pointer;font-size:14px;line-height:1;padding:0 0 0 2px">&times;</button></span>';
+  });
+  container.innerHTML = chips.concat(customChips).join('');
+}
 
 function openMaterialReportPanel() {
   mrLineItems = [];
   mrFiles = [];
+  MR_CATEGORIES_CUSTOM = [];
   mrShowStep('setup');
+  setTimeout(mrRenderCatChips, 50);  // render after DOM ready
   var fl = document.getElementById('mr-file-list');
   if (fl) fl.innerHTML = '';
   var fi = document.getElementById('mr-files');
@@ -3116,8 +3178,16 @@ function mrProcessInvoices() {
       var st = document.getElementById('mr-status');
       if (st) st.textContent = 'Processing invoice ' + (idx + 1) + ' of ' + extracted.length + ': ' + inv.fileName.replace(/_/g,' ').substring(0,40) + '…';
 
-      // Truncate text to 5000 chars — Claude only needs the first page of content
-      var trimmed = { fileName: inv.fileName, text: (inv.text || '').substring(0, 5000) };
+      // Skip if clearly scanned (< 80 chars of real text)
+      var rawText = (inv.text || '').replace(/\s+/g, ' ').trim();
+      if (rawText.length < 80) {
+        allCategorized.push({ fileName: inv.fileName, invoiceNum: '', vendor: inv.fileName,
+          lineItems: [], balanceCheck: true, notes: 'Scanned or unreadable — manual entry required' });
+        processOne(idx + 1);
+        return;
+      }
+      // Truncate to 2500 chars — enough for any invoice's key data
+      var trimmed = { fileName: inv.fileName, text: rawText.substring(0, 2500) };
 
       gasCall('categorizeInvoices', { invoices: [trimmed] }, function(r) {
         if (r && r.categorized && r.categorized.length) {
@@ -3202,12 +3272,12 @@ function mrRenderReview(issues) {
       + '</div>';
   }
 
-  var allCats = MR_CATEGORIES.concat(['Beam & Post Wrap']);
+  var allCats = mrAllCats();
   var tableHtml = '<div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);overflow:auto;margin-bottom:12px">'
-    + '<table style="width:100%;border-collapse:collapse;font-size:11px;min-width:560px">'
+    + '<table style="width:100%;border-collapse:collapse;font-size:13px">'
     + '<thead><tr style="background:#f5f7ff">'
-    + ['Inv #','Vendor','Description','Amount ($)','Category','Tax','Ship',''].map(function(h){
-        return '<th style="padding:8px 6px;text-align:left;font-weight:600;color:#555;white-space:nowrap">'+h+'</th>';
+    + ['Inv #','Vendor','Description','Amount ($)','Category','Tax Share','Ship Share',''].map(function(h){
+        return '<th style="padding:10px 8px;text-align:left;font-weight:600;color:#555;white-space:nowrap;font-size:12px">'+h+'</th>';
       }).join('')
     + '</tr></thead>'
     + '<tbody id="mr-tbody">'
@@ -3228,17 +3298,17 @@ function mrRowHtml(item, idx, allCats) {
   var bg = item.uncertain ? 'background:#fff8e1;' : '';
   var cats = allCats || MR_CATEGORIES.concat(['Beam & Post Wrap']);
   return '<tr style="border-top:1px solid #f0f0f0;' + bg + '">'
-    + '<td style="padding:5px 4px"><input value="' + (item.invoiceNum||'').replace(/"/g,'') + '" onchange="mrItem(' + idx + ',\'invoiceNum\',this.value)" style="width:72px;font-size:11px;border:1px solid #ddd;border-radius:4px;padding:3px 4px"></td>'
-    + '<td style="padding:5px 4px"><input value="' + (item.vendor||'').replace(/"/g,'') + '" onchange="mrItem(' + idx + ',\'vendor\',this.value)" style="width:72px;font-size:11px;border:1px solid #ddd;border-radius:4px;padding:3px 4px"></td>'
-    + '<td style="padding:5px 4px"><input value="' + (item.description||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;') + '" onchange="mrItem(' + idx + ',\'description\',this.value)" style="width:140px;font-size:11px;border:1px solid #ddd;border-radius:4px;padding:3px 4px"></td>'
-    + '<td style="padding:5px 4px"><input type="number" step="0.01" value="' + (+(item.amount)||0).toFixed(2) + '" onchange="mrItem(' + idx + ',\'amount\',parseFloat(this.value)||0);mrRefreshSummary()" style="width:76px;font-size:11px;border:1px solid #ddd;border-radius:4px;padding:3px 4px"></td>'
-    + '<td style="padding:5px 4px"><select onchange="mrItem(' + idx + ',\'category\',this.value);mrRefreshSummary()" style="font-size:11px;border:1px solid #ddd;border-radius:4px;padding:3px 4px">'
+    + '<td style="padding:8px"><input value="' + (item.invoiceNum||'').replace(/"/g,'') + '" onchange="mrItem(' + idx + ',\'invoiceNum\',this.value)" style="width:100px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 4px"></td>'
+    + '<td style="padding:8px"><input value="' + (item.vendor||'').replace(/"/g,'') + '" onchange="mrItem(' + idx + ',\'vendor\',this.value)" style="width:120px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 4px"></td>'
+    + '<td style="padding:8px"><input value="' + (item.description||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;') + '" onchange="mrItem(' + idx + ',\'description\',this.value)" style="width:280px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 4px"></td>'
+    + '<td style="padding:8px"><input type="number" step="0.01" value="' + (+(item.amount)||0).toFixed(2) + '" onchange="mrItem(' + idx + ',\'amount\',parseFloat(this.value)||0);mrRefreshSummary()" style="width:90px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 4px"></td>'
+    + '<td style="padding:8px"><select onchange="mrItem(' + idx + ',\'category\',this.value);mrRefreshSummary()" style="font-size:12px;border:1px solid #ddd;border-radius:4px;padding:4px 6px">'
     + '<option value=""' + (!item.category ? ' selected' : '') + '>-- Select Category --</option>'
     + cats.map(function(c){ return '<option value="'+c+'"'+(c===item.category?' selected':'')+'>'+c+'</option>'; }).join('')
     + '</select></td>'
     + '<td style="padding:5px 4px;color:#888">$' + fmtMoney(item.taxShare||0) + '</td>'
     + '<td style="padding:5px 4px;color:#888">$' + fmtMoney(item.shippingShare||0) + '</td>'
-    + '<td style="padding:5px 4px"><button onclick="mrDeleteRow(' + idx + ')" style="background:none;border:none;color:#c33;cursor:pointer;font-size:15px;line-height:1;padding:0 2px">&times;</button></td>'
+    + '<td style="padding:8px"><button onclick="mrDeleteRow(' + idx + ')" style="background:none;border:none;color:#c33;cursor:pointer;font-size:15px;line-height:1;padding:0 2px">&times;</button></td>'
     + '</tr>';
 }
 
@@ -3284,7 +3354,7 @@ function mrRefreshSummary() {
 
 function mrClearCategories() {
   mrLineItems.forEach(function(item) { item.category = ''; });
-  var allCats = MR_CATEGORIES.concat(['Beam & Post Wrap']);
+  var allCats = mrAllCats();
   var tbody = document.getElementById('mr-tbody');
   if (tbody) tbody.innerHTML = mrLineItems.map(function(item,idx){ return mrRowHtml(item, idx, allCats); }).join('');
   mrRefreshSummary();
@@ -3299,9 +3369,9 @@ function mrSuggestCategories() {
   gasCall('suggestCategories', { items: items }, function(r) {
     if (r && r.error) { showToast('AI error: ' + r.error); }
     else if (r && r.suggestions) {
-      var validCats = MR_CATEGORIES.concat(['Beam & Post Wrap']);
+      var validCats = mrAllCats();
       r.suggestions.forEach(function(s) {
-        if (mrLineItems[s.idx] !== undefined && validCats.indexOf(s.category) !== -1) {
+        if (mrLineItems[s.idx] !== undefined) {
           mrLineItems[s.idx].category = s.category;
         }
       });
@@ -3347,6 +3417,27 @@ function mrGenerateExcel() {
             return [item.category, item.invoiceNum, item.amount, item.taxShare, item.shippingShare];
           });
           XLSX.utils.sheet_add_aoa(calcs, rows, { origin:'A2' });
+
+          // Add summary rows for custom categories below the built-in summary block
+          // Base categories occupy rows 3-11 in the summary area (cols H-K).
+          // Custom categories start at row 12.
+          if (MR_CATEGORIES_CUSTOM.length) {
+            var summaryRows = MR_CATEGORIES_CUSTOM.map(function(cat) {
+              var total = mrLineItems
+                .filter(function(it){ return it.category === cat; })
+                .reduce(function(s, it){ return s + (it.amount||0) + (it.taxShare||0) + (it.shippingShare||0); }, 0);
+              var invoiced = mrLineItems
+                .filter(function(it){ return it.category === cat; })
+                .reduce(function(s, it){ return s + (it.amount||0); }, 0);
+              var tax = mrLineItems
+                .filter(function(it){ return it.category === cat; })
+                .reduce(function(s, it){ return s + (it.taxShare||0); }, 0);
+              // Write: label in col H (7), invoiced in col I (8), tax in col J (9), total in col K (10)
+              return [cat, invoiced, tax, total];
+            });
+            // Row 12 = index 11 (0-based), col H = index 7
+            XLSX.utils.sheet_add_aoa(calcs, summaryRows, { origin: { r: 11, c: 7 } });
+          }
         }
 
         XLSX.writeFile(wb, jobName.trim() + ' Material Report.xlsx');
