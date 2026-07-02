@@ -1,4 +1,4 @@
-var CACHE = 'po-manager-v27';
+var CACHE = 'po-manager-v28';
 var SHELL = ['/po-manager/', '/po-manager/index.html', '/po-manager/manifest.json', '/po-manager/icon-192.png', '/po-manager/icon-512.png', '/po-manager/apple-touch-icon.png'];
 
 self.addEventListener('install', function(e) {

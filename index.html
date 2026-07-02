@@ -894,6 +894,9 @@ var G = {
   sort:            'newest'
 };
 
+var vsData = null;
+var vsChartType = 'bar-h';
+
 // ── GAS endpoint (fetch() replaces google.script.run) ────────────────────────
 var GAS_URL = 'https://script.google.com/macros/s/AKfycbwvX4xv5kDofWEldpSRJP8O2yeVVgMcYVQsgtKmuFyKBZWTj0vfhFIIZAJp2UQob_XJ-Q/exec';
 
@@ -2754,8 +2757,6 @@ function processStatementFiles(files) {
   }
 
   var allInvoices = {};
-var vsData = null;
-var vsChartType = "bar-h";
   ensurePdfJs().then(function() {
     var chain = Promise.resolve();
     pdfs.forEach(function(file, i) {
