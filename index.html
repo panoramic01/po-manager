@@ -896,6 +896,7 @@ var G = {
 
 var vsData = null;
 var vsChartType = 'bar-h';
+function fmtMoney(n) { return (+(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
 // ── GAS endpoint (fetch() replaces google.script.run) ────────────────────────
 var GAS_URL = 'https://script.google.com/macros/s/AKfycbwvX4xv5kDofWEldpSRJP8O2yeVVgMcYVQsgtKmuFyKBZWTj0vfhFIIZAJp2UQob_XJ-Q/exec';
@@ -2616,7 +2617,7 @@ function renderVendorSpend() {
   var gasVer = r.gasVersion ? ' · GAS v' + r.gasVersion : ' · GAS v? (redeploy!)';
   var summary = '<div style="background:#1F3971;color:#fff;border-radius:12px;padding:16px 20px;margin-bottom:12px">'
     + '<div style="font-size:13px;opacity:.8;margin-bottom:2px">' + r.dateRange + '</div>'
-    + '<div style="font-size:24px;font-weight:700">$' + (+(r.grandTotal) || 0).toFixed(2) + '</div>'
+    + '<div style="font-size:24px;font-weight:700">$' + fmtMoney(r.grandTotal) + '</div>'
     + '<div style="font-size:12px;opacity:.7;margin-top:2px">' + r.vendors.length + ' vendor' + (r.vendors.length !== 1 ? 's' : '') + gasVer + '</div>'
     + '</div>';
   var el = document.getElementById('vs-results');
@@ -2665,7 +2666,7 @@ function renderVendorSpend() {
           data: { labels: labels, datasets: [{ data: values, backgroundColor: COLORS.slice(0, values.length), borderWidth: 1 }] },
           options: { responsive: true, plugins: {
             legend: { position: 'bottom', labels: { font: { size: 12 }, padding: 12 } },
-            tooltip: { callbacks: { label: function(c) { return ' ' + c.label + ': $' + c.raw.toFixed(2); } } }
+            tooltip: { callbacks: { label: function(c) { return ' ' + c.label + ': $' + fmtMoney(c.raw); } } }
           }}
         });
       } else {
@@ -2674,7 +2675,7 @@ function renderVendorSpend() {
           data: { labels: labels, datasets: [{ label: 'Spend', data: values, backgroundColor: '#1F3971', borderRadius: 6 }] },
           options: { responsive: true, plugins: {
             legend: { display: false },
-            tooltip: { callbacks: { label: function(c) { return ' $' + c.raw.toFixed(2); } } }
+            tooltip: { callbacks: { label: function(c) { return ' $' + fmtMoney(c.raw); } } }
           }, scales: {
             y: { ticks: { callback: function(v) { return '$' + v.toLocaleString(); } }, grid: { color: '#f0f0f0' } },
             x: { ticks: { font: { size: 11 } } }
