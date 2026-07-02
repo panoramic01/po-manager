@@ -2504,7 +2504,7 @@ function loadJobCost() {
       + '</div>'
       + '<div style="background:#fff;border-radius:12px;padding:4px 16px;box-shadow:0 1px 4px rgba(0,0,0,0.08)">' + (rowsHtml || '<p style="text-align:center;color:#888;padding:16px">No POs found for this job.</p>') + '</div>';
     document.getElementById('jc-results').style.display = 'block';
-  }, function() { document.getElementById('jc-loading').style.display = 'none'; showToast('Failed to load'); });
+  }, function() { document.getElementById('jc-loading').style.display = 'none'; showToast('Connection error — redeploy GAS'); });
 }
 
 // ── Missing Invoices ──────────────────────────────────────────────────────────
@@ -2538,7 +2538,11 @@ function loadMissingInvoices() {
     }
     document.getElementById('mi-results').innerHTML = html;
     document.getElementById('mi-results').style.display = 'block';
-  }, function() { document.getElementById('mi-loading').style.display = 'none'; showToast('Failed to load'); });
+  }, function() {
+    document.getElementById('mi-loading').style.display = 'none';
+    document.getElementById('mi-results').innerHTML = '<div style="text-align:center;padding:20px"><p style="color:#888;margin-bottom:12px">Failed to load. Redeploy GAS and retry.</p><button onclick="loadMissingInvoices()" style="background:#1F3971;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer">Retry</button></div>';
+    document.getElementById('mi-results').style.display = 'block';
+  });
 }
 
 // ── Vendor Spend ──────────────────────────────────────────────────────────────
@@ -2562,7 +2566,7 @@ function loadVendorSpend() {
     vsData = r;
     vsData.dateRange = (start || 'All time') + (end ? ' → ' + end : '');
     renderVendorSpend();
-  }, function() { document.getElementById('vs-loading').style.display = 'none'; showToast('Failed to load'); });
+  }, function() { document.getElementById('vs-loading').style.display = 'none'; showToast('Connection error — redeploy GAS'); });
 }
 
 function setVsChartType(type) {
@@ -2576,34 +2580,34 @@ function setVsChartType(type) {
   renderVendorSpend();
 }
 
+function makeVsBtn(type, label) {
+  var active = type === vsChartType;
+  var q = "'";
+  return '<button id="vs-toggle-' + type + '" onclick="setVsChartType(' + q + type + q + ')"'
+    + ' style="flex:1;border:none;border-radius:8px;padding:7px 0;font-size:13px;font-weight:600;cursor:pointer;'
+    + 'background:' + (active ? '#1F3971' : '#eef2ff') + ';color:' + (active ? '#fff' : '#1F3971') + '">'
+    + label + '</button>';
+}
+
 function renderVendorSpend() {
   if (!vsData) return;
   var r = vsData;
   if (window._vsChart) { window._vsChart.destroy(); window._vsChart = null; }
-
   var COLORS = ['#1F3971','#2E5CA8','#3B74D5','#5B8FE5','#7AAAF0','#A0BEF7','#C5D8FF',
                 '#0D2A57','#4E7BD0','#8AABD8','#B3C8EF','#D4E2F9','#1A4D8A','#264F87'];
-
   var toggleBar = '<div style="display:flex;gap:6px;margin-bottom:12px">'
-    + makeVsBtn('bar-h', 'Bars')
-    + makeVsBtn('bar-v', 'Column')
-    + makeVsBtn('pie',   'Pie')
+    + makeVsBtn('bar-h','Bars') + makeVsBtn('bar-v','Column') + makeVsBtn('pie','Pie')
     + '</div>';
-
   var summary = '<div style="background:#1F3971;color:#fff;border-radius:12px;padding:16px 20px;margin-bottom:12px">'
     + '<div style="font-size:13px;opacity:.8;margin-bottom:2px">' + r.dateRange + '</div>'
     + '<div style="font-size:24px;font-weight:700">$' + r.grandTotal.toFixed(2) + '</div>'
     + '<div style="font-size:12px;opacity:.7;margin-top:2px">' + r.vendors.length + ' vendor' + (r.vendors.length !== 1 ? 's' : '') + '</div>'
     + '</div>';
-
   var el = document.getElementById('vs-results');
-
   if (!r.vendors.length) {
     el.innerHTML = summary + '<div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08)"><p style="text-align:center;color:#888">No spend found for this period.</p></div>';
-    el.style.display = 'block';
-    return;
+    el.style.display = 'block'; return;
   }
-
   if (vsChartType === 'bar-h') {
     var maxTotal = r.vendors[0].total || 1;
     var rows = r.vendors.map(function(v) {
@@ -2612,17 +2616,14 @@ function renderVendorSpend() {
         + '<div style="display:flex;justify-content:space-between;margin-bottom:4px">'
         + '<span style="font-size:13px;font-weight:600;color:#222">' + v.vendor + '</span>'
         + '<span style="font-size:13px;font-weight:700;color:#1F3971">$' + v.total.toFixed(2) + '</span>'
-        + '</div>'
-        + '<div style="background:#eef2ff;border-radius:4px;height:6px">'
+        + '</div><div style="background:#eef2ff;border-radius:4px;height:6px">'
         + '<div style="background:#1F3971;border-radius:4px;height:6px;width:' + pct + '%"></div></div></div>';
     }).join('');
-    el.innerHTML = summary + toggleBar
-      + '<div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08)">' + rows + '</div>';
+    el.innerHTML = summary + toggleBar + '<div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08)">' + rows + '</div>';
     el.style.display = 'block';
   } else {
     el.innerHTML = summary + toggleBar
-      + '<div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08)">'
-      + '<canvas id="vs-canvas" style="max-height:340px"></canvas></div>';
+      + '<div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08)"><canvas id="vs-canvas" style="max-height:340px"></canvas></div>';
     el.style.display = 'block';
     var labels = r.vendors.map(function(v) { return v.vendor; });
     var values = r.vendors.map(function(v) { return v.total; });
@@ -2655,19 +2656,9 @@ function renderVendorSpend() {
     else {
       var s = document.createElement('script');
       s.src = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js';
-      s.onload = drawChart;
-      document.head.appendChild(s);
+      s.onload = drawChart; document.head.appendChild(s);
     }
   }
-}
-
-function makeVsBtn(type, label) {
-  var active = type === vsChartType;
-  var q = "'";
-  return '<button id="vs-toggle-' + type + '" onclick="setVsChartType(' + q + type + q + ')"'
-    + ' style="flex:1;border:none;border-radius:8px;padding:7px 0;font-size:13px;font-weight:600;cursor:pointer;'
-    + 'background:' + (active ? '#1F3971' : '#eef2ff') + ';color:' + (active ? '#fff' : '#1F3971') + '">'
-    + label + '</button>';
 }
 
 function initStmtDrop() {
