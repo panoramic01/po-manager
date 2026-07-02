@@ -3519,25 +3519,37 @@ function mrGenerateExcel() {
           });
           XLSX.utils.sheet_add_aoa(calcs, rows, { origin:'A2' });
 
-          // Add summary rows for custom categories below the built-in summary block
-          // Base categories occupy rows 3-11 in the summary area (cols H-K).
-          // Custom categories start at row 12.
+          // ── Custom categories: Calcs summary + Project Report rows ──
           if (MR_CATEGORIES_CUSTOM.length) {
+            // Helper: sum a field for a category
+            function catSum(cat, field) {
+              return mrLineItems.filter(function(it){ return it.category === cat; })
+                .reduce(function(s, it){ return s + (it[field]||0); }, 0);
+            }
+
+            // 1. Calcs sheet: label + invoiced + tax + total in cols H-K starting at row 12
             var summaryRows = MR_CATEGORIES_CUSTOM.map(function(cat) {
-              var total = mrLineItems
-                .filter(function(it){ return it.category === cat; })
-                .reduce(function(s, it){ return s + (it.amount||0) + (it.taxShare||0) + (it.shippingShare||0); }, 0);
-              var invoiced = mrLineItems
-                .filter(function(it){ return it.category === cat; })
-                .reduce(function(s, it){ return s + (it.amount||0); }, 0);
-              var tax = mrLineItems
-                .filter(function(it){ return it.category === cat; })
-                .reduce(function(s, it){ return s + (it.taxShare||0); }, 0);
-              // Write: label in col H (7), invoiced in col I (8), tax in col J (9), total in col K (10)
-              return [cat, invoiced, tax, total];
+              return [cat, catSum(cat,'amount'), catSum(cat,'taxShare'),
+                      catSum(cat,'amount') + catSum(cat,'taxShare') + catSum(cat,'shippingShare')];
             });
-            // Row 12 = index 11 (0-based), col H = index 7
             XLSX.utils.sheet_add_aoa(calcs, summaryRows, { origin: { r: 11, c: 7 } });
+
+            // 2. Project Report: add custom category rows starting at row 17 (index 16)
+            //    Col A = name (index 0), Col C = actual cost total (index 2)
+            if (report) {
+              var reportRows = MR_CATEGORIES_CUSTOM.map(function(cat) {
+                var total = catSum(cat,'amount') + catSum(cat,'taxShare') + catSum(cat,'shippingShare');
+                return [cat, '', total];
+              });
+              XLSX.utils.sheet_add_aoa(report, reportRows, { origin: { r: 16, c: 0 } });
+
+              // 3. Update grand total (row 19 = index 18, col E = index 4)
+              //    Recalculate from all line items so it includes custom categories
+              var grandTotal = mrLineItems.reduce(function(s, it){
+                return s + (it.amount||0) + (it.taxShare||0) + (it.shippingShare||0);
+              }, 0);
+              XLSX.utils.sheet_add_aoa(report, [[grandTotal]], { origin: { r: 18, c: 4 } });
+            }
           }
         }
 
