@@ -3302,9 +3302,10 @@ function mrRowHtml(item, idx, allCats) {
     + '<td style="padding:8px"><input value="' + (item.vendor||'').replace(/"/g,'') + '" onchange="mrItem(' + idx + ',\'vendor\',this.value)" style="width:120px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 4px"></td>'
     + '<td style="padding:8px"><input value="' + (item.description||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;') + '" onchange="mrItem(' + idx + ',\'description\',this.value)" style="width:280px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 4px"></td>'
     + '<td style="padding:8px"><input type="number" step="0.01" value="' + (+(item.amount)||0).toFixed(2) + '" onchange="mrItem(' + idx + ',\'amount\',parseFloat(this.value)||0);mrRefreshSummary()" style="width:90px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 4px"></td>'
-    + '<td style="padding:8px"><select onchange="mrItem(' + idx + ',\'category\',this.value);mrRefreshSummary()" style="font-size:12px;border:1px solid #ddd;border-radius:4px;padding:4px 6px">'
+    + '<td style="padding:8px"><select onchange="if(this.value===\'__other__\'){mrStartCustomCat(this,'+idx+')}else{mrItem('+idx+',\'category\',this.value);mrRefreshSummary()}" style="font-size:12px;border:1px solid #ddd;border-radius:4px;padding:4px 6px">'
     + '<option value=""' + (!item.category ? ' selected' : '') + '>-- Select Category --</option>'
     + cats.map(function(c){ return '<option value="'+c+'"'+(c===item.category?' selected':'')+'>'+c+'</option>'; }).join('')
+    + '<option value="__other__">+ Other…</option>'
     + '</select></td>'
     + '<td style="padding:5px 4px;color:#888">$' + fmtMoney(item.taxShare||0) + '</td>'
     + '<td style="padding:5px 4px;color:#888">$' + fmtMoney(item.shippingShare||0) + '</td>'
@@ -3386,6 +3387,53 @@ function mrSuggestCategories() {
     showToast('AI suggestion failed — check API key in GAS');
     if (btn) { btn.textContent = '✨ AI Suggest Categories'; btn.disabled = false; }
   });
+}
+
+function mrStartCustomCat(selectEl, idx) {
+  var input = document.createElement('input');
+  input.placeholder = 'New category name…';
+  input.style.cssText = 'font-size:12px;border:2px solid #1F3971;border-radius:4px;padding:4px 8px;width:160px;outline:none';
+
+  function commit() {
+    var val = input.value.trim();
+    input.removeEventListener('blur', commit);
+    if (!val) {
+      // User cancelled — revert select to blank
+      selectEl.value = '';
+      selectEl.style.display = '';
+      if (input.parentNode) input.parentNode.removeChild(input);
+      return;
+    }
+    // Add to custom categories if new
+    if (MR_CATEGORIES_CUSTOM.indexOf(val) === -1) {
+      MR_CATEGORIES_CUSTOM.push(val);
+      mrRenderCatChips();
+    }
+    mrLineItems[idx].category = val;
+    // Re-render tbody so new option appears in all dropdowns
+    var tbody = document.getElementById('mr-tbody');
+    if (tbody) {
+      var allCats = mrAllCats();
+      tbody.innerHTML = mrLineItems.map(function(item,i){ return mrRowHtml(item, i, allCats); }).join('');
+    }
+    mrRefreshSummary();
+    showToast('Category "' + val + '" added');
+  }
+
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    if (e.key === 'Escape') {
+      input.value = '';
+      selectEl.value = '';
+      selectEl.style.display = '';
+      if (input.parentNode) input.parentNode.removeChild(input);
+    }
+  });
+  input.addEventListener('blur', commit);
+
+  selectEl.style.display = 'none';
+  selectEl.parentNode.insertBefore(input, selectEl.nextSibling);
+  input.focus();
 }
 
 function mrGenerateExcel() {
