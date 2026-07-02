@@ -673,7 +673,7 @@ function getVendorSpend(startDate, endDate) {
     var tz    = Session.getScriptTimeZone();
     var start = startDate ? new Date(startDate + 'T00:00:00') : null;
     var end   = endDate   ? new Date(endDate   + 'T23:59:59') : null;
-    var vendors = {}, grandTotal = 0;
+    var vendors = {}, grandTotal = 0, vendorRows = {};
     for (var i = 0; i < data.length; i++) {
       if (!isValidPONumber((data[i][0] || '').toString().trim())) continue;
       var vendor = (data[i][4] || '').toString().trim();
@@ -687,10 +687,14 @@ function getVendorSpend(startDate, endDate) {
       }
       vendors[vendor] = (vendors[vendor] || 0) + total;
       grandTotal += total;
+      // Track top rows per vendor for debugging
+      if (!vendorRows[vendor]) vendorRows[vendor] = [];
+      vendorRows[vendor].push({ poNum: data[i][0], total: total, row: i + 1 });
     }
     var result = Object.keys(vendors).map(function(v) {
-      return { vendor: v, total: vendors[v] };
+      var rows = (vendorRows[v] || []).sort(function(a,b){return b.total-a.total;}).slice(0,3);
+      return { vendor: v, total: vendors[v], topRows: rows };
     }).sort(function(a, b) { return b.total - a.total; });
-    return { success: true, vendors: result, grandTotal: grandTotal };
+    return { success: true, vendors: result, grandTotal: grandTotal, gasVersion: 3 };
   } catch(e) { return { error: e.toString() }; }
 }
