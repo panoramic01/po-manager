@@ -74,6 +74,7 @@ function doPost(e) {
     else if (action === 'getMissingInvoices')  result = getMissingInvoices();
     else if (action === 'getVendorSpend')      result = getVendorSpend(payload.startDate, payload.endDate);
     else if (action === 'categorizeInvoices') result = categorizeInvoices(payload);
+    else if (action === 'suggestCategories')  result = suggestCategories(payload);
     else                                       result = { error: 'Unknown action: ' + action };
 
     return ContentService
@@ -720,6 +721,10 @@ function categorizeInvoices(payload) {
     '  Stucco          : Stucco base/finish coat, dryvit, mesh, stucco accessories',
     '  Angle Iron      : Steel angle iron, wide flange beams, structural steel, plasma cutting, steel delivery',
     '',
+    'IMPORTANT: Do NOT assign a category. Return an empty string \"\" for the category field on every line item.',
+    'Your job is ONLY to extract and structure the line items with correct amounts, tax shares, and shipping shares.',
+    'The user will assign categories themselves.',
+    '',
     'INPUT: JSON array of invoice objects, each with fileName and text (raw PDF text, may be messy).',
     '',
     'OUTPUT: Return ONLY a valid JSON array — no prose, no markdown fences. Each element:',
@@ -795,4 +800,54 @@ function categorizeInvoices(payload) {
     }
   }
   return { success: true, categorized: allCategorized };
+}
+
+// ─── Suggest Categories (lightweight) ────────────────────────────────────────
+function suggestCategories(payload) {
+  var apiKey = PropertiesService.getScriptProperties().getProperty('CLAUDE_API_KEY');
+  if (!apiKey) return { error: 'CLAUDE_API_KEY not set in Script Properties' };
+
+  var items = payload.items || []; // [{idx, description, vendor, amount}]
+  if (!items.length) return { suggestions: [] };
+
+  var catList = [
+    'Siding Lap      : LP SmartSide lap siding, 5/4 cedar trim boards',
+    'Siding B&B      : LP SmartSide panels 4x10, battens 19/32x3, 4/4 cedar trim',
+    'Siding Flashing : Panel Union Flashing, Z-flashing, brick flashing',
+    'Metal           : Soffit (solid/vented), fascia trim, J-channel, coil stock, touch-up paint',
+    'Masonry         : Stone, brick, building paper, metal lath, mortar, pallet charges, lime',
+    'Vinyl           : Vinyl siding panels',
+    'Vinyl Extras    : Vinyl starter strips, corners, J-channel for vinyl, outlet/light boxes',
+    'Stucco          : Stucco base/finish, dryvit, mesh',
+    'Angle Iron      : Steel angle iron, wide flange beams, structural steel'
+  ].join('\n');
+
+  var systemPrompt = 'You are a building materials categorizer. Given a list of line items, assign each to exactly one category.\n\n'
+    + 'Categories:\n' + catList + '\n\n'
+    + 'Return ONLY a JSON array: [{"idx":0,"category":"Metal"}, ...]\n'
+    + 'Use the exact category names listed above.';
+
+  try {
+    var resp = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json'
+      },
+      payload: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 2048,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: JSON.stringify(items) }]
+      }),
+      muteHttpExceptions: true
+    });
+    var raw = JSON.parse(resp.getContentText());
+    if (raw.error) return { error: raw.error.message };
+    var text = (raw.content[0].text || '').replace(/```json\s*/g,'').replace(/```/g,'').trim();
+    return { suggestions: JSON.parse(text) };
+  } catch(e) {
+    return { error: e.toString() };
+  }
 }

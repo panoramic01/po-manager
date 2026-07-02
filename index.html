@@ -3133,7 +3133,7 @@ function mrBuildReview(categorized, wrapCost) {
         vendor:       inv.vendor || '',
         description:  item.description || '',
         amount:       +(item.amount)  || 0,
-        category:     item.category   || 'Siding Lap',
+        category:     '',  // user picks — AI suggestion ignored for initial display
         taxShare:     +(item.taxShare)     || 0,
         shippingShare:+(item.shippingShare)|| 0,
         uncertain:    !!item.uncertain
@@ -3164,7 +3164,11 @@ function mrRenderReview(issues) {
     + activeCats.map(function(c){
         return '<div style="font-size:12px"><span style="opacity:.65">' + c + '</span> <strong>$' + fmtMoney(totals[c]) + '</strong></div>';
       }).join('')
-    + '</div></div>';
+    + '<div style="display:flex;gap:8px;margin-top:12px">'
+    + '<button onclick="mrSuggestCategories()" id="mr-suggest-btn" style="background:rgba(255,255,255,0.18);color:#fff;border:1.5px solid rgba(255,255,255,0.5);border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;flex:1">✨ AI Suggest Categories</button>'
+    + '<button onclick="mrClearCategories()" style="background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.75);border:1px solid rgba(255,255,255,0.3);border-radius:8px;padding:8px 12px;font-size:12px;cursor:pointer">Clear All</button>'
+    + '</div>'
+    + '</div>';
 
   var checksHtml = '';
   if (issues.length) {
@@ -3205,6 +3209,7 @@ function mrRowHtml(item, idx, allCats) {
     + '<td style="padding:5px 4px"><input value="' + (item.description||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;') + '" onchange="mrItem(' + idx + ',\'description\',this.value)" style="width:140px;font-size:11px;border:1px solid #ddd;border-radius:4px;padding:3px 4px"></td>'
     + '<td style="padding:5px 4px"><input type="number" step="0.01" value="' + (+(item.amount)||0).toFixed(2) + '" onchange="mrItem(' + idx + ',\'amount\',parseFloat(this.value)||0);mrRefreshSummary()" style="width:76px;font-size:11px;border:1px solid #ddd;border-radius:4px;padding:3px 4px"></td>'
     + '<td style="padding:5px 4px"><select onchange="mrItem(' + idx + ',\'category\',this.value);mrRefreshSummary()" style="font-size:11px;border:1px solid #ddd;border-radius:4px;padding:3px 4px">'
+    + '<option value=""' + (!item.category ? ' selected' : '') + '>-- Select Category --</option>'
     + cats.map(function(c){ return '<option value="'+c+'"'+(c===item.category?' selected':'')+'>'+c+'</option>'; }).join('')
     + '</select></td>'
     + '<td style="padding:5px 4px;color:#888">$' + fmtMoney(item.taxShare||0) + '</td>'
@@ -3237,6 +3242,7 @@ function mrRefreshSummary() {
   var totals = {};
   MR_CATEGORIES.forEach(function(c){totals[c]=0;});
   totals['Beam & Post Wrap'] = 0;
+  totals['Uncategorized'] = 0;
   mrLineItems.forEach(function(item) {
     var line = (item.amount||0) + (item.taxShare||0) + (item.shippingShare||0);
     totals[item.category] = (totals[item.category]||0) + line;
@@ -3252,8 +3258,46 @@ function mrRefreshSummary() {
   }
 }
 
+function mrClearCategories() {
+  mrLineItems.forEach(function(item) { item.category = ''; });
+  var allCats = MR_CATEGORIES.concat(['Beam & Post Wrap']);
+  var tbody = document.getElementById('mr-tbody');
+  if (tbody) tbody.innerHTML = mrLineItems.map(function(item,idx){ return mrRowHtml(item, idx, allCats); }).join('');
+  mrRefreshSummary();
+}
+
+function mrSuggestCategories() {
+  var btn = document.getElementById('mr-suggest-btn');
+  if (btn) { btn.textContent = '⏳ Suggesting…'; btn.disabled = true; }
+  var items = mrLineItems.map(function(item, idx) {
+    return { idx: idx, description: item.description, vendor: item.vendor, amount: item.amount };
+  });
+  gasCall('suggestCategories', { items: items }, function(r) {
+    if (r && r.error) { showToast('AI error: ' + r.error); }
+    else if (r && r.suggestions) {
+      var validCats = MR_CATEGORIES.concat(['Beam & Post Wrap']);
+      r.suggestions.forEach(function(s) {
+        if (mrLineItems[s.idx] !== undefined && validCats.indexOf(s.category) !== -1) {
+          mrLineItems[s.idx].category = s.category;
+        }
+      });
+      var allCats = validCats;
+      var tbody = document.getElementById('mr-tbody');
+      if (tbody) tbody.innerHTML = mrLineItems.map(function(item,i){ return mrRowHtml(item, i, allCats); }).join('');
+      mrRefreshSummary();
+      showToast('Categories suggested — review and adjust as needed');
+    }
+    if (btn) { btn.textContent = '✨ AI Suggest Categories'; btn.disabled = false; }
+  }, function() {
+    showToast('AI suggestion failed — check API key in GAS');
+    if (btn) { btn.textContent = '✨ AI Suggest Categories'; btn.disabled = false; }
+  });
+}
+
 function mrGenerateExcel() {
   if (!mrLineItems.length) { showToast('No line items to export'); return; }
+  var blanks = mrLineItems.filter(function(it){ return !it.category; }).length;
+  if (blanks > 0) { showToast(blanks + ' item' + (blanks>1?'s':'') + ' still need a category'); return; }
   var contractor = (document.getElementById('mr-contractor')||{}).value || '';
   var jobName    = (document.getElementById('mr-job')||{}).value    || 'Material Report';
   var startDate  = (document.getElementById('mr-start')||{}).value  || '';
