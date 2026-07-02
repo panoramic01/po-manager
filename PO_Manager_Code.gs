@@ -73,6 +73,7 @@ function doPost(e) {
     else if (action === 'getJobCostSummary')   result = getJobCostSummary(payload.jobRef);
     else if (action === 'getMissingInvoices')  result = getMissingInvoices();
     else if (action === 'getVendorSpend')      result = getVendorSpend(payload.startDate, payload.endDate);
+    else if (action === 'categorizeInvoices') result = categorizeInvoices(payload);
     else                                       result = { error: 'Unknown action: ' + action };
 
     return ContentService
@@ -697,4 +698,101 @@ function getVendorSpend(startDate, endDate) {
     }).sort(function(a, b) { return b.total - a.total; });
     return { success: true, vendors: result, grandTotal: grandTotal, gasVersion: 3 };
   } catch(e) { return { error: e.toString() }; }
+}
+
+
+// ─── Material Report ─────────────────────────────────────────────────────────
+function categorizeInvoices(payload) {
+  var apiKey = PropertiesService.getScriptProperties().getProperty('CLAUDE_API_KEY');
+  if (!apiKey) return { error: 'CLAUDE_API_KEY not set in Script Properties' };
+
+  var systemPrompt = [
+    'You are a building materials invoice categorizer for Panoramic Building LLC, an exterior siding contractor in Utah.',
+    '',
+    'CATEGORIES — use exactly these names:',
+    '  Siding Lap      : LP SmartSide lap siding (3/8x8x16), 5/4 cedar trim boards',
+    '  Siding B&B      : LP SmartSide panels 4x10 (any groove), battens 19/32x3, 4/4 cedar trim boards',
+    '  Siding Flashing : Panel Union Flashing, Z-flashing, brick flashing angles/strips',
+    '  Metal           : Aluminum/steel soffit (solid or vented), fascia trim, J-channel, coil stock, touch-up paint, metal accessories',
+    '  Masonry         : Stone, brick, Lueders, building paper, metal lath, mortar (Type S/N), pallet charges from masonry vendors, lime',
+    '  Vinyl           : Vinyl lap or board-and-batten siding panels (any color)',
+    '  Vinyl Extras    : Vinyl starter/finish strips, outside corners, J-channel for vinyl, outlet boxes, light boxes',
+    '  Stucco          : Stucco base/finish coat, dryvit, mesh, stucco accessories',
+    '  Angle Iron      : Steel angle iron, wide flange beams, structural steel, plasma cutting, steel delivery',
+    '',
+    'INPUT: JSON array of invoice objects, each with fileName and text (raw PDF text, may be messy).',
+    '',
+    'OUTPUT: Return ONLY a valid JSON array — no prose, no markdown fences. Each element:',
+    '{',
+    '  "fileName": "...",',
+    '  "invoiceNum": "...",',
+    '  "vendor": "...",',
+    '  "subtotal": 0.00,',
+    '  "tax": 0.00,',
+    '  "shipping": 0.00,',
+    '  "invoiceTotal": 0.00,',
+    '  "lineItems": [',
+    '    {',
+    '      "description": "...",',
+    '      "amount": 0.00,',
+    '      "category": "Metal",',
+    '      "taxShare": 0.00,',
+    '      "shippingShare": 0.00,',
+    '      "uncertain": false',
+    '    }',
+    '  ],',
+    '  "lineItemsSum": 0.00,',
+    '  "balanceCheck": true,',
+    '  "notes": ""',
+    '}',
+    '',
+    'RULES:',
+    '1. Extract invoice number, vendor, subtotal, tax, shipping from each invoice.',
+    '2. Tax split: item_taxShare = (item_amount / subtotal) * total_tax. If subtotal=0, split evenly.',
+    '3. Shipping split: item_shippingShare = (item_amount / subtotal) * total_shipping.',
+    '4. Pallet charges go to Masonry.',
+    '5. A delivery line item (not footer total) is treated as shipping — distribute its cost proportionally.',
+    '6. Returns/credits use negative amounts.',
+    '7. Set uncertain:true if category is genuinely unclear.',
+    '8. lineItemsSum = sum of all lineItem amounts (not including tax/shipping).',
+    '9. balanceCheck = (Math.abs(lineItemsSum - subtotal) < 0.10).',
+    '10. If invoice text is unreadable (scanned PDF), set lineItems:[] and notes:"Scanned — manual entry required".',
+    '11. Do not include tax rows or shipping rows as separate line items — they belong in the tax/shipping fields.'
+  ].join('\n');
+
+  var invoices = payload.invoices || [];
+
+  // Process in batches of 10 to stay within Claude token limits
+  var allCategorized = [];
+  var batchSize = 10;
+  for (var b = 0; b < invoices.length; b += batchSize) {
+    var batch = invoices.slice(b, b + batchSize);
+    try {
+      var resp = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json'
+        },
+        payload: JSON.stringify({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 8192,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: JSON.stringify(batch) }]
+        }),
+        muteHttpExceptions: true
+      });
+      var raw = JSON.parse(resp.getContentText());
+      if (raw.error) return { error: raw.error.message };
+      var text = (raw.content && raw.content[0]) ? raw.content[0].text : '';
+      // Strip any accidental markdown fences
+      text = text.replace(/^```json\s*/m, '').replace(/^```\s*/m, '').replace(/```\s*$/m, '').trim();
+      var parsed = JSON.parse(text);
+      allCategorized = allCategorized.concat(Array.isArray(parsed) ? parsed : [parsed]);
+    } catch(e) {
+      return { error: 'Batch ' + (b/batchSize+1) + ' failed: ' + e.toString() };
+    }
+  }
+  return { success: true, categorized: allCategorized };
 }

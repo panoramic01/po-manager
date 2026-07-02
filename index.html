@@ -584,6 +584,10 @@
           <svg width="32" height="32" fill="none" stroke="#1F3971" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
           <span style="font-size:13px;font-weight:600;color:#1F3971">Vendor Spend</span>
         </div>
+        <div id="other-card-material-report" onclick="showOtherPanel('material-report')" style="background:#fff;border-radius:12px;padding:22px 12px;text-align:center;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.08);display:flex;flex-direction:column;align-items:center;gap:10px">
+          <svg width="32" height="32" fill="none" stroke="#1F3971" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          <span style="font-size:13px;font-weight:600;color:#1F3971">Material Report</span>
+        </div>
 
       </div>
     </div>
@@ -732,6 +736,72 @@
           <p style="font-size:13px;color:#666">Loading…</p>
         </div>
         <div id="vs-results" style="display:none"></div>
+      </div>
+    </div>
+
+    <!-- Material Report sub-panel -->
+    <div id="other-panel-material-report" style="display:none">
+      <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #f0f0f0;background:#fff;position:sticky;top:0;z-index:1">
+        <button onclick="showOtherHome()" style="background:none;border:none;font-size:14px;font-weight:600;color:#1F3971;cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
+        <span style="font-size:16px;font-weight:700;color:#1F3971">Material Report</span>
+      </div>
+      <div style="padding:16px;max-width:680px;margin:0 auto">
+
+        <!-- Step: setup -->
+        <div id="mr-step-setup">
+          <div style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:12px">
+            <p style="font-size:13px;font-weight:700;color:#1F3971;margin:0 0 14px">Job Information</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <div style="grid-column:1/-1">
+                <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Contractor *</label>
+                <input id="mr-contractor" placeholder="e.g. Jensen Construction" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box">
+              </div>
+              <div style="grid-column:1/-1">
+                <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Job Name *</label>
+                <input id="mr-job" placeholder="e.g. 4th & Main - Building C" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box">
+              </div>
+              <div>
+                <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Start Date</label>
+                <input id="mr-start" type="date" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box">
+              </div>
+              <div>
+                <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">End Date</label>
+                <input id="mr-end" type="date" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box">
+              </div>
+              <div style="grid-column:1/-1">
+                <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Beam &amp; Post Wrap Cost (manual, optional)</label>
+                <input id="mr-wrap" type="number" step="0.01" placeholder="0.00" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box">
+              </div>
+            </div>
+          </div>
+          <div id="mr-drop-zone" onclick="document.getElementById('mr-files').click()"
+            style="background:#fff;border-radius:12px;padding:32px 20px;box-shadow:0 1px 4px rgba(0,0,0,0.08);text-align:center;border:2px dashed #c0c8e8;cursor:pointer;margin-bottom:12px;transition:background .15s">
+            <svg width="40" height="40" fill="none" stroke="#8896c4" stroke-width="1.5" viewBox="0 0 24 24" style="margin:0 auto 10px;display:block"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+            <p style="font-size:14px;font-weight:600;color:#1F3971;margin:0 0 4px">Drop PDF invoices here or tap to select</p>
+            <p style="font-size:12px;color:#888;margin:0">Multiple files supported</p>
+          </div>
+          <input id="mr-files" type="file" multiple accept=".pdf" style="display:none" onchange="mrOnFiles(this)">
+          <div id="mr-file-list" style="margin-bottom:12px"></div>
+          <button onclick="mrProcessInvoices()" style="background:#1F3971;color:#fff;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:600;cursor:pointer;width:100%">Process Invoices with AI →</button>
+        </div>
+
+        <!-- Step: processing -->
+        <div id="mr-step-processing" style="display:none">
+          <div style="background:#fff;border-radius:12px;padding:40px 20px;box-shadow:0 1px 4px rgba(0,0,0,0.08);text-align:center">
+            <div class="spinner" style="margin:0 auto 16px"></div>
+            <p id="mr-status" style="font-size:14px;color:#555;margin:0">Extracting invoice text…</p>
+            <p style="font-size:12px;color:#aaa;margin:8px 0 0">This may take 30–60 seconds for large batches</p>
+          </div>
+        </div>
+
+        <!-- Step: review -->
+        <div id="mr-step-review" style="display:none">
+          <div id="mr-summary"></div>
+          <div id="mr-checks"></div>
+          <div id="mr-items"></div>
+          <div id="mr-generate"></div>
+        </div>
+
       </div>
     </div>
 
@@ -1121,6 +1191,7 @@ function applyRole(role) {
   sd('other-card-job-cost',   role === 'admin');
   sd('other-card-missing-inv', role === 'admin');
   sd('other-card-vendor-spend', role === 'admin');
+  sd('other-card-material-report', role === 'admin');
   sd('receive-po-card', p.canReceivePO);
 
   // Show role badge in header
@@ -2444,7 +2515,7 @@ function submitContactEdit() {
 
 function showOtherPanel(name) {
   document.getElementById('other-home').style.display = 'none';
-  ['pricing', 'contacts', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend'].forEach(function(p) {
+  ['pricing', 'contacts', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
     if (el) el.style.display = p === name ? '' : 'none';
   });
@@ -2454,11 +2525,12 @@ function showOtherPanel(name) {
   if (name === 'job-cost')   openJobCostPanel();
   if (name === 'missing-inv') loadMissingInvoices();
   if (name === 'vendor-spend') openVendorSpendPanel();
+  if (name === 'material-report') openMaterialReportPanel();
 }
 
 function showOtherHome() {
   document.getElementById('other-home').style.display = '';
-  ['pricing', 'contacts', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend'].forEach(function(p) {
+  ['pricing', 'contacts', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
     if (el) el.style.display = 'none';
   });
@@ -2899,6 +2971,316 @@ function renderReconcileResults(matched, unmatched) {
   document.getElementById('stmt-results').style.display = 'block';
 }
 
+
+// ─── Material Report ─────────────────────────────────────────────────────────
+var MR_CATEGORIES = ['Siding Lap','Siding B&B','Siding Flashing','Metal','Masonry','Vinyl','Vinyl Extras','Stucco','Angle Iron'];
+var mrLineItems = [];
+var mrFiles = [];
+
+function openMaterialReportPanel() {
+  mrLineItems = [];
+  mrFiles = [];
+  mrShowStep('setup');
+  var fl = document.getElementById('mr-file-list');
+  if (fl) fl.innerHTML = '';
+  var fi = document.getElementById('mr-files');
+  if (fi) fi.value = '';
+  mrInitDrop();
+}
+
+function mrShowStep(step) {
+  ['setup','processing','review'].forEach(function(s) {
+    var el = document.getElementById('mr-step-' + s);
+    if (el) el.style.display = s === step ? '' : 'none';
+  });
+}
+
+function mrOnFiles(input) {
+  mrFiles = Array.from(input.files).filter(function(f) {
+    return f.name.toLowerCase().endsWith('.pdf');
+  });
+  mrRenderFileList();
+}
+
+function mrRenderFileList() {
+  var list = document.getElementById('mr-file-list');
+  if (!list) return;
+  if (!mrFiles.length) { list.innerHTML = ''; return; }
+  list.innerHTML = '<div style="background:#fff;border-radius:10px;padding:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08)">'
+    + '<p style="font-size:12px;font-weight:600;color:#555;margin:0 0 8px">' + mrFiles.length + ' file' + (mrFiles.length>1?'s':'') + ' selected</p>'
+    + mrFiles.map(function(f) {
+        return '<div style="font-size:12px;color:#444;padding:3px 0;display:flex;align-items:center;gap:6px">'
+          + '<svg width="12" height="12" fill="none" stroke="#1F3971" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>'
+          + f.name + '</div>';
+      }).join('')
+    + '</div>';
+}
+
+function mrInitDrop() {
+  var zone = document.getElementById('mr-drop-zone');
+  if (!zone || zone._mrWired) return;
+  zone._mrWired = true;
+  zone.addEventListener('dragover', function(e) { e.preventDefault(); zone.style.background='#eef2ff'; });
+  zone.addEventListener('dragleave', function() { zone.style.background=''; });
+  zone.addEventListener('drop', function(e) {
+    e.preventDefault();
+    zone.style.background = '';
+    mrFiles = Array.from(e.dataTransfer.files).filter(function(f) { return f.name.toLowerCase().endsWith('.pdf'); });
+    mrRenderFileList();
+  });
+}
+
+function mrProcessInvoices() {
+  var contractor = (document.getElementById('mr-contractor')||{}).value || '';
+  var jobName    = (document.getElementById('mr-job')||{}).value || '';
+  if (!contractor.trim() || !jobName.trim()) { showToast('Enter contractor and job name first'); return; }
+  if (!mrFiles.length) { showToast('Upload at least one PDF invoice'); return; }
+
+  mrShowStep('processing');
+  document.getElementById('mr-status').textContent = 'Extracting text from PDFs (0/' + mrFiles.length + ')…';
+
+  var extracted = [];
+  ensurePdfJs().then(function() {
+    var chain = Promise.resolve();
+    mrFiles.forEach(function(file, idx) {
+      chain = chain.then(function() {
+        return new Promise(function(resolve) {
+          var reader = new FileReader();
+          reader.onload = function(e) {
+            pdfjsLib.getDocument({ data: e.target.result }).promise
+              .then(function(doc) {
+                var pages = [];
+                for (var p = 1; p <= doc.numPages; p++) {
+                  pages.push(doc.getPage(p).then(function(pg) {
+                    return pg.getTextContent().then(function(tc) {
+                      return tc.items.map(function(it) { return it.str; }).join(' ');
+                    });
+                  }));
+                }
+                return Promise.all(pages);
+              })
+              .then(function(texts) {
+                extracted.push({ fileName: file.name, text: texts.join('\n') });
+              })
+              .catch(function() {
+                extracted.push({ fileName: file.name, text: '' });
+              })
+              .then(function() {
+                var st = document.getElementById('mr-status');
+                if (st) st.textContent = 'Extracting text from PDFs (' + (idx+1) + '/' + mrFiles.length + ')…';
+                resolve();
+              });
+          };
+          reader.readAsArrayBuffer(file);
+        });
+      });
+    });
+    return chain;
+  }).then(function() {
+    var st = document.getElementById('mr-status');
+    if (st) st.textContent = 'Sending to Claude AI for categorization…';
+    var wrapCost = parseFloat((document.getElementById('mr-wrap')||{}).value) || 0;
+    gasCall('categorizeInvoices', {
+      contractor: contractor.trim(),
+      jobName: jobName.trim(),
+      startDate: (document.getElementById('mr-start')||{}).value || '',
+      endDate:   (document.getElementById('mr-end')||{}).value || '',
+      wrapCost: wrapCost,
+      invoices: extracted
+    }, function(r) {
+      if (r && r.error) { mrShowStep('setup'); showToast('AI error: ' + r.error); return; }
+      if (!r || !r.categorized) { mrShowStep('setup'); showToast('Unexpected response from AI'); return; }
+      mrBuildReview(r.categorized, wrapCost);
+      mrShowStep('review');
+    }, function(err) {
+      mrShowStep('setup');
+      showToast('Connection error — check GAS deployment');
+      console.error('categorizeInvoices error:', err);
+    });
+  });
+}
+
+function mrBuildReview(categorized, wrapCost) {
+  mrLineItems = [];
+  var issues = [];
+  categorized.forEach(function(inv) {
+    var items = inv.lineItems || [];
+    if (!items.length) {
+      issues.push('⚠️ ' + (inv.vendor || inv.fileName || '?') + ': ' + (inv.notes || 'No items extracted — add manually'));
+    }
+    if (inv.balanceCheck === false) {
+      issues.push('⚠️ Inv ' + (inv.invoiceNum||'?') + ' (' + (inv.vendor||'?') + '): items $' + fmtMoney(inv.lineItemsSum||0) + ' ≠ subtotal $' + fmtMoney(inv.subtotal||0));
+    }
+    items.forEach(function(item) {
+      mrLineItems.push({
+        invoiceNum:   inv.invoiceNum || '',
+        vendor:       inv.vendor || '',
+        description:  item.description || '',
+        amount:       +(item.amount)  || 0,
+        category:     item.category   || 'Siding Lap',
+        taxShare:     +(item.taxShare)     || 0,
+        shippingShare:+(item.shippingShare)|| 0,
+        uncertain:    !!item.uncertain
+      });
+    });
+  });
+  if (wrapCost > 0) {
+    mrLineItems.push({ invoiceNum:'Manual', vendor:'Manual', description:'Beam & Post Wrap',
+      amount: wrapCost, category:'Beam & Post Wrap', taxShare:0, shippingShare:0, uncertain:false });
+  }
+  mrRenderReview(issues);
+}
+
+function mrRenderReview(issues) {
+  var totals = {};
+  MR_CATEGORIES.forEach(function(c) { totals[c] = 0; });
+  totals['Beam & Post Wrap'] = 0;
+  mrLineItems.forEach(function(item) {
+    var line = (item.amount||0) + (item.taxShare||0) + (item.shippingShare||0);
+    totals[item.category] = (totals[item.category]||0) + line;
+  });
+  var grandTotal = Object.keys(totals).reduce(function(a,c){return a+totals[c];},0);
+
+  var activeCats = Object.keys(totals).filter(function(c){return totals[c]!==0;});
+  var summaryHtml = '<div id="mr-summary-card" style="background:#1F3971;color:#fff;border-radius:12px;padding:16px 20px;margin-bottom:12px">'
+    + '<div style="font-size:22px;font-weight:700;margin-bottom:10px" id="mr-grand-total">$' + fmtMoney(grandTotal) + ' Total</div>'
+    + '<div id="mr-cat-totals" style="display:grid;grid-template-columns:1fr 1fr;gap:3px 16px">'
+    + activeCats.map(function(c){
+        return '<div style="font-size:12px"><span style="opacity:.65">' + c + '</span> <strong>$' + fmtMoney(totals[c]) + '</strong></div>';
+      }).join('')
+    + '</div></div>';
+
+  var checksHtml = '';
+  if (issues.length) {
+    checksHtml = '<div style="background:#fff8e1;border:1px solid #ffd54f;border-radius:10px;padding:12px 14px;margin-bottom:12px">'
+      + '<p style="font-weight:700;font-size:13px;margin:0 0 6px">Issues to review</p>'
+      + issues.map(function(i){return '<p style="font-size:12px;margin:3px 0">'+i+'</p>';}).join('')
+      + '</div>';
+  }
+
+  var allCats = MR_CATEGORIES.concat(['Beam & Post Wrap']);
+  var tableHtml = '<div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);overflow:auto;margin-bottom:12px">'
+    + '<table style="width:100%;border-collapse:collapse;font-size:11px;min-width:560px">'
+    + '<thead><tr style="background:#f5f7ff">'
+    + ['Inv #','Vendor','Description','Amount ($)','Category','Tax','Ship',''].map(function(h){
+        return '<th style="padding:8px 6px;text-align:left;font-weight:600;color:#555;white-space:nowrap">'+h+'</th>';
+      }).join('')
+    + '</tr></thead>'
+    + '<tbody id="mr-tbody">'
+    + mrLineItems.map(function(item,idx){ return mrRowHtml(item, idx, allCats); }).join('')
+    + '</tbody></table></div>'
+    + '<button onclick="mrAddRow()" style="background:#eef2ff;color:#1F3971;border:none;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:12px">+ Add Row</button>';
+
+  var generateHtml = '<button onclick="mrGenerateExcel()" style="background:#1F3971;color:#fff;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:600;cursor:pointer;width:100%">Generate Excel Report ↓</button>';
+
+  document.getElementById('mr-summary').innerHTML = summaryHtml;
+  document.getElementById('mr-checks').innerHTML = checksHtml;
+  document.getElementById('mr-items').innerHTML = tableHtml;
+  document.getElementById('mr-generate').innerHTML = generateHtml;
+}
+
+function mrRowHtml(item, idx, allCats) {
+  var q = "'";
+  var bg = item.uncertain ? 'background:#fff8e1;' : '';
+  var cats = allCats || MR_CATEGORIES.concat(['Beam & Post Wrap']);
+  return '<tr style="border-top:1px solid #f0f0f0;' + bg + '">'
+    + '<td style="padding:5px 4px"><input value="' + (item.invoiceNum||'').replace(/"/g,'') + '" onchange="mrItem(' + idx + ',\'invoiceNum\',this.value)" style="width:72px;font-size:11px;border:1px solid #ddd;border-radius:4px;padding:3px 4px"></td>'
+    + '<td style="padding:5px 4px"><input value="' + (item.vendor||'').replace(/"/g,'') + '" onchange="mrItem(' + idx + ',\'vendor\',this.value)" style="width:72px;font-size:11px;border:1px solid #ddd;border-radius:4px;padding:3px 4px"></td>'
+    + '<td style="padding:5px 4px"><input value="' + (item.description||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;') + '" onchange="mrItem(' + idx + ',\'description\',this.value)" style="width:140px;font-size:11px;border:1px solid #ddd;border-radius:4px;padding:3px 4px"></td>'
+    + '<td style="padding:5px 4px"><input type="number" step="0.01" value="' + (+(item.amount)||0).toFixed(2) + '" onchange="mrItem(' + idx + ',\'amount\',parseFloat(this.value)||0);mrRefreshSummary()" style="width:76px;font-size:11px;border:1px solid #ddd;border-radius:4px;padding:3px 4px"></td>'
+    + '<td style="padding:5px 4px"><select onchange="mrItem(' + idx + ',\'category\',this.value);mrRefreshSummary()" style="font-size:11px;border:1px solid #ddd;border-radius:4px;padding:3px 4px">'
+    + cats.map(function(c){ return '<option value="'+c+'"'+(c===item.category?' selected':'')+'>'+c+'</option>'; }).join('')
+    + '</select></td>'
+    + '<td style="padding:5px 4px;color:#888">$' + fmtMoney(item.taxShare||0) + '</td>'
+    + '<td style="padding:5px 4px;color:#888">$' + fmtMoney(item.shippingShare||0) + '</td>'
+    + '<td style="padding:5px 4px"><button onclick="mrDeleteRow(' + idx + ')" style="background:none;border:none;color:#c33;cursor:pointer;font-size:15px;line-height:1;padding:0 2px">&times;</button></td>'
+    + '</tr>';
+}
+
+function mrItem(idx, field, value) {
+  if (mrLineItems[idx]) mrLineItems[idx][field] = value;
+}
+
+function mrDeleteRow(idx) {
+  mrLineItems.splice(idx, 1);
+  mrRenderReview([]);
+}
+
+function mrAddRow() {
+  mrLineItems.push({ invoiceNum:'', vendor:'', description:'', amount:0,
+    category:'Siding Lap', taxShare:0, shippingShare:0, uncertain:false });
+  var tbody = document.getElementById('mr-tbody');
+  if (tbody) {
+    var allCats = MR_CATEGORIES.concat(['Beam & Post Wrap']);
+    tbody.innerHTML = mrLineItems.map(function(item,idx){ return mrRowHtml(item, idx, allCats); }).join('');
+  }
+  mrRefreshSummary();
+}
+
+function mrRefreshSummary() {
+  var totals = {};
+  MR_CATEGORIES.forEach(function(c){totals[c]=0;});
+  totals['Beam & Post Wrap'] = 0;
+  mrLineItems.forEach(function(item) {
+    var line = (item.amount||0) + (item.taxShare||0) + (item.shippingShare||0);
+    totals[item.category] = (totals[item.category]||0) + line;
+  });
+  var grandTotal = Object.keys(totals).reduce(function(a,c){return a+totals[c];},0);
+  var gt = document.getElementById('mr-grand-total');
+  if (gt) gt.textContent = '$' + fmtMoney(grandTotal) + ' Total';
+  var ct = document.getElementById('mr-cat-totals');
+  if (ct) {
+    ct.innerHTML = Object.keys(totals).filter(function(c){return totals[c]!==0;}).map(function(c){
+      return '<div style="font-size:12px"><span style="opacity:.65">'+c+'</span> <strong>$'+fmtMoney(totals[c])+'</strong></div>';
+    }).join('');
+  }
+}
+
+function mrGenerateExcel() {
+  if (!mrLineItems.length) { showToast('No line items to export'); return; }
+  var contractor = (document.getElementById('mr-contractor')||{}).value || '';
+  var jobName    = (document.getElementById('mr-job')||{}).value    || 'Material Report';
+  var startDate  = (document.getElementById('mr-start')||{}).value  || '';
+  var endDate    = (document.getElementById('mr-end')||{}).value    || '';
+
+  function doGenerate(XLSX) {
+    fetch('/po-manager/report-template.xlsx')
+      .then(function(r){ return r.arrayBuffer(); })
+      .then(function(buf) {
+        var wb = XLSX.read(buf, { type:'array', cellFormula:true, cellStyles:true });
+        var calcs  = wb.Sheets['Calcs'];
+        var report = wb.Sheets['Project Report'];
+
+        if (report) {
+          if (contractor) XLSX.utils.sheet_add_aoa(report, [[contractor]], { origin:'B2' });
+          if (jobName)    XLSX.utils.sheet_add_aoa(report, [[jobName]],    { origin:'B3' });
+          if (startDate)  XLSX.utils.sheet_add_aoa(report, [[startDate]],  { origin:'B5' });
+          if (endDate)    XLSX.utils.sheet_add_aoa(report, [[endDate]],    { origin:'B6' });
+        }
+
+        if (calcs) {
+          var rows = mrLineItems.map(function(item) {
+            return [item.category, item.invoiceNum, item.amount, item.taxShare, item.shippingShare];
+          });
+          XLSX.utils.sheet_add_aoa(calcs, rows, { origin:'A2' });
+        }
+
+        XLSX.writeFile(wb, jobName.trim() + ' Material Report.xlsx');
+        showToast('Excel downloaded!');
+      })
+      .catch(function(e){ showToast('Template error: ' + e); console.error(e); });
+  }
+
+  if (window.XLSX) {
+    doGenerate(window.XLSX);
+  } else {
+    var s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload = function(){ doGenerate(window.XLSX); };
+    s.onerror = function(){ showToast('Failed to load SheetJS — check connection'); };
+    document.head.appendChild(s);
+  }
+}
 </script>
 </body>
 </html>
