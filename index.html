@@ -3093,26 +3093,50 @@ function mrProcessInvoices() {
     });
     return chain;
   }).then(function() {
-    var st = document.getElementById('mr-status');
-    if (st) st.textContent = 'Sending to Claude AI for categorization…';
+    // Process one invoice at a time to avoid GAS 6-min timeout
     var wrapCost = parseFloat((document.getElementById('mr-wrap')||{}).value) || 0;
-    gasCall('categorizeInvoices', {
-      contractor: contractor.trim(),
-      jobName: jobName.trim(),
-      startDate: (document.getElementById('mr-start')||{}).value || '',
-      endDate:   (document.getElementById('mr-end')||{}).value || '',
-      wrapCost: wrapCost,
-      invoices: extracted
-    }, function(r) {
-      if (r && r.error) { mrShowStep('setup'); showToast('AI error: ' + r.error); return; }
-      if (!r || !r.categorized) { mrShowStep('setup'); showToast('Unexpected response from AI'); return; }
-      mrBuildReview(r.categorized, wrapCost);
-      mrShowStep('review');
-    }, function(err) {
-      mrShowStep('setup');
-      showToast('Connection error — check GAS deployment');
-      console.error('categorizeInvoices error:', err);
-    });
+    var allCategorized = [];
+    var failed = 0;
+
+    function processOne(idx) {
+      if (idx >= extracted.length) {
+        // All done — show review
+        if (!allCategorized.length) {
+          mrShowStep('setup');
+          showToast('No invoices could be processed — check GAS logs');
+          return;
+        }
+        mrBuildReview(allCategorized, wrapCost);
+        mrShowStep('review');
+        if (failed) showToast(failed + ' invoice(s) failed to extract — add manually');
+        return;
+      }
+
+      var inv = extracted[idx];
+      var st = document.getElementById('mr-status');
+      if (st) st.textContent = 'Processing invoice ' + (idx + 1) + ' of ' + extracted.length + ': ' + inv.fileName.replace(/_/g,' ').substring(0,40) + '…';
+
+      // Truncate text to 5000 chars — Claude only needs the first page of content
+      var trimmed = { fileName: inv.fileName, text: (inv.text || '').substring(0, 5000) };
+
+      gasCall('categorizeInvoices', { invoices: [trimmed] }, function(r) {
+        if (r && r.categorized && r.categorized.length) {
+          allCategorized = allCategorized.concat(r.categorized);
+        } else {
+          failed++;
+          allCategorized.push({ fileName: inv.fileName, invoiceNum: '', vendor: inv.fileName,
+            lineItems: [], balanceCheck: true, notes: (r && r.error) || 'Extraction failed' });
+        }
+        processOne(idx + 1);
+      }, function() {
+        failed++;
+        allCategorized.push({ fileName: inv.fileName, invoiceNum: '', vendor: inv.fileName,
+          lineItems: [], balanceCheck: true, notes: 'Network error' });
+        processOne(idx + 1);
+      });
+    }
+
+    processOne(0);
   });
 }
 
