@@ -2973,6 +2973,22 @@ function renderReconcileResults(matched, unmatched) {
 
 
 // ─── Material Report ─────────────────────────────────────────────────────────
+// Global pdf.js loader (the existing one is scoped inside processStatementFiles)
+function mrEnsurePdfJs() {
+  return new Promise(function(resolve) {
+    if (window.pdfjsLib) { resolve(); return; }
+    var s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload = function() {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      resolve();
+    };
+    s.onerror = function() { resolve(); }; // still resolve; extraction will just return empty
+    document.head.appendChild(s);
+  });
+}
+
 var MR_CATEGORIES = ['Siding Lap','Siding B&B','Siding Flashing','Metal','Masonry','Vinyl','Vinyl Extras','Stucco','Angle Iron'];
 var mrLineItems = [];
 var mrFiles = [];
@@ -3040,7 +3056,7 @@ function mrProcessInvoices() {
   document.getElementById('mr-status').textContent = 'Extracting text from PDFs (0/' + mrFiles.length + ')…';
 
   var extracted = [];
-  ensurePdfJs().then(function() {
+  mrEnsurePdfJs().then(function() {
     var chain = Promise.resolve();
     mrFiles.forEach(function(file, idx) {
       chain = chain.then(function() {
