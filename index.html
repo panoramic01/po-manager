@@ -904,9 +904,16 @@ function gasCall(action, payload, onSuccess, onFailure) {
     redirect: 'follow'
   })
   .then(function(r) { return r.json(); })
-  .then(function(data) { if (onSuccess) onSuccess(data); })
+  .then(function(data) {
+    if (!onSuccess) return;
+    try { onSuccess(data); }
+    catch(ex) {
+      console.error('gasCall [' + action + '] onSuccess threw:', ex);
+      if (onFailure) onFailure(ex);
+    }
+  })
   .catch(function(err) {
-    console.error('gasCall [' + action + '] error:', err);
+    console.error('gasCall [' + action + '] fetch/parse error:', err);
     if (onFailure) onFailure(err);
   });
 }
@@ -2562,7 +2569,7 @@ function loadVendorSpend() {
   document.getElementById('vs-results').style.display = 'none';
   gasCall('getVendorSpend', { startDate: start, endDate: end }, function(r) {
     document.getElementById('vs-loading').style.display = 'none';
-    if (r.error) { showToast('Error: ' + r.error); return; }
+    if (!r || r.error) { showToast('Error: ' + (r ? r.error : 'Empty response from GAS')); return; }
     vsData = r;
     vsData.dateRange = (start || 'All time') + (end ? ' → ' + end : '');
     renderVendorSpend();
@@ -2600,11 +2607,11 @@ function renderVendorSpend() {
     + '</div>';
   var summary = '<div style="background:#1F3971;color:#fff;border-radius:12px;padding:16px 20px;margin-bottom:12px">'
     + '<div style="font-size:13px;opacity:.8;margin-bottom:2px">' + r.dateRange + '</div>'
-    + '<div style="font-size:24px;font-weight:700">$' + r.grandTotal.toFixed(2) + '</div>'
+    + '<div style="font-size:24px;font-weight:700">$' + (+(r.grandTotal) || 0).toFixed(2) + '</div>'
     + '<div style="font-size:12px;opacity:.7;margin-top:2px">' + r.vendors.length + ' vendor' + (r.vendors.length !== 1 ? 's' : '') + '</div>'
     + '</div>';
   var el = document.getElementById('vs-results');
-  if (!r.vendors.length) {
+  if (!r.vendors || !r.vendors.length) {
     el.innerHTML = summary + '<div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08)"><p style="text-align:center;color:#888">No spend found for this period.</p></div>';
     el.style.display = 'block'; return;
   }
