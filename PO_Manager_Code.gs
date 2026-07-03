@@ -73,9 +73,11 @@ function doPost(e) {
     else if (action === 'getJobCostSummary')   result = getJobCostSummary(payload.jobRef);
     else if (action === 'getMissingInvoices')  result = getMissingInvoices();
     else if (action === 'getVendorSpend')      result = getVendorSpend(payload.startDate, payload.endDate);
-    else if (action === 'categorizeInvoices') result = categorizeInvoices(payload);
-    else if (action === 'suggestCategories')  result = suggestCategories(payload);
-    else                                       result = { error: 'Unknown action: ' + action };
+    else if (action === 'categorizeInvoices')  result = categorizeInvoices(payload);
+    else if (action === 'suggestCategories')   result = suggestCategories(payload);
+    else if (action === 'categorizeEstimate')  result = categorizeEstimate(payload);
+    else if (action === 'saveMaterialHistory') result = saveMaterialHistory(payload);
+    else                                        result = { error: 'Unknown action: ' + action };
 
     return ContentService
       .createTextOutput(JSON.stringify(result))
@@ -847,6 +849,75 @@ function suggestCategories(payload) {
     if (raw.error) return { error: raw.error.message };
     var text = (raw.content[0].text || '').replace(/```json\s*/g,'').replace(/```/g,'').trim();
     return { suggestions: JSON.parse(text) };
+  } catch(e) {
+    return { error: e.toString() };
+  }
+}
+
+// ── Categorize estimate PO spreadsheet rows by material category ──
+function categorizeEstimate(payload) {
+  try {
+    var rows = payload.rows || [];
+    var apiKey = PropertiesService.getScriptProperties().getProperty('CLAUDE_API_KEY');
+    var categories = ['Siding Lap','Siding B&B','Siding Flashing','Metal','Masonry','Vinyl','Vinyl Extras','Stucco','Angle Iron','Beam & Post Wrap'];
+    var prompt = 'You are analyzing rows from a construction estimate spreadsheet.\n'
+      + 'Find material line items (skip headers, totals, SqF rows, blank rows).\n'
+      + 'For each line item, assign it to one category: ' + categories.join(', ') + '.\n'
+      + 'Use the rightmost dollar column (Total Material Cost) as the cost.\n'
+      + 'Return ONLY valid JSON: {"estimated":{"CategoryName":totalCost,...}}\n'
+      + 'Sum costs if multiple rows share a category.\n\n'
+      + 'Rows (tab-separated):\n'
+      + rows.slice(0, 60).map(function(r){ return r.join('\t'); }).join('\n');
+
+    var resp = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
+      method: 'post',
+      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      payload: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1024,
+        messages: [{ role: 'user', content: prompt }]
+      }),
+      muteHttpExceptions: true
+    });
+    var body = JSON.parse(resp.getContentText());
+    if (body.error) return { error: body.error.message };
+    var text = (body.content[0].text || '').replace(/```json\s*/g,'').replace(/```/g,'').trim();
+    var m = text.match(/\{[\s\S]*\}/);
+    if (m) return JSON.parse(m[0]);
+    return { estimated: {} };
+  } catch(e) {
+    return { error: e.toString() };
+  }
+}
+
+// ── Append approved rows to Material Report History tab ──
+function saveMaterialHistory(payload) {
+  try {
+    var rows = payload.rows || [];
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('Material Report History');
+    if (!sheet) return { error: 'Sheet "Material Report History" not found in this spreadsheet' };
+
+    // Write header if sheet is brand new
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow(['Date','Job','Contractor','Category','Actual Cost','Estimated Cost','Delta','SqF','Cost/SqF']);
+      sheet.getRange(1,1,1,9).setFontWeight('bold').setBackground('#1F3971').setFontColor('#ffffff');
+    }
+
+    rows.forEach(function(r) {
+      var delta = (r.estimated && r.estimated > 0) ? (r.actual - r.estimated) : '';
+      var costPerSqf = (r.sqf && r.sqf > 0) ? (r.actual / r.sqf) : '';
+      sheet.appendRow([
+        r.date, r.job, r.contractor, r.category,
+        r.actual,
+        r.estimated || '',
+        delta,
+        r.sqf || '',
+        costPerSqf
+      ]);
+    });
+
+    return { saved: rows.length };
   } catch(e) {
     return { error: e.toString() };
   }
