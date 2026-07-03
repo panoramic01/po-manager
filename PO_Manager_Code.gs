@@ -714,7 +714,7 @@ function categorizeInvoices(payload) {
     '',
     'CATEGORIES — use exactly these names:',
     '  Siding Lap      : LP SmartSide lap siding (3/8x8x16), 5/4 cedar trim boards',
-    '  Siding B&B      : LP SmartSide panels 4x10 (any groove), battens 19/32x3, 4/4 cedar trim boards',
+    '  Siding B&B      : LP SmartSide panels 4x10 (any groove), battens 19/32x3, 4/4 cedar trim boards — only panels used as WALL SIDING, not wrap',
     '  Siding Flashing : Panel Union Flashing, Z-flashing, brick flashing angles/strips',
     '  Metal           : Coil stock, touch-up paint, metal accessories (non-soffit/fascia)',
     '  Soffit & Fascia : Aluminum soffit panels (solid or vented), fascia trim, J-channel, drip edge, coil wrap',
@@ -723,6 +723,7 @@ function categorizeInvoices(payload) {
     '  Vinyl Accessories    : Vinyl starter/finish strips, outside corners, J-channel for vinyl, outlet boxes, light boxes',
     '  Stucco          : Stucco base/finish coat, dryvit, mesh, stucco accessories',
     '  Angle Iron      : Steel angle iron, wide flange beams, structural steel, plasma cutting, steel delivery',
+    '  Beam/Post/Garage Wrap : Hardboard/B&B panels used specifically for wrapping beams, posts, columns, or garage openings (NOT wall siding). If B&B panels are ordered and some are clearly for wrapping, classify those here.',
     '',
     'IMPORTANT: Do NOT assign a category. Return an empty string \"\" for the category field on every line item.',
     'Your job is ONLY to extract and structure the line items with correct amounts, tax shares, and shipping shares.',
@@ -817,7 +818,7 @@ function suggestCategories(payload) {
 
   var catList = [
     'Siding Lap      : LP SmartSide lap siding, 5/4 cedar trim boards',
-    'Siding B&B      : LP SmartSide panels 4x10, battens 19/32x3, 4/4 cedar trim',
+    'Siding B&B      : LP SmartSide panels 4x10, battens 19/32x3, 4/4 cedar trim — wall siding only, not wrap',
     'Siding Flashing : Panel Union Flashing, Z-flashing, brick flashing',
     'Metal           : Coil stock, touch-up paint, metal accessories (non-soffit/fascia)',
     'Soffit & Fascia : Aluminum soffit panels (solid/vented), fascia trim, J-channel, drip edge, coil wrap',
@@ -825,13 +826,27 @@ function suggestCategories(payload) {
     'Vinyl           : Vinyl siding panels',
     'Vinyl Accessories    : Vinyl starter strips, corners, J-channel for vinyl, outlet/light boxes',
     'Stucco          : Stucco base/finish, dryvit, mesh',
-    'Angle Iron      : Steel angle iron, wide flange beams, structural steel'
+    'Angle Iron      : Steel angle iron, wide flange beams, structural steel',
+    'Beam/Post/Garage Wrap : Hardboard/B&B panels for wrapping beams, posts, columns, or garage openings (not wall siding)'
   ].join('\n');
 
-  var systemPrompt = 'You are a building materials categorizer. Given a list of line items, assign each to exactly one category.\n\n'
+  var productList = [
+    'LP 4x10 Natural 8ft','LP 4x10 Natural 10ft','LP 4x10 Cedar Beige 8ft','LP 4x10 Cedar Beige 10ft',
+    'LP 4x10 Slate 8ft','LP 4x10 Slate 10ft','LP 3/8x8 Lap 16ft','LP 3/8x6 Lap 16ft',
+    'Battens 19/32x3 16ft','5/4x4 Cedar Trim 16ft','5/4x6 Cedar Trim 16ft','4/4 Cedar Trim 16ft',
+    'Panel Union Flashing','Z-Flashing','Brick Flashing Angle',
+    'Alum Soffit Solid','Alum Soffit Vented','Fascia Trim 1x4','J-Channel Metal','Drip Edge','Coil Wrap','Coil Stock',
+    'Lueders Stone','Buff Brick','Mortar Type S','Mortar Type N','Metal Lath','Building Paper',
+    'Vinyl Lap Panel','Vinyl B&B Panel','Starter Strip','Outside Corner','J-Channel Vinyl','Outlet Box','Light Box',
+    'Stucco Base Coat','Stucco Finish Coat','Dryvit','Stucco Mesh',
+    'Angle Iron','Wide Flange Beam','Structural Steel'
+  ].join(', ');
+
+  var systemPrompt = 'You are a building materials categorizer. Given a list of invoice line items, assign each to exactly one category AND suggest a canonical product name.\n\n'
     + 'Categories:\n' + catList + '\n\n'
-    + 'Return ONLY a JSON array: [{"idx":0,"category":"Metal"}, ...]\n'
-    + 'Use the exact category names listed above.';
+    + 'Canonical product names (pick the closest match, or null if none fit):\n' + productList + '\n\n'
+    + 'Return ONLY a JSON array: [{"idx":0,"category":"Metal","suggestedProduct":"Coil Stock"}, ...]\n'
+    + 'Use exact category names. suggestedProduct must be one of the canonical names above, or null.';
 
   try {
     var resp = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
@@ -864,7 +879,7 @@ function processEstimateWithMatching(payload) {
     var estimateRows = payload.estimateRows || [];
     var invoiceItems = payload.invoiceItems || [];
     var apiKey = PropertiesService.getScriptProperties().getProperty('CLAUDE_API_KEY');
-    var categories = ['Siding Lap','Siding B&B','Siding Flashing','Metal','Soffit & Fascia','Masonry','Vinyl','Vinyl Accessories','Stucco','Angle Iron','Beam & Post Wrap'];
+    var categories = ['Siding Lap','Siding B&B','Siding Flashing','Metal','Soffit & Fascia','Masonry','Vinyl','Vinyl Accessories','Stucco','Angle Iron','Beam/Post/Garage Wrap'];
 
     var invSummary = invoiceItems.slice(0, 60).map(function(it) {
       return (it.description || '') + (it.qty ? ' | qty:' + it.qty : '') + (it.unit ? ' ' + it.unit : '') + (it.category ? ' [' + it.category + ']' : '');
@@ -930,14 +945,4 @@ function saveMaterialHistory(payload) {
         r.date, r.job, r.tier || '', r.contractor, r.category, r.description || '',
         r.ogQty || '', r.estWastePct || '', r.unit || '',
         r.invoicedQty !== undefined ? r.invoicedQty : '',
-        r.returnQty   !== undefined ? r.returnQty   : '',
-        r.actualQty   !== undefined ? r.actualQty   : '',
-        r.actualWastePct !== '' && r.actualWastePct !== undefined ? r.actualWastePct : ''
-      ]);
-    });
-
-    return { saved: rows.length };
-  } catch(e) {
-    return { error: e.toString() };
-  }
-}
+        r.returnQty   !== undefined ?

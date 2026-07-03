@@ -3105,8 +3105,22 @@ function mrEnsurePdfJs() {
 var mrEstimateFile = null;
 var mrEstimateTotals = {};
 var MR_CATEGORIES_BASE = ['Siding Lap','Siding B&B','Siding Flashing','Metal','Soffit & Fascia','Masonry','Vinyl','Vinyl Accessories','Stucco','Angle Iron'];
+var MR_PRODUCTS = {
+  'Siding Lap':        ['LP 3/8x8 Lap 16ft','LP 3/8x6 Lap 16ft','Cedar Lap 1x6','Cedar Lap 1x8'],
+  'Siding B&B':        ['LP 4x10 Natural 8ft','LP 4x10 Natural 10ft','LP 4x10 Cedar Beige 8ft','LP 4x10 Cedar Beige 10ft','LP 4x10 Slate 8ft','LP 4x10 Slate 10ft','Battens 19/32x3 16ft','5/4x4 Cedar Trim 16ft','5/4x6 Cedar Trim 16ft','4/4 Cedar Trim 16ft'],
+  'Siding Flashing':   ['Panel Union Flashing','Z-Flashing','Brick Flashing Angle','Brick Flashing Strip'],
+  'Metal':             ['Coil Stock','Touch-Up Paint','Metal Accessories'],
+  'Soffit & Fascia':   ['Alum Soffit Solid','Alum Soffit Vented','Fascia Trim 1x4','J-Channel Metal','Drip Edge','Coil Wrap'],
+  'Masonry':           ['Lueders Stone','Buff Brick','Mortar Type S','Mortar Type N','Metal Lath','Building Paper','Lime','Pallet Charge'],
+  'Vinyl':             ['Vinyl Lap Panel','Vinyl B&B Panel'],
+  'Vinyl Accessories': ['Starter Strip','Outside Corner','J-Channel Vinyl','Outlet Box','Light Box','Finish Trim'],
+  'Stucco':            ['Stucco Base Coat','Stucco Finish Coat','Dryvit','Stucco Mesh','Stucco Accessories'],
+  'Angle Iron':        ['Angle Iron','Wide Flange Beam','Structural Steel','Plasma Cutting'],
+  'Soffit & Fascia':   ['Alum Soffit Solid','Alum Soffit Vented','Fascia Trim 1x4','J-Channel Metal','Drip Edge','Coil Wrap'],
+  'Beam/Post/Garage Wrap': ['LP 4x10 Natural 8ft','LP 4x10 Cedar Beige 8ft','LP 4x10 Slate 8ft','Cedar Panel Wrap']
+};
 var MR_CATEGORIES_CUSTOM = [];  // user-added categories
-function mrAllCats() { return MR_CATEGORIES_BASE.concat(MR_CATEGORIES_CUSTOM).concat(['Beam & Post Wrap']); }
+function mrAllCats() { return MR_CATEGORIES_BASE.concat(MR_CATEGORIES_CUSTOM).concat(['Beam/Post/Garage Wrap']); }
 // Keep MR_CATEGORIES as alias for legacy references
 Object.defineProperty(window, 'MR_CATEGORIES', { get: function(){ return MR_CATEGORIES_BASE.concat(MR_CATEGORIES_CUSTOM); } });
 var mrLineItems = [];
@@ -3147,7 +3161,7 @@ function mrRemoveCategory(cat) {
 function mrRenderCatChips() {
   var container = document.getElementById('mr-cat-chips');
   if (!container) return;
-  var allBase = MR_CATEGORIES_BASE.concat(['Beam & Post Wrap']);
+  var allBase = MR_CATEGORIES_BASE.concat(['Beam/Post/Garage Wrap']);
   var chips = allBase.map(function(c) {
     return '<span style="display:inline-flex;align-items:center;gap:4px;background:#eef2ff;color:#1F3971;border-radius:20px;padding:4px 10px;font-size:12px;font-weight:500">' + c + '</span>';
   });
@@ -3371,7 +3385,8 @@ function mrBuildReview(categorized, wrapCost) {
         vendor:       inv.vendor || '',
         description:  item.description || '',
         amount:       +(item.amount)  || 0,
-        category:     '',  // user picks — AI suggestion ignored for initial display
+        category:     '',
+        product:      '',
         taxShare:     +(item.taxShare)     || 0,
         shippingShare:+(item.shippingShare)|| 0,
         uncertain:    !!item.uncertain
@@ -3379,8 +3394,8 @@ function mrBuildReview(categorized, wrapCost) {
     });
   });
   if (wrapCost > 0) {
-    mrLineItems.push({ invoiceNum:'Manual', vendor:'Manual', description:'Beam & Post Wrap',
-      amount: wrapCost, category:'Beam & Post Wrap', taxShare:0, shippingShare:0, uncertain:false });
+    mrLineItems.push({ invoiceNum:'Manual', vendor:'Manual', description:'Beam/Post/Garage Wrap',
+      amount: wrapCost, category:'Beam/Post/Garage Wrap', taxShare:0, shippingShare:0, uncertain:false });
   }
   mrRenderReview(issues);
 }
@@ -3388,7 +3403,7 @@ function mrBuildReview(categorized, wrapCost) {
 function mrRenderReview(issues) {
   var totals = {};
   MR_CATEGORIES.forEach(function(c) { totals[c] = 0; });
-  totals['Beam & Post Wrap'] = 0;
+  totals['Beam/Post/Garage Wrap'] = 0;
   mrLineItems.forEach(function(item) {
     var line = (item.amount||0) + (item.taxShare||0) + (item.shippingShare||0);
     totals[item.category] = (totals[item.category]||0) + line;
@@ -3420,7 +3435,7 @@ function mrRenderReview(issues) {
   var tableHtml = '<div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);overflow:auto;margin-bottom:12px">'
     + '<table style="width:100%;border-collapse:collapse;font-size:13px">'
     + '<thead><tr style="background:#f5f7ff">'
-    + ['Inv #','Vendor','Description','Amount ($)','Category','Tax Share','Ship Share',''].map(function(h){
+    + ['Inv #','Vendor','Description','Product','Amount ($)','Category','Tax Share','Ship Share',''].map(function(h){
         return '<th style="padding:10px 8px;text-align:left;font-weight:600;color:#555;white-space:nowrap;font-size:12px">'+h+'</th>';
       }).join('')
     + '</tr></thead>'
@@ -3438,22 +3453,27 @@ function mrRenderReview(issues) {
 }
 
 function mrRowHtml(item, idx, allCats) {
-  var q = "'";
   var bg = item.uncertain ? 'background:#fff8e1;' : '';
-  var cats = allCats || MR_CATEGORIES.concat(['Beam & Post Wrap']);
+  var cats = allCats || MR_CATEGORIES.concat(['Beam/Post/Garage Wrap']);
+  var prods = (item.category && MR_PRODUCTS[item.category]) ? MR_PRODUCTS[item.category].slice() : [];
+  if (!prods.length) { Object.keys(MR_PRODUCTS).forEach(function(k){ MR_PRODUCTS[k].forEach(function(p){ if(prods.indexOf(p)<0) prods.push(p); }); }); }
+  var hasSugg = item.suggestedProduct && !item.product;
+  var productVal = item.product || '';
+  var productPh = item.suggestedProduct ? ('AI: ' + item.suggestedProduct) : 'Pick or type…';
   return '<tr style="border-top:1px solid #f0f0f0;' + bg + '">'
     + '<td style="padding:8px"><input value="' + (item.invoiceNum||'').replace(/"/g,'') + '" onchange="mrItem(' + idx + ',\'invoiceNum\',this.value)" style="width:100px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 4px"></td>'
     + '<td style="padding:8px"><input value="' + (item.vendor||'').replace(/"/g,'') + '" onchange="mrItem(' + idx + ',\'vendor\',this.value)" style="width:120px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 4px"></td>'
-    + '<td style="padding:8px"><input value="' + (item.description||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;') + '" onchange="mrItem(' + idx + ',\'description\',this.value)" style="width:280px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 4px"></td>'
+    + '<td style="padding:8px"><input value="' + (item.description||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;') + '" onchange="mrItem(' + idx + ',\'description\',this.value)" style="width:200px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 4px"></td>'
+    + '<td style="padding:8px"><input list="mr-prod-' + idx + '" value="' + productVal.replace(/"/g,'&quot;') + '" placeholder="' + productPh.replace(/"/g,'&quot;') + '" oninput="mrItem(' + idx + ',\'product\',this.value)" style="width:155px;font-size:12px;border:1.5px solid ' + (hasSugg ? '#f90' : '#ddd') + ';border-radius:4px;padding:3px 4px;background:' + (hasSugg ? '#fffbf0' : '#fff') + '"><datalist id="mr-prod-' + idx + '">' + prods.map(function(p){ return '<option value="' + p.replace(/"/g,'&quot;') + '">'; }).join('') + '</datalist></td>'
     + '<td style="padding:8px"><input type="number" step="0.01" value="' + (+(item.amount)||0).toFixed(2) + '" onchange="mrItem(' + idx + ',\'amount\',parseFloat(this.value)||0);mrRefreshSummary()" style="width:90px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 4px"></td>'
-    + '<td style="padding:8px"><select onchange="if(this.value===\'__other__\'){mrStartCustomCat(this,'+idx+')}else{mrItem('+idx+',\'category\',this.value);mrRefreshSummary()}" style="font-size:12px;border:1px solid #ddd;border-radius:4px;padding:4px 6px">'
+    + '<td style="padding:8px"><select onchange="if(this.value===\'__other__\'){mrStartCustomCat(this,'+idx+')}else{mrItem('+idx+',\'category\',this.value);mrRefreshProductList('+idx+');mrRefreshSummary()}" style="font-size:12px;border:1px solid #ddd;border-radius:4px;padding:4px 6px">'
     + '<option value=""' + (!item.category ? ' selected' : '') + '>-- Select Category --</option>'
     + cats.map(function(c){ return '<option value="'+c+'"'+(c===item.category?' selected':'')+'>'+c+'</option>'; }).join('')
     + '<option value="__other__">+ Other…</option>'
     + '</select></td>'
     + '<td style="padding:5px 4px;color:#888">$' + fmtMoney(item.taxShare||0) + '</td>'
     + '<td style="padding:5px 4px;color:#888">$' + fmtMoney(item.shippingShare||0) + '</td>'
-    + '<td style="padding:8px"><button onclick="mrDeleteRow(' + idx + ')" style="background:none;border:none;color:#c33;cursor:pointer;font-size:15px;line-height:1;padding:0 2px">&times;</button></td>'
+    + '<td style="padding:4px"><button onclick="mrDeleteRow(' + idx + ')" style="background:none;border:none;color:#c33;cursor:pointer;font-size:16px;padding:0 4px">&times;</button></td>'
     + '</tr>';
 }
 
@@ -3471,7 +3491,7 @@ function mrAddRow() {
     category:'Siding Lap', taxShare:0, shippingShare:0, uncertain:false });
   var tbody = document.getElementById('mr-tbody');
   if (tbody) {
-    var allCats = MR_CATEGORIES.concat(['Beam & Post Wrap']);
+    var allCats = MR_CATEGORIES.concat(['Beam/Post/Garage Wrap']);
     tbody.innerHTML = mrLineItems.map(function(item,idx){ return mrRowHtml(item, idx, allCats); }).join('');
   }
   mrRefreshSummary();
@@ -3480,7 +3500,7 @@ function mrAddRow() {
 function mrRefreshSummary() {
   var totals = {};
   MR_CATEGORIES.forEach(function(c){totals[c]=0;});
-  totals['Beam & Post Wrap'] = 0;
+  totals['Beam/Post/Garage Wrap'] = 0;
   totals['Uncategorized'] = 0;
   mrLineItems.forEach(function(item) {
     var line = (item.amount||0) + (item.taxShare||0) + (item.shippingShare||0);
@@ -3505,6 +3525,15 @@ function mrClearCategories() {
   mrRefreshSummary();
 }
 
+function mrRefreshProductList(idx) {
+  var dl = document.getElementById('mr-prod-' + idx);
+  if (!dl) return;
+  var item = mrLineItems[idx];
+  var prods = (item && item.category && MR_PRODUCTS[item.category]) ? MR_PRODUCTS[item.category] : [];
+  if (!prods.length) { Object.keys(MR_PRODUCTS).forEach(function(k){ MR_PRODUCTS[k].forEach(function(p){ if(prods.indexOf(p)<0) prods.push(p); }); }); }
+  dl.innerHTML = prods.map(function(p){ return '<option value="' + p.replace(/"/g,'&quot;') + '">'; }).join('');
+}
+
 function mrSuggestCategories() {
   var btn = document.getElementById('mr-suggest-btn');
   if (btn) { btn.textContent = '⏳ Suggesting…'; btn.disabled = true; }
@@ -3518,13 +3547,15 @@ function mrSuggestCategories() {
       r.suggestions.forEach(function(s) {
         if (mrLineItems[s.idx] !== undefined) {
           mrLineItems[s.idx].category = s.category;
+          if (s.suggestedProduct) mrLineItems[s.idx].suggestedProduct = s.suggestedProduct;
         }
       });
       var allCats = validCats;
       var tbody = document.getElementById('mr-tbody');
       if (tbody) tbody.innerHTML = mrLineItems.map(function(item,i){ return mrRowHtml(item, i, allCats); }).join('');
       mrRefreshSummary();
-      showToast('Categories suggested — review and adjust as needed');
+      var nProds = r.suggestions.filter(function(s){ return s.suggestedProduct; }).length;
+      showToast('Categories suggested' + (nProds ? ' + ' + nProds + ' product names' : '') + ' — review and adjust');
     }
     if (btn) { btn.textContent = '✨ AI Suggest Categories'; btn.disabled = false; }
   }, function() {
