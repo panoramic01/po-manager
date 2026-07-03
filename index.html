@@ -3249,16 +3249,22 @@ function mrProcessInvoices() {
           return;
         }
         if (failed) showToast(failed + ' invoice(s) failed to extract — add manually');
+        function showReview() {
+          try {
+            mrBuildReview(allCategorized, wrapCost);
+            mrShowStep('review');
+          } catch(err) {
+            console.error('Review build error:', err);
+            showToast('Error building review: ' + err.message);
+            mrShowStep('setup');
+          }
+        }
         if (mrEstimateFile) {
           var st2 = document.getElementById('mr-status');
           if (st2) st2.textContent = 'Reading estimate spreadsheet…';
-          mrProcessEstimate(function() {
-            mrBuildReview(allCategorized, wrapCost);
-            mrShowStep('review');
-          });
+          mrProcessEstimate(showReview);
         } else {
-          mrBuildReview(allCategorized, wrapCost);
-          mrShowStep('review');
+          showReview();
         }
         return;
       }
@@ -3727,22 +3733,28 @@ function mrProcessEstimate(callback) {
   function doProcess(XLSX) {
     var reader = new FileReader();
     reader.onload = function(e) {
-      var wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
-      var ws = wb.Sheets[wb.SheetNames[0]];
-      var rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-      var dataRows = rows.filter(function(r){ return r.some(function(c){ return String(c).trim(); }); });
-      var st = document.getElementById('mr-status');
-      if (st) st.textContent = 'Categorizing estimate with AI…';
-      gasCall('categorizeEstimate', { rows: dataRows.slice(0, 80).map(function(r){ return r.map(String); }) },
-        function(r) {
-          if (r && r.estimated) mrEstimateTotals = r.estimated;
-          callback();
-        },
-        function() {
-          showToast('Estimate categorization failed — comparison unavailable');
-          callback();
-        }
-      );
+      try {
+        var wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+        var ws = wb.Sheets[wb.SheetNames[0]];
+        var rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+        var dataRows = rows.filter(function(r){ return r.some(function(c){ return String(c).trim(); }); });
+        var st = document.getElementById('mr-status');
+        if (st) st.textContent = 'Categorizing estimate with AI…';
+        gasCall('categorizeEstimate', { rows: dataRows.slice(0, 80).map(function(r){ return r.map(String); }) },
+          function(r) {
+            if (r && r.estimated) mrEstimateTotals = r.estimated;
+            callback();
+          },
+          function() {
+            showToast('Estimate categorization failed — comparison unavailable');
+            callback();
+          }
+        );
+      } catch(e) {
+        console.error('Estimate parse error:', e);
+        showToast('Could not read estimate file — skipping comparison');
+        callback();
+      }
     };
     reader.readAsArrayBuffer(mrEstimateFile);
   }
