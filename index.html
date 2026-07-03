@@ -3957,19 +3957,19 @@ function mrEstRowHtml(item, idx) {
     wasteColor = wNum > 10 ? 'color:#c33;font-weight:600' : wNum < 0 ? 'color:#2a7;font-weight:600' : 'color:#555';
   }
   return '<tr style="border-top:1px solid #f0f0f0">'
-    + '<td style="padding:6px 4px"><input value="' + (item.description||'').replace(/"/g,'&quot;') + '" onchange="mrEstItem(' + idx + ',"description",this.value)" style="width:180px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px"></td>'
-    + '<td style="padding:6px 4px"><select onchange="mrEstItem(' + idx + ',"category",this.value)" style="font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px">'
+    + '<td style="padding:6px 4px"><input value="' + (item.description||'').replace(/"/g,'&quot;') + '" onchange="mrEstItem(' + idx + ',\'description\',this.value)" style="width:180px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px"></td>'
+    + '<td style="padding:6px 4px"><select onchange="mrEstItem(' + idx + ',\'category\',this.value)" style="font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px">'
     + '<option value="">--</option>'
     + allCats.map(function(c){ return '<option value="'+c+'"'+(c===item.category?' selected':'')+'>'+c+'</option>'; }).join('')
     + '</select></td>'
-    + '<td style="padding:6px 4px"><input value="' + (item.job||'').replace(/"/g,'&quot;') + '" onchange="mrEstItem(' + idx + ',"job",this.value)" style="width:120px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px"></td>'
-    + '<td style="padding:6px 4px"><select onchange="mrEstItem(' + idx + ',"tier",this.value)" style="font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px">'
+    + '<td style="padding:6px 4px"><input value="' + (item.job||'').replace(/"/g,'&quot;') + '" onchange="mrEstItem(' + idx + ',\'job\',this.value)" style="width:120px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px"></td>'
+    + '<td style="padding:6px 4px"><select onchange="mrEstItem(' + idx + ',\'tier\',this.value)" style="font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px">'
     + ['','1','2','3'].map(function(v){ return '<option value="'+v+'"'+(v===String(item.tier)?' selected':'')+'>'+( v ? 'Tier '+v : '--')+'</option>'; }).join('')
     + '</select></td>'
-    + '<td style="padding:6px 4px"><input type="number" step="0.01" value="' + (item.ogQty||0) + '" onchange="mrEstItem(' + idx + ',"ogQty",parseFloat(this.value)||0);mrRefreshEstRow(' + idx + ')" style="width:75px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px;text-align:right"></td>'
-    + '<td style="padding:6px 4px"><input type="number" step="0.1" value="' + (item.estWastePct||0) + '" onchange="mrEstItem(' + idx + ',"estWastePct",parseFloat(this.value)||0)" style="width:65px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px;text-align:right"></td>'
-    + '<td style="padding:6px 4px"><input value="' + (item.unit||'') + '" onchange="mrEstItem(' + idx + ',"unit",this.value)" style="width:55px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px"></td>'
-    + '<td style="padding:6px 4px"><input type="number" step="0.01" value="' + (item.actualQty||0) + '" onchange="mrEstItem(' + idx + ',"actualQty",parseFloat(this.value)||0);mrRefreshEstRow(' + idx + ')" style="width:80px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px;text-align:right"></td>'
+    + '<td style="padding:6px 4px"><input type="number" step="0.01" value="' + (item.ogQty||0) + '" oninput="mrEstItem(' + idx + ',\'ogQty\',parseFloat(this.value)||0);mrRefreshEstRow(' + idx + ')" style="width:75px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px;text-align:right"></td>'
+    + '<td style="padding:6px 4px"><input type="number" step="0.1" value="' + (item.estWastePct||0) + '" onchange="mrEstItem(' + idx + ',\'estWastePct\',parseFloat(this.value)||0)" style="width:65px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px;text-align:right"></td>'
+    + '<td style="padding:6px 4px"><input value="' + (item.unit||'') + '" onchange="mrEstItem(' + idx + ',\'unit\',this.value)" style="width:55px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px"></td>'
+    + '<td style="padding:6px 4px"><input type="number" step="0.01" value="' + (item.actualQty||0) + '" oninput="mrEstItem(' + idx + ',\'actualQty\',parseFloat(this.value)||0);mrRefreshEstRow(' + idx + ')" style="width:80px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px;text-align:right"></td>'
     + '<td id="mr-est-waste-' + idx + '" style="padding:6px 8px;font-size:12px;' + wasteColor + ';white-space:nowrap">' + (waste || '—') + '</td>'
     + '<td style="padding:6px 4px"><button onclick="mrDeleteEstRow(' + idx + ')" style="background:none;border:none;color:#c33;cursor:pointer;font-size:15px;padding:0 2px">&times;</button></td>'
     + '</tr>';
@@ -4009,6 +4009,8 @@ function mrDeleteEstRow(idx) {
 
 function mrSaveEstHistory() {
   if (!mrEstItems.length) { showToast('No items to save'); return; }
+  var saveBtn = document.querySelector('#mr-step-estimate button:last-of-type');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; saveBtn.style.background = '#666'; }
   var today = new Date().toLocaleDateString('en-US');
   var rows = mrEstItems.map(function(it) {
     var og = parseFloat(it.ogQty) || 0;
@@ -4029,8 +4031,17 @@ function mrSaveEstHistory() {
     };
   });
   gasCall('saveMaterialHistory', { rows: rows }, function(r) {
-    showToast(r && r.saved ? 'Saved ' + r.saved + ' row(s) to Material Report History' : 'Saved!');
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = '✓ Saved ' + (r && r.saved ? r.saved : rows.length) + ' rows to History';
+      saveBtn.style.background = '#2a7a3b';
+      setTimeout(function() {
+        saveBtn.textContent = 'Save to History';
+        saveBtn.style.background = '#1F3971';
+      }, 3000);
+    }
   }, function() {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save to History'; saveBtn.style.background = '#1F3971'; }
     showToast('Failed to save — check GAS logs');
   });
 }
