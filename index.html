@@ -3810,12 +3810,17 @@ function mrShowHistoryPreview() {
       }).join('')
     + '</tbody></table>'
     + '<div style="display:flex;gap:8px;margin-top:16px">'
-    + '<button onclick="document.getElementById('mr-history-overlay').remove()" '
+    + '<button onclick="mrCloseHistoryOverlay()" '
     + 'style="flex:1;padding:10px;border:1px solid #ddd;border-radius:8px;background:#fff;color:#555;font-size:14px;cursor:pointer">Cancel</button>'
     + '<button onclick="mrConfirmSaveHistory()" '
     + 'style="flex:1;padding:10px;border:none;border-radius:8px;background:#1F3971;color:#fff;font-size:14px;font-weight:600;cursor:pointer">Confirm & Save</button>'
     + '</div></div>';
   document.body.appendChild(overlay);
+}
+
+function mrCloseHistoryOverlay() {
+  var ov = document.getElementById('mr-history-overlay');
+  if (ov) ov.remove();
 }
 
 function mrConfirmSaveHistory() {
