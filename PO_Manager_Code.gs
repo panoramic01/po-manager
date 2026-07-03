@@ -934,16 +934,28 @@ function saveMaterialHistory(payload) {
     var sheet = ss.getSheetByName('Material Report History');
     if (!sheet) return { error: 'Sheet "Material Report History" not found in this spreadsheet' };
 
-    var HEADERS = ['Date','Job','Tier','Contractor','Category','Description','OG Qty','Est. Waste%','Unit','Invoiced Qty','Return Qty','Actual Qty','Actual Waste%'];
+    var HEADERS = ['Date','Job','Tier','Contractor','Category','Description','OG Qty','Est. Waste%','Unit','Product','Invoiced Qty','Return Qty','Actual Qty','Actual Waste%'];
     if (sheet.getLastRow() === 0) {
       sheet.appendRow(HEADERS);
       sheet.getRange(1,1,1,HEADERS.length).setFontWeight('bold').setBackground('#1F3971').setFontColor('#ffffff');
+    } else {
+      // Add Product column if missing from existing sheet
+      var existingHdrs = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      if (existingHdrs.indexOf('Product') === -1) {
+        var unitCol = existingHdrs.indexOf('Unit') + 1; // 1-indexed
+        if (unitCol > 0) {
+          sheet.insertColumnAfter(unitCol);
+          var prodCell = sheet.getRange(1, unitCol + 1);
+          prodCell.setValue('Product').setFontWeight('bold').setBackground('#1F3971').setFontColor('#ffffff');
+        }
+      }
     }
 
     rows.forEach(function(r) {
       sheet.appendRow([
         r.date, r.job, r.tier || '', r.contractor, r.category, r.description || '',
         r.ogQty || '', r.estWastePct || '', r.unit || '',
+        r.product || '',
         r.invoicedQty !== undefined ? r.invoicedQty : '',
         r.returnQty   !== undefined ? r.returnQty   : '',
         r.actualQty   !== undefined ? r.actualQty   : '',

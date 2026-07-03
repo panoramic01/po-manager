@@ -912,6 +912,7 @@
               </table>
             </div>
             <button onclick="mrAddEstRow()" style="background:#eef2ff;color:#1F3971;border:none;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:12px">+ Add Row</button>
+            <button id="mr-est-suggest-btn" onclick="mrSuggestEstProducts()" style="background:#f3e8ff;color:#6b21a8;border:1.5px solid #c084fc;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:12px;margin-left:8px">✨ AI Suggest Products</button>
             <button onclick="mrSaveEstHistory()" style="background:#1F3971;color:#fff;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:600;cursor:pointer;width:100%">Save to History</button>
           </div>
         </div>
@@ -3556,6 +3557,35 @@ function mrSuggestCategories() {
   }, function() {
     showToast('AI suggestion failed — check API key in GAS');
     if (btn) { btn.textContent = '✨ AI Suggest Categories'; btn.disabled = false; }
+  });
+}
+
+function mrSuggestEstProducts() {
+  var btn = document.getElementById('mr-est-suggest-btn');
+  if (btn) { btn.textContent = '⏳ Suggesting…'; btn.disabled = true; }
+  var items = mrEstItems.map(function(item, idx) {
+    return { idx: idx, description: item.description, category: item.category, vendor: '' };
+  });
+  if (!items.length) { showToast('No items to suggest for'); if (btn) { btn.textContent = '✨ AI Suggest Products'; btn.disabled = false; } return; }
+  gasCall('suggestCategories', { items: items }, function(r) {
+    var nSuggested = 0;
+    if (r && r.suggestions) {
+      r.suggestions.forEach(function(s) {
+        if (s.suggestedProduct && mrEstItems[s.idx] !== undefined) {
+          mrEstItems[s.idx].product = s.suggestedProduct;
+          var inp = document.querySelector('#mr-est2-tbody tr:nth-child(' + (s.idx + 1) + ') input[list]');
+          if (inp) inp.value = s.suggestedProduct;
+          nSuggested++;
+        }
+      });
+      showToast(nSuggested ? '✨ Suggested ' + nSuggested + ' product' + (nSuggested>1?'s':'') + ' — review and adjust' : 'No product suggestions returned');
+    } else if (r && r.error) {
+      showToast('AI error: ' + r.error);
+    }
+    if (btn) { btn.textContent = '✨ AI Suggest Products'; btn.disabled = false; }
+  }, function() {
+    showToast('AI suggestion failed — check API key in GAS');
+    if (btn) { btn.textContent = '✨ AI Suggest Products'; btn.disabled = false; }
   });
 }
 
