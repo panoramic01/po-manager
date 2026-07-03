@@ -900,6 +900,7 @@
                     <th style="padding:10px 8px;text-align:right;font-size:12px;font-weight:600;color:#555;white-space:nowrap">OG Qty</th>
                     <th style="padding:10px 8px;text-align:right;font-size:12px;font-weight:600;color:#555;white-space:nowrap">Est. Waste%</th>
                     <th style="padding:10px 8px;text-align:left;font-size:12px;font-weight:600;color:#555;white-space:nowrap">Unit</th>
+                    <th style="padding:10px 8px;text-align:left;font-size:12px;font-weight:600;color:#9b59b6;white-space:nowrap">Product</th>
                     <th style="padding:10px 8px;text-align:right;font-size:12px;font-weight:600;color:#555;white-space:nowrap">Invoiced Qty</th>
                     <th style="padding:10px 8px;text-align:right;font-size:12px;font-weight:600;color:#f90;white-space:nowrap">Return Qty</th>
                     <th style="padding:10px 8px;text-align:right;font-size:12px;font-weight:600;color:#1F3971;white-space:nowrap">Actual Qty</th>
@@ -3435,7 +3436,7 @@ function mrRenderReview(issues) {
   var tableHtml = '<div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);overflow:auto;margin-bottom:12px">'
     + '<table style="width:100%;border-collapse:collapse;font-size:13px">'
     + '<thead><tr style="background:#f5f7ff">'
-    + ['Inv #','Vendor','Description','Product','Amount ($)','Category','Tax Share','Ship Share',''].map(function(h){
+    + ['Inv #','Vendor','Description','Amount ($)','Category','Tax Share','Ship Share',''].map(function(h){
         return '<th style="padding:10px 8px;text-align:left;font-weight:600;color:#555;white-space:nowrap;font-size:12px">'+h+'</th>';
       }).join('')
     + '</tr></thead>'
@@ -3455,18 +3456,12 @@ function mrRenderReview(issues) {
 function mrRowHtml(item, idx, allCats) {
   var bg = item.uncertain ? 'background:#fff8e1;' : '';
   var cats = allCats || MR_CATEGORIES.concat(['Beam/Post/Garage Wrap']);
-  var prods = (item.category && MR_PRODUCTS[item.category]) ? MR_PRODUCTS[item.category].slice() : [];
-  if (!prods.length) { Object.keys(MR_PRODUCTS).forEach(function(k){ MR_PRODUCTS[k].forEach(function(p){ if(prods.indexOf(p)<0) prods.push(p); }); }); }
-  var hasSugg = item.suggestedProduct && !item.product;
-  var productVal = item.product || '';
-  var productPh = item.suggestedProduct ? ('AI: ' + item.suggestedProduct) : 'Pick or type…';
   return '<tr style="border-top:1px solid #f0f0f0;' + bg + '">'
     + '<td style="padding:8px"><input value="' + (item.invoiceNum||'').replace(/"/g,'') + '" onchange="mrItem(' + idx + ',\'invoiceNum\',this.value)" style="width:100px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 4px"></td>'
     + '<td style="padding:8px"><input value="' + (item.vendor||'').replace(/"/g,'') + '" onchange="mrItem(' + idx + ',\'vendor\',this.value)" style="width:120px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 4px"></td>'
-    + '<td style="padding:8px"><input value="' + (item.description||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;') + '" onchange="mrItem(' + idx + ',\'description\',this.value)" style="width:200px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 4px"></td>'
-    + '<td style="padding:8px"><input list="mr-prod-' + idx + '" value="' + productVal.replace(/"/g,'&quot;') + '" placeholder="' + productPh.replace(/"/g,'&quot;') + '" oninput="mrItem(' + idx + ',\'product\',this.value)" style="width:155px;font-size:12px;border:1.5px solid ' + (hasSugg ? '#f90' : '#ddd') + ';border-radius:4px;padding:3px 4px;background:' + (hasSugg ? '#fffbf0' : '#fff') + '"><datalist id="mr-prod-' + idx + '">' + prods.map(function(p){ return '<option value="' + p.replace(/"/g,'&quot;') + '">'; }).join('') + '</datalist></td>'
+    + '<td style="padding:8px"><input value="' + (item.description||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;') + '" onchange="mrItem(' + idx + ',\'description\',this.value)" style="width:280px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 4px"></td>'
     + '<td style="padding:8px"><input type="number" step="0.01" value="' + (+(item.amount)||0).toFixed(2) + '" onchange="mrItem(' + idx + ',\'amount\',parseFloat(this.value)||0);mrRefreshSummary()" style="width:90px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 4px"></td>'
-    + '<td style="padding:8px"><select onchange="if(this.value===\'__other__\'){mrStartCustomCat(this,'+idx+')}else{mrItem('+idx+',\'category\',this.value);mrRefreshProductList('+idx+');mrRefreshSummary()}" style="font-size:12px;border:1px solid #ddd;border-radius:4px;padding:4px 6px">'
+    + '<td style="padding:8px"><select onchange="if(this.value===\'__other__\'){mrStartCustomCat(this,'+idx+')}else{mrItem('+idx+',\'category\',this.value);mrRefreshSummary()}" style="font-size:12px;border:1px solid #ddd;border-radius:4px;padding:4px 6px">'
     + '<option value=""' + (!item.category ? ' selected' : '') + '>-- Select Category --</option>'
     + cats.map(function(c){ return '<option value="'+c+'"'+(c===item.category?' selected':'')+'>'+c+'</option>'; }).join('')
     + '<option value="__other__">+ Other…</option>'
@@ -3992,7 +3987,8 @@ function mrRunEstimateStep() {
           estWastePct:  it.estWastePct  || 0,
           unit:         it.unit         || '',
           invoicedQty:  it.actualQty    || 0,
-          returnQty:    0
+          returnQty:    0,
+          product:      ''
         };
       });
       mrRenderEstTable();
@@ -4054,6 +4050,15 @@ function mrRunEstimateStep() {
   }
 }
 
+function mrEstRefreshProductList(idx) {
+  var dl = document.getElementById('mr-eprod-' + idx);
+  if (!dl) return;
+  var item = mrEstItems[idx];
+  var prods = (item && item.category && MR_PRODUCTS[item.category]) ? MR_PRODUCTS[item.category].slice() : [];
+  if (!prods.length) { Object.keys(MR_PRODUCTS).forEach(function(k){ MR_PRODUCTS[k].forEach(function(p){ if(prods.indexOf(p)<0) prods.push(p); }); }); }
+  dl.innerHTML = prods.map(function(p){ return '<option value="' + p.replace(/"/g,'&quot;') + '">'; }).join('');
+}
+
 function mrEstActualWaste(item) {
   var og  = parseFloat(item.ogQty)       || 0;
   var inv = parseFloat(item.invoicedQty) || 0;
@@ -4076,9 +4081,12 @@ function mrEstRowHtml(item, idx) {
     wasteColor = wNum > 10 ? 'color:#c33;font-weight:600' : wNum < 0 ? 'color:#2a7;font-weight:600' : 'color:#555';
   }
   var actQtyStr = actQty ? actQty.toFixed(2).replace(/\.?0+$/, '') : '0';
+  var prods = (item.category && MR_PRODUCTS[item.category]) ? MR_PRODUCTS[item.category].slice() : [];
+  if (!prods.length) { Object.keys(MR_PRODUCTS).forEach(function(k){ MR_PRODUCTS[k].forEach(function(p){ if(prods.indexOf(p)<0) prods.push(p); }); }); }
+  var productVal = item.product || '';
   return '<tr style="border-top:1px solid #f0f0f0">'
-    + '<td style="padding:6px 4px"><input value="' + (item.description||'').replace(/"/g,'&quot;') + '" onchange="mrEstItem(' + idx + ',\'description\',this.value)" style="width:180px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px"></td>'
-    + '<td style="padding:6px 4px"><select onchange="mrEstItem(' + idx + ',\'category\',this.value)" style="font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px">'
+    + '<td style="padding:6px 4px"><input value="' + (item.description||'').replace(/"/g,'&quot;') + '" onchange="mrEstItem(' + idx + ',\'description\',this.value)" style="width:160px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px"></td>'
+    + '<td style="padding:6px 4px"><select onchange="mrEstItem(' + idx + ',\'category\',this.value);mrEstRefreshProductList(' + idx + ')" style="font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px">'
     + '<option value="">--</option>'
     + allCats.map(function(c){ return '<option value="'+c+'"'+(c===item.category?' selected':'')+'>'+c+'</option>'; }).join('')
     + '</select></td>'
@@ -4089,6 +4097,7 @@ function mrEstRowHtml(item, idx) {
     + '<td style="padding:6px 4px"><input type="number" step="0.01" value="' + (item.ogQty||0) + '" oninput="mrEstItem(' + idx + ',\'ogQty\',parseFloat(this.value)||0);mrRefreshEstRow(' + idx + ')" style="width:70px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px;text-align:right"></td>'
     + '<td style="padding:6px 4px"><input type="number" step="0.1" value="' + (item.estWastePct||0) + '" onchange="mrEstItem(' + idx + ',\'estWastePct\',parseFloat(this.value)||0)" style="width:55px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px;text-align:right"></td>'
     + '<td style="padding:6px 4px"><input value="' + (item.unit||'') + '" onchange="mrEstItem(' + idx + ',\'unit\',this.value)" style="width:45px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px"></td>'
+    + '<td style="padding:6px 4px"><input list="mr-eprod-' + idx + '" value="' + productVal.replace(/"/g,'&quot;') + '" placeholder="Pick product…" oninput="mrEstItem(' + idx + ',\'product\',this.value)" style="width:140px;font-size:12px;border:1.5px solid #c39;border-radius:4px;padding:3px 5px"><datalist id="mr-eprod-' + idx + '">' + prods.map(function(p){ return '<option value="' + p.replace(/"/g,'&quot;') + '">'; }).join('') + '</datalist></td>'
     + '<td style="padding:6px 8px;font-size:12px;color:#333;text-align:right;white-space:nowrap">' + (item.invoicedQty||0) + '</td>'
     + '<td style="padding:6px 4px"><input type="number" step="0.01" value="' + (item.returnQty||0) + '" oninput="mrEstItem(' + idx + ',\'returnQty\',parseFloat(this.value)||0);mrRefreshEstRow(' + idx + ')" style="width:70px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px;text-align:right;background:#fff8f0"></td>'
     + '<td id="mr-est-act-' + idx + '" style="padding:6px 8px;font-size:12px;font-weight:600;color:#1F3971;text-align:right;white-space:nowrap">' + actQtyStr + '</td>'
@@ -4150,6 +4159,7 @@ function mrSaveEstHistory() {
       ogQty: og,
       estWastePct: it.estWastePct || 0,
       unit: it.unit,
+      product: it.product || '',
       invoicedQty: parseFloat(it.invoicedQty) || 0,
       returnQty: parseFloat(it.returnQty) || 0,
       actualQty: act,
