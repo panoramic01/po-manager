@@ -3527,12 +3527,23 @@ function mrGenerateExcel() {
                 .reduce(function(s, it){ return s + (it[field]||0); }, 0);
             }
 
-            // 1. Calcs sheet: label + invoiced + tax + total in cols H-K starting at row 12
-            var summaryRows = MR_CATEGORIES_CUSTOM.map(function(cat) {
-              return [cat, catSum(cat,'amount'), catSum(cat,'taxShare'),
-                      catSum(cat,'amount') + catSum(cat,'taxShare') + catSum(cat,'shippingShare')];
+            // 1. Calcs sheet: write label in col H + =SUMIF(A:A,H<row>,F:F) in col I
+            //    Matches exactly how the built-in category rows work in the template
+            MR_CATEGORIES_CUSTOM.forEach(function(cat, idx) {
+              var rowIdx = 11 + idx;          // 0-based; row 12 = index 11
+              var rowNum = rowIdx + 1;        // 1-based for Excel formula refs
+              // Col H (index 7): category label
+              var hAddr = XLSX.utils.encode_cell({ r: rowIdx, c: 7 });
+              calcs[hAddr] = { t: 's', v: cat };
+              // Col I (index 8): SUMIF formula
+              var iAddr = XLSX.utils.encode_cell({ r: rowIdx, c: 8 });
+              calcs[iAddr] = { t: 'n', f: 'SUMIF(A:A,H' + rowNum + ',F:F)' };
+              // Expand the sheet range to include the new cells
+              var range = XLSX.utils.decode_range(calcs['!ref'] || 'A1');
+              if (rowIdx > range.e.r) range.e.r = rowIdx;
+              if (8 > range.e.c) range.e.c = 8;
+              calcs['!ref'] = XLSX.utils.encode_range(range);
             });
-            XLSX.utils.sheet_add_aoa(calcs, summaryRows, { origin: { r: 11, c: 7 } });
 
             // 2. Project Report: add custom category rows starting at row 17 (index 16)
             //    Col A = name (index 0), Col C = actual cost total (index 2)
