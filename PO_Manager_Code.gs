@@ -945,4 +945,14 @@ function saveMaterialHistory(payload) {
         r.date, r.job, r.tier || '', r.contractor, r.category, r.description || '',
         r.ogQty || '', r.estWastePct || '', r.unit || '',
         r.invoicedQty !== undefined ? r.invoicedQty : '',
-        r.returnQty   !== undefined ?
+        r.returnQty   !== undefined ? r.returnQty   : '',
+        r.actualQty   !== undefined ? r.actualQty   : '',
+        r.actualWastePct !== '' && r.actualWastePct !== undefined ? r.actualWastePct : ''
+      ]);
+    });
+
+    return { saved: rows.length };
+  } catch(e) {
+    return { error: e.toString() };
+  }
+}
