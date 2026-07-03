@@ -75,8 +75,8 @@ function doPost(e) {
     else if (action === 'getVendorSpend')      result = getVendorSpend(payload.startDate, payload.endDate);
     else if (action === 'categorizeInvoices')  result = categorizeInvoices(payload);
     else if (action === 'suggestCategories')   result = suggestCategories(payload);
-    else if (action === 'categorizeEstimate')  result = categorizeEstimate(payload);
-    else if (action === 'saveMaterialHistory') result = saveMaterialHistory(payload);
+    else if (action === 'processEstimateWithMatching') result = processEstimateWithMatching(payload);
+    else if (action === 'saveMaterialHistory')          result = saveMaterialHistory(payload);
     else                                        result = { error: 'Unknown action: ' + action };
 
     return ContentService
@@ -741,8 +741,10 @@ function categorizeInvoices(payload) {
     '  "lineItems": [',
     '    {',
     '      "description": "...",',
+    '      "qty": 0,',
+    '      "unit": "SqF",',
     '      "amount": 0.00,',
-    '      "category": "Metal",',
+    '      "category": "",',
     '      "taxShare": 0.00,',
     '      "shippingShare": 0.00,',
     '      "uncertain": false',
@@ -854,27 +856,36 @@ function suggestCategories(payload) {
   }
 }
 
-// ── Categorize estimate PO spreadsheet rows by material category ──
-function categorizeEstimate(payload) {
+// ── Process estimate PO + match to invoice line items ──
+function processEstimateWithMatching(payload) {
   try {
-    var rows = payload.rows || [];
+    var estimateRows = payload.estimateRows || [];
+    var invoiceItems = payload.invoiceItems || [];
     var apiKey = PropertiesService.getScriptProperties().getProperty('CLAUDE_API_KEY');
     var categories = ['Siding Lap','Siding B&B','Siding Flashing','Metal','Masonry','Vinyl','Vinyl Extras','Stucco','Angle Iron','Beam & Post Wrap'];
-    var prompt = 'You are analyzing rows from a construction estimate spreadsheet.\n'
-      + 'Find material line items (skip headers, totals, SqF rows, blank rows).\n'
-      + 'For each line item, assign it to one category: ' + categories.join(', ') + '.\n'
-      + 'Use the rightmost dollar column (Total Material Cost) as the cost.\n'
-      + 'Return ONLY valid JSON: {"estimated":{"CategoryName":totalCost,...}}\n'
-      + 'Sum costs if multiple rows share a category.\n\n'
-      + 'Rows (tab-separated):\n'
-      + rows.slice(0, 60).map(function(r){ return r.join('\t'); }).join('\n');
+
+    var invSummary = invoiceItems.slice(0, 60).map(function(it) {
+      return (it.description || '') + (it.qty ? ' | qty:' + it.qty : '') + (it.unit ? ' ' + it.unit : '') + (it.category ? ' [' + it.category + ']' : '');
+    }).join('\n');
+
+    var prompt = 'You are analyzing a construction estimate spreadsheet and matching it to actual invoice line items.\n\n'
+      + 'CATEGORIES: ' + categories.join(', ') + '\n\n'
+      + 'ESTIMATE ROWS (tab-separated):\n'
+      + estimateRows.slice(0, 70).map(function(r){ return r.join('\t'); }).join('\n')
+      + '\n\nINVOICE LINE ITEMS (for matching):\n' + (invSummary || '(none)')
+      + '\n\nFor each estimate material line item (skip headers/totals/blank/SqF summary rows):\n'
+      + '1. Extract: description, ogQty (OG Qty column), unit, estWastePct (Was Fac% column, as a number like 7 for 7%)\n'
+      + '2. Assign one category from the list above\n'
+      + '3. Find the best matching invoice line item(s) and sum their qty as actualQty (0 if no match)\n\n'
+      + 'Return ONLY valid JSON:\n'
+      + '{"items":[{"description":"...","category":"...","ogQty":0,"unit":"SqF","estWastePct":0,"actualQty":0}]}';
 
     var resp = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
       method: 'post',
       headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       payload: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1024,
+        max_tokens: 2048,
         messages: [{ role: 'user', content: prompt }]
       }),
       muteHttpExceptions: true
@@ -884,7 +895,7 @@ function categorizeEstimate(payload) {
     var text = (body.content[0].text || '').replace(/```json\s*/g,'').replace(/```/g,'').trim();
     var m = text.match(/\{[\s\S]*\}/);
     if (m) return JSON.parse(m[0]);
-    return { estimated: {} };
+    return { items: [] };
   } catch(e) {
     return { error: e.toString() };
   }
@@ -898,22 +909,18 @@ function saveMaterialHistory(payload) {
     var sheet = ss.getSheetByName('Material Report History');
     if (!sheet) return { error: 'Sheet "Material Report History" not found in this spreadsheet' };
 
-    // Write header if sheet is brand new
+    var HEADERS = ['Date','Job','Tier','Contractor','Category','Description','OG Qty','Est. Waste%','Unit','Actual Qty','Actual Waste%'];
     if (sheet.getLastRow() === 0) {
-      sheet.appendRow(['Date','Job','Contractor','Category','Actual Cost','Estimated Cost','Delta','SqF','Cost/SqF']);
-      sheet.getRange(1,1,1,9).setFontWeight('bold').setBackground('#1F3971').setFontColor('#ffffff');
+      sheet.appendRow(HEADERS);
+      sheet.getRange(1,1,1,HEADERS.length).setFontWeight('bold').setBackground('#1F3971').setFontColor('#ffffff');
     }
 
     rows.forEach(function(r) {
-      var delta = (r.estimated && r.estimated > 0) ? (r.actual - r.estimated) : '';
-      var costPerSqf = (r.sqf && r.sqf > 0) ? (r.actual / r.sqf) : '';
       sheet.appendRow([
-        r.date, r.job, r.contractor, r.category,
-        r.actual,
-        r.estimated || '',
-        delta,
-        r.sqf || '',
-        costPerSqf
+        r.date, r.job, r.tier || '', r.contractor, r.category, r.description || '',
+        r.ogQty || '', r.estWastePct || '', r.unit || '',
+        r.actualQty || '',
+        r.actualWastePct !== '' && r.actualWastePct !== undefined ? r.actualWastePct : ''
       ]);
     });
 

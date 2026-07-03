@@ -759,9 +759,18 @@
                 <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Contractor *</label>
                 <input id="mr-contractor" placeholder="e.g. Jensen Construction" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box">
               </div>
-              <div style="grid-column:1/-1">
+              <div>
                 <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Job Name *</label>
-                <input id="mr-job" placeholder="e.g. 4th & Main - Building C" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box">
+                <input id="mr-job" placeholder="e.g. 4th &amp; Main - Building C" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box">
+              </div>
+              <div>
+                <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Job Tier *</label>
+                <select id="mr-tier" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none;background:#fff;box-sizing:border-box">
+                  <option value="">-- Select --</option>
+                  <option value="1">Tier 1</option>
+                  <option value="2">Tier 2</option>
+                  <option value="3">Tier 3</option>
+                </select>
               </div>
               <div>
                 <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Start Date</label>
@@ -855,6 +864,46 @@
           <div id="mr-checks"></div>
           <div id="mr-items"></div>
           <div id="mr-generate"></div>
+        </div>
+
+        <!-- Step: estimate comparison -->
+        <div id="mr-step-estimate" style="display:none">
+          <div style="background:#1F3971;color:#fff;border-radius:12px;padding:16px 20px;margin-bottom:12px">
+            <p style="font-size:15px;font-weight:700;margin:0 0 2px">Step 2: Estimate Comparison</p>
+            <p style="font-size:12px;opacity:.75;margin:0">Upload your estimate PO to compare planned vs actual quantities</p>
+          </div>
+          <div style="background:#fff;border-radius:12px;padding:16px 20px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:12px">
+            <p style="font-size:13px;font-weight:700;color:#1F3971;margin:0 0 10px">Estimate PO Spreadsheet</p>
+            <div id="mr-est2-drop" onclick="document.getElementById('mr-est2-file').click()"
+              style="border:2px dashed #c0c8e8;border-radius:8px;padding:18px;text-align:center;cursor:pointer;transition:background .15s">
+              <p id="mr-est2-label" style="font-size:13px;color:#888;margin:0">Tap to select estimate spreadsheet (.xlsx)</p>
+            </div>
+            <input id="mr-est2-file" type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="mrOnEstFile2(this)">
+          </div>
+          <button onclick="mrRunEstimateStep()" style="background:#1F3971;color:#fff;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:600;cursor:pointer;width:100%;margin-bottom:12px">Process Estimate →</button>
+          <div id="mr-est2-table" style="display:none">
+            <div style="background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);overflow:auto;margin-bottom:12px">
+              <table style="width:100%;border-collapse:collapse;font-size:13px">
+                <thead>
+                  <tr style="background:#f5f7ff">
+                    <th style="padding:10px 8px;text-align:left;font-size:12px;font-weight:600;color:#555;white-space:nowrap">Description</th>
+                    <th style="padding:10px 8px;text-align:left;font-size:12px;font-weight:600;color:#555;white-space:nowrap">Category</th>
+                    <th style="padding:10px 8px;text-align:left;font-size:12px;font-weight:600;color:#555;white-space:nowrap">Job</th>
+                    <th style="padding:10px 8px;text-align:left;font-size:12px;font-weight:600;color:#555;white-space:nowrap">Tier</th>
+                    <th style="padding:10px 8px;text-align:right;font-size:12px;font-weight:600;color:#555;white-space:nowrap">OG Qty</th>
+                    <th style="padding:10px 8px;text-align:right;font-size:12px;font-weight:600;color:#555;white-space:nowrap">Est. Waste%</th>
+                    <th style="padding:10px 8px;text-align:left;font-size:12px;font-weight:600;color:#555;white-space:nowrap">Unit</th>
+                    <th style="padding:10px 8px;text-align:right;font-size:12px;font-weight:600;color:#555;white-space:nowrap">Actual Qty</th>
+                    <th style="padding:10px 8px;text-align:right;font-size:12px;font-weight:600;color:#555;white-space:nowrap">Actual Waste%</th>
+                    <th style="padding:10px 4px"></th>
+                  </tr>
+                </thead>
+                <tbody id="mr-est2-tbody"></tbody>
+              </table>
+            </div>
+            <button onclick="mrAddEstRow()" style="background:#eef2ff;color:#1F3971;border:none;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:12px">+ Add Row</button>
+            <button onclick="mrSaveEstHistory()" style="background:#1F3971;color:#fff;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:600;cursor:pointer;width:100%">Save to History</button>
+          </div>
         </div>
 
       </div>
@@ -3148,7 +3197,7 @@ function openMaterialReportPanel() {
 }
 
 function mrShowStep(step) {
-  ['setup','processing','review'].forEach(function(s) {
+  ['setup','processing','review','estimate'].forEach(function(s) {
     var el = document.getElementById('mr-step-' + s);
     if (el) el.style.display = s === step ? '' : 'none';
   });
@@ -3249,22 +3298,13 @@ function mrProcessInvoices() {
           return;
         }
         if (failed) showToast(failed + ' invoice(s) failed to extract — add manually');
-        function showReview() {
-          try {
-            mrBuildReview(allCategorized, wrapCost);
-            mrShowStep('review');
-          } catch(err) {
-            console.error('Review build error:', err);
-            showToast('Error building review: ' + err.message);
-            mrShowStep('setup');
-          }
-        }
-        if (mrEstimateFile) {
-          var st2 = document.getElementById('mr-status');
-          if (st2) st2.textContent = 'Reading estimate spreadsheet…';
-          mrProcessEstimate(showReview);
-        } else {
-          showReview();
+        try {
+          mrBuildReview(allCategorized, wrapCost);
+          mrShowStep('review');
+        } catch(err) {
+          console.error('Review build error:', err);
+          showToast('Error building review: ' + err.message);
+          mrShowStep('setup');
         }
         return;
       }
@@ -3380,42 +3420,10 @@ function mrRenderReview(issues) {
     + '</tbody></table></div>'
     + '<button onclick="mrAddRow()" style="background:#eef2ff;color:#1F3971;border:none;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:12px">+ Add Row</button>';
 
-  // ── Estimated vs Actual card (only shown if estimate was uploaded) ──
-  var estCompHtml = '';
-  if (mrEstimateTotals && Object.keys(mrEstimateTotals).length) {
-    var estCats = mrAllCats().filter(function(c){ return totals[c] || mrEstimateTotals[c]; });
-    estCompHtml = '<div style="background:#fff;border-radius:12px;padding:16px 20px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:12px">'
-      + '<p style="font-size:13px;font-weight:700;color:#1F3971;margin:0 0 12px">Actual vs Estimated</p>'
-      + '<table style="width:100%;border-collapse:collapse;font-size:13px">'
-      + '<thead><tr style="background:#f5f7ff">'
-      + '<th style="padding:8px;text-align:left;font-size:12px;color:#555">Category</th>'
-      + '<th style="padding:8px;text-align:right;font-size:12px;color:#555">Estimated</th>'
-      + '<th style="padding:8px;text-align:right;font-size:12px;color:#555">Actual</th>'
-      + '<th style="padding:8px;text-align:right;font-size:12px;color:#555">Delta</th>'
-      + '</tr></thead><tbody>'
-      + estCats.map(function(c) {
-          var est = mrEstimateTotals[c] || 0;
-          var act = totals[c] || 0;
-          var delta = act - est;
-          var col = delta > 50 ? '#c33' : delta < -50 ? '#2a7' : '#888';
-          return '<tr style="border-top:1px solid #f0f0f0">'
-            + '<td style="padding:8px 6px;font-size:12px">' + c + '</td>'
-            + '<td style="padding:8px 6px;text-align:right;font-size:12px">$' + fmtMoney(est) + '</td>'
-            + '<td style="padding:8px 6px;text-align:right;font-size:12px">$' + fmtMoney(act) + '</td>'
-            + '<td style="padding:8px 6px;text-align:right;font-size:12px;font-weight:600;color:' + col + '">'
-            + (delta >= 0 ? '+' : '') + '$' + fmtMoney(delta) + '</td>'
-            + '</tr>';
-        }).join('')
-      + '</tbody></table></div>';
-  }
-
-  var generateHtml = '<div style="display:flex;gap:8px;margin-bottom:8px">'
-    + '<button onclick="mrGenerateExcel()" style="background:#1F3971;color:#fff;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:600;cursor:pointer;flex:1">Generate Excel ↓</button>'
-    + '<button onclick="mrShowHistoryPreview()" style="background:#eef2ff;color:#1F3971;border:1.5px solid #c0c8e8;border-radius:10px;padding:14px;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap">Save to History</button>'
-    + '</div>';
+  var generateHtml = '<button onclick="mrGenerateExcel()" style="background:#1F3971;color:#fff;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:600;cursor:pointer;width:100%">Generate Excel ↓</button>';
 
   document.getElementById('mr-summary').innerHTML = summaryHtml;
-  document.getElementById('mr-checks').innerHTML = estCompHtml + checksHtml;
+  document.getElementById('mr-checks').innerHTML = checksHtml;
   document.getElementById('mr-items').innerHTML = tableHtml;
   document.getElementById('mr-generate').innerHTML = generateHtml;
 }
@@ -3706,6 +3714,11 @@ function mrGenerateExcel() {
 
         XLSX.writeFile(wb, jobName.trim() + ' Material Report.xlsx');
         showToast('Excel downloaded!');
+        // Show Next button
+        var genDiv = document.getElementById('mr-generate');
+        if (genDiv) {
+          genDiv.innerHTML += '<button onclick="mrGoToEstimate()" style="background:#eef2ff;color:#1F3971;border:1.5px solid #c0c8e8;border-radius:10px;padding:14px;font-size:15px;font-weight:600;cursor:pointer;width:100%;margin-top:8px">Next: Compare vs Estimate →</button>';
+        }
       })
       .catch(function(e){ showToast('Template error: ' + e); console.error(e); });
   }
@@ -3844,6 +3857,181 @@ function mrConfirmSaveHistory() {
     showToast(r && r.saved ? 'Saved ' + r.saved + ' row(s) to Material Report History' : 'Saved to history!');
   }, function() {
     showToast('Failed to save to history — check GAS logs');
+  });
+}
+
+// ── Estimate Comparison Step ──────────────────────────────────────────────
+var mrEstFile2 = null;
+var mrEstItems = []; // [{description, category, job, tier, ogQty, estWastePct, unit, actualQty}]
+
+function mrGoToEstimate() { mrShowStep('estimate'); }
+
+function mrOnEstFile2(input) {
+  var file = input.files[0];
+  if (!file) return;
+  mrEstFile2 = file;
+  document.getElementById('mr-est2-label').textContent = '✓ ' + file.name;
+  document.getElementById('mr-est2-drop').style.background = '#f0f4ff';
+}
+
+function mrRunEstimateStep() {
+  if (!mrEstFile2) { showToast('Upload an estimate spreadsheet first'); return; }
+  var btn = document.querySelector('#mr-step-estimate button');
+  if (btn) { btn.disabled = true; btn.textContent = 'Processing…'; }
+
+  var jobName    = (document.getElementById('mr-job')||{}).value   || '';
+  var tier       = (document.getElementById('mr-tier')||{}).value  || '';
+
+  function doProcess(XLSX) {
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        var wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+        var ws = wb.Sheets[wb.SheetNames[0]];
+        var rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+        var dataRows = rows.filter(function(r){ return r.some(function(c){ return String(c).trim(); }); });
+
+        // Build invoice items summary for matching
+        var invItems = mrLineItems.map(function(it) {
+          return { description: it.description, qty: it.qty || '', unit: it.unit || '', category: it.category };
+        });
+
+        gasCall('processEstimateWithMatching', {
+          estimateRows: dataRows.slice(0, 80).map(function(r){ return r.map(String); }),
+          invoiceItems: invItems
+        }, function(r) {
+          if (btn) { btn.disabled = false; btn.textContent = 'Process Estimate →'; }
+          if (r && r.items && r.items.length) {
+            mrEstItems = r.items.map(function(it) {
+              return {
+                description:  it.description  || '',
+                category:     it.category     || '',
+                job:          jobName,
+                tier:         tier,
+                ogQty:        it.ogQty        || 0,
+                estWastePct:  it.estWastePct  || 0,
+                unit:         it.unit         || '',
+                actualQty:    it.actualQty    || 0
+              };
+            });
+            mrRenderEstTable();
+            document.getElementById('mr-est2-table').style.display = '';
+          } else {
+            showToast((r && r.error) || 'Could not read estimate — check format');
+          }
+        }, function() {
+          if (btn) { btn.disabled = false; btn.textContent = 'Process Estimate →'; }
+          showToast('Network error processing estimate');
+        });
+      } catch(e) {
+        if (btn) { btn.disabled = false; btn.textContent = 'Process Estimate →'; }
+        showToast('Could not parse file: ' + e.message);
+      }
+    };
+    reader.readAsArrayBuffer(mrEstFile2);
+  }
+
+  if (window.XLSX) { doProcess(window.XLSX); }
+  else {
+    var s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload = function(){ doProcess(window.XLSX); };
+    s.onerror = function(){ showToast('SheetJS failed to load'); if(btn){btn.disabled=false;btn.textContent='Process Estimate →';} };
+    document.head.appendChild(s);
+  }
+}
+
+function mrEstActualWaste(item) {
+  var og = parseFloat(item.ogQty) || 0;
+  var act = parseFloat(item.actualQty) || 0;
+  if (!og) return '';
+  return ((act - og) / og * 100).toFixed(1) + '%';
+}
+
+function mrEstRowHtml(item, idx) {
+  var allCats = mrAllCats();
+  var waste = mrEstActualWaste(item);
+  var wasteColor = '';
+  if (waste) {
+    var wNum = parseFloat(waste);
+    wasteColor = wNum > 10 ? 'color:#c33;font-weight:600' : wNum < 0 ? 'color:#2a7;font-weight:600' : 'color:#555';
+  }
+  return '<tr style="border-top:1px solid #f0f0f0">'
+    + '<td style="padding:6px 4px"><input value="' + (item.description||'').replace(/"/g,'&quot;') + '" onchange="mrEstItem(' + idx + ',"description",this.value)" style="width:180px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px"></td>'
+    + '<td style="padding:6px 4px"><select onchange="mrEstItem(' + idx + ',"category",this.value)" style="font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px">'
+    + '<option value="">--</option>'
+    + allCats.map(function(c){ return '<option value="'+c+'"'+(c===item.category?' selected':'')+'>'+c+'</option>'; }).join('')
+    + '</select></td>'
+    + '<td style="padding:6px 4px"><input value="' + (item.job||'').replace(/"/g,'&quot;') + '" onchange="mrEstItem(' + idx + ',"job",this.value)" style="width:120px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px"></td>'
+    + '<td style="padding:6px 4px"><select onchange="mrEstItem(' + idx + ',"tier",this.value)" style="font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px">'
+    + ['','1','2','3'].map(function(v){ return '<option value="'+v+'"'+(v===String(item.tier)?' selected':'')+'>'+( v ? 'Tier '+v : '--')+'</option>'; }).join('')
+    + '</select></td>'
+    + '<td style="padding:6px 4px"><input type="number" step="0.01" value="' + (item.ogQty||0) + '" onchange="mrEstItem(' + idx + ',"ogQty",parseFloat(this.value)||0);mrRefreshEstRow(' + idx + ')" style="width:75px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px;text-align:right"></td>'
+    + '<td style="padding:6px 4px"><input type="number" step="0.1" value="' + (item.estWastePct||0) + '" onchange="mrEstItem(' + idx + ',"estWastePct",parseFloat(this.value)||0)" style="width:65px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px;text-align:right"></td>'
+    + '<td style="padding:6px 4px"><input value="' + (item.unit||'') + '" onchange="mrEstItem(' + idx + ',"unit",this.value)" style="width:55px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px"></td>'
+    + '<td style="padding:6px 4px"><input type="number" step="0.01" value="' + (item.actualQty||0) + '" onchange="mrEstItem(' + idx + ',"actualQty",parseFloat(this.value)||0);mrRefreshEstRow(' + idx + ')" style="width:80px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px;text-align:right"></td>'
+    + '<td id="mr-est-waste-' + idx + '" style="padding:6px 8px;font-size:12px;' + wasteColor + ';white-space:nowrap">' + (waste || '—') + '</td>'
+    + '<td style="padding:6px 4px"><button onclick="mrDeleteEstRow(' + idx + ')" style="background:none;border:none;color:#c33;cursor:pointer;font-size:15px;padding:0 2px">&times;</button></td>'
+    + '</tr>';
+}
+
+function mrRenderEstTable() {
+  var tbody = document.getElementById('mr-est2-tbody');
+  if (tbody) tbody.innerHTML = mrEstItems.map(function(it,i){ return mrEstRowHtml(it,i); }).join('');
+}
+
+function mrEstItem(idx, field, value) {
+  if (mrEstItems[idx]) mrEstItems[idx][field] = value;
+}
+
+function mrRefreshEstRow(idx) {
+  var cell = document.getElementById('mr-est-waste-' + idx);
+  if (!cell) return;
+  var item = mrEstItems[idx];
+  var waste = mrEstActualWaste(item);
+  var wNum = parseFloat(waste);
+  cell.textContent = waste || '—';
+  cell.style.color = waste ? (wNum > 10 ? '#c33' : wNum < 0 ? '#2a7' : '#555') : '#555';
+  cell.style.fontWeight = waste && Math.abs(wNum) > 10 ? '600' : '';
+}
+
+function mrAddEstRow() {
+  var jobName = (document.getElementById('mr-job')||{}).value || '';
+  var tier    = (document.getElementById('mr-tier')||{}).value || '';
+  mrEstItems.push({ description:'', category:'', job: jobName, tier: tier, ogQty:0, estWastePct:0, unit:'', actualQty:0 });
+  mrRenderEstTable();
+}
+
+function mrDeleteEstRow(idx) {
+  mrEstItems.splice(idx, 1);
+  mrRenderEstTable();
+}
+
+function mrSaveEstHistory() {
+  if (!mrEstItems.length) { showToast('No items to save'); return; }
+  var today = new Date().toLocaleDateString('en-US');
+  var rows = mrEstItems.map(function(it) {
+    var og = parseFloat(it.ogQty) || 0;
+    var act = parseFloat(it.actualQty) || 0;
+    var waste = og ? ((act - og) / og * 100) : '';
+    return {
+      date: today,
+      job: it.job,
+      tier: it.tier,
+      contractor: (document.getElementById('mr-contractor')||{}).value || '',
+      category: it.category,
+      description: it.description,
+      ogQty: og,
+      estWastePct: it.estWastePct || 0,
+      unit: it.unit,
+      actualQty: act,
+      actualWastePct: waste
+    };
+  });
+  gasCall('saveMaterialHistory', { rows: rows }, function(r) {
+    showToast(r && r.saved ? 'Saved ' + r.saved + ' row(s) to Material Report History' : 'Saved!');
+  }, function() {
+    showToast('Failed to save — check GAS logs');
   });
 }
 
