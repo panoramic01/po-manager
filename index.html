@@ -3044,6 +3044,8 @@ function mrEnsurePdfJs() {
   });
 }
 
+var mrEstimateFile = null;
+var mrEstimateTotals = {};
 var MR_CATEGORIES_BASE = ['Siding Lap','Siding B&B','Siding Flashing','Metal','Masonry','Vinyl','Vinyl Extras','Stucco','Angle Iron'];
 var MR_CATEGORIES_CUSTOM = [];  // user-added categories
 function mrAllCats() { return MR_CATEGORIES_BASE.concat(MR_CATEGORIES_CUSTOM).concat(['Beam & Post Wrap']); }
@@ -3374,7 +3376,7 @@ function mrRenderReview(issues) {
 
   // ── Estimated vs Actual card (only shown if estimate was uploaded) ──
   var estCompHtml = '';
-  if (Object.keys(mrEstimateTotals).length) {
+  if (mrEstimateTotals && Object.keys(mrEstimateTotals).length) {
     var estCats = mrAllCats().filter(function(c){ return totals[c] || mrEstimateTotals[c]; });
     estCompHtml = '<div style="background:#fff;border-radius:12px;padding:16px 20px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:12px">'
       + '<p style="font-size:13px;font-weight:700;color:#1F3971;margin:0 0 12px">Actual vs Estimated</p>'
@@ -3618,7 +3620,7 @@ function mrGenerateExcel() {
           if (sqfStucco)  writeSqF(15, sqfStucco);
 
           // Estimated cost (col F=5) + Delta formula (col G=6)
-          if (Object.keys(mrEstimateTotals).length) {
+          if (mrEstimateTotals && Object.keys(mrEstimateTotals).length) {
             var estCatMap = [
               { cat: 'Siding Lap',   rowIdx: 8  },
               { cat: 'Siding B&B',   rowIdx: 9  },
