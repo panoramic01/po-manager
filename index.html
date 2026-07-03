@@ -803,8 +803,12 @@
                 <input id="mr-sqf-masonry" type="number" step="1" placeholder="0" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box">
               </div>
               <div>
-                <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Vinyl SqF</label>
-                <input id="mr-sqf-vinyl" type="number" step="1" placeholder="0" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box">
+                <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Vinyl Lap SqF</label>
+                <input id="mr-sqf-vinyl-lap" type="number" step="1" placeholder="0" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box">
+              </div>
+              <div>
+                <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Vinyl B&amp;B SqF</label>
+                <input id="mr-sqf-vinyl-bb" type="number" step="1" placeholder="0" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box">
               </div>
               <div>
                 <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Stucco SqF</label>
@@ -875,10 +879,13 @@
           <div style="background:#fff;border-radius:12px;padding:16px 20px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:12px">
             <p style="font-size:13px;font-weight:700;color:#1F3971;margin:0 0 10px">Estimate PO Spreadsheet</p>
             <div id="mr-est2-drop" onclick="document.getElementById('mr-est2-file').click()"
+              ondragover="event.preventDefault();this.style.background='#e8eeff'"
+              ondragleave="this.style.background=''"
+              ondrop="event.preventDefault();this.style.background='';mrOnEstFileDrop(event)"
               style="border:2px dashed #c0c8e8;border-radius:8px;padding:18px;text-align:center;cursor:pointer;transition:background .15s">
-              <p id="mr-est2-label" style="font-size:13px;color:#888;margin:0">Tap to select estimate spreadsheet (.xlsx)</p>
+              <p id="mr-est2-label" style="font-size:13px;color:#888;margin:0">Tap or drop estimate file (.xlsx or .pdf)</p>
             </div>
-            <input id="mr-est2-file" type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="mrOnEstFile2(this)">
+            <input id="mr-est2-file" type="file" accept=".xlsx,.xls,.csv,.pdf" style="display:none" onchange="mrOnEstFile2(this)">
           </div>
           <button onclick="mrRunEstimateStep()" style="background:#1F3971;color:#fff;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:600;cursor:pointer;width:100%;margin-bottom:12px">Process Estimate →</button>
           <div id="mr-est2-table" style="display:none">
@@ -893,7 +900,9 @@
                     <th style="padding:10px 8px;text-align:right;font-size:12px;font-weight:600;color:#555;white-space:nowrap">OG Qty</th>
                     <th style="padding:10px 8px;text-align:right;font-size:12px;font-weight:600;color:#555;white-space:nowrap">Est. Waste%</th>
                     <th style="padding:10px 8px;text-align:left;font-size:12px;font-weight:600;color:#555;white-space:nowrap">Unit</th>
-                    <th style="padding:10px 8px;text-align:right;font-size:12px;font-weight:600;color:#555;white-space:nowrap">Actual Qty</th>
+                    <th style="padding:10px 8px;text-align:right;font-size:12px;font-weight:600;color:#555;white-space:nowrap">Invoiced Qty</th>
+                    <th style="padding:10px 8px;text-align:right;font-size:12px;font-weight:600;color:#f90;white-space:nowrap">Return Qty</th>
+                    <th style="padding:10px 8px;text-align:right;font-size:12px;font-weight:600;color:#1F3971;white-space:nowrap">Actual Qty</th>
                     <th style="padding:10px 8px;text-align:right;font-size:12px;font-weight:600;color:#555;white-space:nowrap">Actual Waste%</th>
                     <th style="padding:10px 4px"></th>
                   </tr>
@@ -3095,7 +3104,7 @@ function mrEnsurePdfJs() {
 
 var mrEstimateFile = null;
 var mrEstimateTotals = {};
-var MR_CATEGORIES_BASE = ['Siding Lap','Siding B&B','Siding Flashing','Metal','Masonry','Vinyl','Vinyl Extras','Stucco','Angle Iron'];
+var MR_CATEGORIES_BASE = ['Siding Lap','Siding B&B','Siding Flashing','Metal','Soffit & Fascia','Masonry','Vinyl','Vinyl Accessories','Stucco','Angle Iron'];
 var MR_CATEGORIES_CUSTOM = [];  // user-added categories
 function mrAllCats() { return MR_CATEGORIES_BASE.concat(MR_CATEGORIES_CUSTOM).concat(['Beam & Post Wrap']); }
 // Keep MR_CATEGORIES as alias for legacy references
@@ -3595,11 +3604,12 @@ function mrGenerateExcel() {
           if (endDate)    XLSX.utils.sheet_add_aoa(report, [[endDate]],    { origin:'B6' });
 
           // SqF values from setup form
-          var sqfLap     = parseFloat((document.getElementById('mr-sqf-lap')||{}).value)     || 0;
-          var sqfBB      = parseFloat((document.getElementById('mr-sqf-bb')||{}).value)      || 0;
-          var sqfMasonry = parseFloat((document.getElementById('mr-sqf-masonry')||{}).value) || 0;
-          var sqfVinyl   = parseFloat((document.getElementById('mr-sqf-vinyl')||{}).value)   || 0;
-          var sqfStucco  = parseFloat((document.getElementById('mr-sqf-stucco')||{}).value)  || 0;
+          var sqfLap      = parseFloat((document.getElementById('mr-sqf-lap')||{}).value)      || 0;
+          var sqfBB       = parseFloat((document.getElementById('mr-sqf-bb')||{}).value)       || 0;
+          var sqfMasonry  = parseFloat((document.getElementById('mr-sqf-masonry')||{}).value)  || 0;
+          var sqfVinylLap = parseFloat((document.getElementById('mr-sqf-vinyl-lap')||{}).value) || 0;
+          var sqfVinylBB  = parseFloat((document.getElementById('mr-sqf-vinyl-bb')||{}).value)  || 0;
+          var sqfStucco   = parseFloat((document.getElementById('mr-sqf-stucco')||{}).value)   || 0;
           var sqfTotal   = sqfLap + sqfBB;
 
           // Helper: write SqF + Cost/SqF formula to a Project Report row
@@ -3624,14 +3634,16 @@ function mrGenerateExcel() {
           // Row 11 (idx 10) = Siding Total
           // Row 12 (idx 11) = Metal  (no SqF)
           // Row 13 (idx 12) = Masonry
-          // Row 14 (idx 13) = Vinyl
+          // Row 14 (idx 13) = Vinyl (Lap)
+          // Row 15 (idx 14) = Vinyl Accessories (B&B)
           // Row 16 (idx 15) = Stucco
           if (sqfLap)     writeSqF(8,  sqfLap);
           if (sqfBB)      writeSqF(9,  sqfBB);
           if (sqfTotal)   writeSqF(10, sqfTotal);
-          if (sqfMasonry) writeSqF(12, sqfMasonry);
-          if (sqfVinyl)   writeSqF(13, sqfVinyl);
-          if (sqfStucco)  writeSqF(15, sqfStucco);
+          if (sqfMasonry)  writeSqF(12, sqfMasonry);
+          if (sqfVinylLap) writeSqF(13, sqfVinylLap);
+          if (sqfVinylBB)  writeSqF(14, sqfVinylBB);
+          if (sqfStucco)   writeSqF(15, sqfStucco);
 
           // Estimated cost (col F=5) + Delta formula (col G=6)
           if (mrEstimateTotals && Object.keys(mrEstimateTotals).length) {
@@ -3641,9 +3653,10 @@ function mrGenerateExcel() {
               { cat: 'Metal',        rowIdx: 11 },
               { cat: 'Masonry',      rowIdx: 12 },
               { cat: 'Vinyl',        rowIdx: 13 },
-              { cat: 'Vinyl Extras', rowIdx: 14 },
-              { cat: 'Stucco',       rowIdx: 15 },
-              { cat: 'Angle Iron',   rowIdx: 16 }
+              { cat: 'Vinyl Accessories', rowIdx: 14 },
+              { cat: 'Stucco',            rowIdx: 15 },
+              { cat: 'Soffit & Fascia',   rowIdx: 16 },
+              { cat: 'Angle Iron',        rowIdx: 17 }
             ];
             estCatMap.forEach(function(m) {
               var est = mrEstimateTotals[m.cat];
@@ -3792,8 +3805,9 @@ function mrShowHistoryPreview() {
   var sqfMap = {
     'Siding Lap': parseFloat((document.getElementById('mr-sqf-lap')||{}).value) || 0,
     'Siding B&B':  parseFloat((document.getElementById('mr-sqf-bb')||{}).value)  || 0,
-    'Masonry':     parseFloat((document.getElementById('mr-sqf-masonry')||{}).value) || 0,
-    'Vinyl':       parseFloat((document.getElementById('mr-sqf-vinyl')||{}).value)   || 0,
+    'Masonry':     parseFloat((document.getElementById('mr-sqf-masonry')||{}).value)  || 0,
+    'Vinyl':        parseFloat((document.getElementById('mr-sqf-vinyl-lap')||{}).value) || 0,
+    'Vinyl Accessories': parseFloat((document.getElementById('mr-sqf-vinyl-bb')||{}).value)  || 0,
     'Stucco':      parseFloat((document.getElementById('mr-sqf-stucco')||{}).value)  || 0
   };
   var contractor = (document.getElementById('mr-contractor')||{}).value || '';
@@ -3866,110 +3880,187 @@ var mrEstItems = []; // [{description, category, job, tier, ogQty, estWastePct, 
 
 function mrGoToEstimate() { mrShowStep('estimate'); }
 
+function mrExtractPdfText(file, callback) {
+  var ensureLib = function() {
+    return new Promise(function(resolve) {
+      if (window.pdfjsLib) return resolve();
+      var s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+      s.onload = function() {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+          'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        resolve();
+      };
+      document.head.appendChild(s);
+    });
+  };
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    ensureLib().then(function() {
+      pdfjsLib.getDocument({ data: new Uint8Array(e.target.result) }).promise.then(function(pdf) {
+        var pages = [], total = pdf.numPages, done = 0;
+        for (var p = 1; p <= total; p++) {
+          (function(pg) {
+            pdf.getPage(pg).then(function(page) {
+              page.getTextContent().then(function(tc) {
+                pages[pg-1] = tc.items.map(function(i){ return i.str; }).join(' ');
+                if (++done === total) callback(pages.join('\n'));
+              });
+            });
+          })(p);
+        }
+        if (total === 0) callback('');
+      }).catch(function(err) { callback(''); });
+    });
+  };
+  reader.onerror = function() { callback(''); };
+  reader.readAsArrayBuffer(file);
+}
+
 function mrOnEstFile2(input) {
   var file = input.files[0];
   if (!file) return;
+  mrSetEstFile2(file);
+}
+function mrOnEstFileDrop(e) {
+  var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (!file) return;
+  mrSetEstFile2(file);
+}
+function mrSetEstFile2(file) {
+  var ext = file.name.split('.').pop().toLowerCase();
+  if (!['xlsx','xls','csv','pdf'].includes(ext)) { showToast('Use .xlsx or .pdf'); return; }
   mrEstFile2 = file;
   document.getElementById('mr-est2-label').textContent = '✓ ' + file.name;
   document.getElementById('mr-est2-drop').style.background = '#f0f4ff';
 }
 
 function mrRunEstimateStep() {
-  if (!mrEstFile2) { showToast('Upload an estimate spreadsheet first'); return; }
+  if (!mrEstFile2) { showToast('Upload an estimate file first'); return; }
   var btn = document.querySelector('#mr-step-estimate button');
   if (btn) { btn.disabled = true; btn.textContent = 'Processing…'; }
 
-  var jobName    = (document.getElementById('mr-job')||{}).value   || '';
-  var tier       = (document.getElementById('mr-tier')||{}).value  || '';
+  var jobName = (document.getElementById('mr-job')||{}).value  || '';
+  var tier    = (document.getElementById('mr-tier')||{}).value || '';
 
-  function doProcess(XLSX) {
-    var reader = new FileReader();
-    reader.onload = function(e) {
-      try {
-        var wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
-        var ws = wb.Sheets[wb.SheetNames[0]];
-        var rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-        var dataRows = rows.filter(function(r){ return r.some(function(c){ return String(c).trim(); }); });
+  // Build invoice items for matching (same for both branches)
+  var invItems = mrLineItems.map(function(it) {
+    return { description: it.description, qty: it.qty || '', unit: it.unit || '', category: it.category };
+  });
 
-        // Build invoice items summary for matching
-        var invItems = mrLineItems.map(function(it) {
-          return { description: it.description, qty: it.qty || '', unit: it.unit || '', category: it.category };
-        });
-
-        gasCall('processEstimateWithMatching', {
-          estimateRows: dataRows.slice(0, 80).map(function(r){ return r.map(String); }),
-          invoiceItems: invItems
-        }, function(r) {
-          if (btn) { btn.disabled = false; btn.textContent = 'Process Estimate →'; }
-          if (r && r.items && r.items.length) {
-            mrEstItems = r.items.map(function(it) {
-              return {
-                description:  it.description  || '',
-                category:     it.category     || '',
-                job:          jobName,
-                tier:         tier,
-                ogQty:        it.ogQty        || 0,
-                estWastePct:  it.estWastePct  || 0,
-                unit:         it.unit         || '',
-                actualQty:    it.actualQty    || 0
-              };
-            });
-            mrRenderEstTable();
-            document.getElementById('mr-est2-table').style.display = '';
-          } else {
-            showToast((r && r.error) || 'Could not read estimate — check format');
-          }
-        }, function() {
-          if (btn) { btn.disabled = false; btn.textContent = 'Process Estimate →'; }
-          showToast('Network error processing estimate');
-        });
-      } catch(e) {
-        if (btn) { btn.disabled = false; btn.textContent = 'Process Estimate →'; }
-        showToast('Could not parse file: ' + e.message);
-      }
-    };
-    reader.readAsArrayBuffer(mrEstFile2);
+  function onGasResult(r) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Process Estimate →'; }
+    if (r && r.items && r.items.length) {
+      mrEstItems = r.items.map(function(it) {
+        return {
+          description:  it.description  || '',
+          category:     it.category     || '',
+          job:          jobName,
+          tier:         tier,
+          ogQty:        it.ogQty        || 0,
+          estWastePct:  it.estWastePct  || 0,
+          unit:         it.unit         || '',
+          invoicedQty:  it.actualQty    || 0,
+          returnQty:    0
+        };
+      });
+      mrRenderEstTable();
+      document.getElementById('mr-est2-table').style.display = '';
+    } else {
+      showToast((r && r.error) || 'Could not read estimate — check format');
+    }
   }
 
-  if (window.XLSX) { doProcess(window.XLSX); }
-  else {
-    var s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-    s.onload = function(){ doProcess(window.XLSX); };
-    s.onerror = function(){ showToast('SheetJS failed to load'); if(btn){btn.disabled=false;btn.textContent='Process Estimate →';} };
-    document.head.appendChild(s);
+  var ext = mrEstFile2.name.split('.').pop().toLowerCase();
+
+  if (ext === 'pdf') {
+    // ── PDF branch: extract text with pdf.js then send to GAS ──
+    mrExtractPdfText(mrEstFile2, function(text) {
+      if (!text || text.length < 20) {
+        if (btn) { btn.disabled = false; btn.textContent = 'Process Estimate →'; }
+        showToast('Could not extract text from PDF');
+        return;
+      }
+      gasCall('processEstimateWithMatching', {
+        estimateText: text.slice(0, 8000),
+        invoiceItems: invItems
+      }, onGasResult, function() {
+        if (btn) { btn.disabled = false; btn.textContent = 'Process Estimate →'; }
+        showToast('GAS error — check logs');
+      });
+    });
+  } else {
+    // ── XLSX branch: SheetJS ──
+    function doProcess(XLSX) {
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          var wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+          var ws = wb.Sheets[wb.SheetNames[0]];
+          var rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+          var dataRows = rows.filter(function(r){ return r.some(function(c){ return String(c).trim(); }); });
+          gasCall('processEstimateWithMatching', {
+            estimateRows: dataRows.slice(0, 80).map(function(r){ return r.map(String); }),
+            invoiceItems: invItems
+          }, onGasResult, function() {
+            if (btn) { btn.disabled = false; btn.textContent = 'Process Estimate →'; }
+            showToast('GAS error — check logs');
+          });
+        } catch(err) {
+          if (btn) { btn.disabled = false; btn.textContent = 'Process Estimate →'; }
+          showToast('Could not read spreadsheet: ' + err.message);
+        }
+      };
+      reader.readAsArrayBuffer(mrEstFile2);
+    }
+    if (window.XLSX) { doProcess(window.XLSX); }
+    else {
+      var s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+      s.onload = function(){ doProcess(window.XLSX); };
+      document.head.appendChild(s);
+    }
   }
 }
 
 function mrEstActualWaste(item) {
-  var og = parseFloat(item.ogQty) || 0;
-  var act = parseFloat(item.actualQty) || 0;
+  var og  = parseFloat(item.ogQty)       || 0;
+  var inv = parseFloat(item.invoicedQty) || 0;
+  var ret = parseFloat(item.returnQty)   || 0;
+  var act = inv - ret;
   if (!og) return '';
   return ((act - og) / og * 100).toFixed(1) + '%';
+}
+function mrEstActualQty(item) {
+  return (parseFloat(item.invoicedQty) || 0) - (parseFloat(item.returnQty) || 0);
 }
 
 function mrEstRowHtml(item, idx) {
   var allCats = mrAllCats();
   var waste = mrEstActualWaste(item);
+  var actQty = mrEstActualQty(item);
   var wasteColor = '';
   if (waste) {
     var wNum = parseFloat(waste);
     wasteColor = wNum > 10 ? 'color:#c33;font-weight:600' : wNum < 0 ? 'color:#2a7;font-weight:600' : 'color:#555';
   }
+  var actQtyStr = actQty ? actQty.toFixed(2).replace(/\.?0+$/, '') : '0';
   return '<tr style="border-top:1px solid #f0f0f0">'
     + '<td style="padding:6px 4px"><input value="' + (item.description||'').replace(/"/g,'&quot;') + '" onchange="mrEstItem(' + idx + ',\'description\',this.value)" style="width:180px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px"></td>'
     + '<td style="padding:6px 4px"><select onchange="mrEstItem(' + idx + ',\'category\',this.value)" style="font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px">'
     + '<option value="">--</option>'
     + allCats.map(function(c){ return '<option value="'+c+'"'+(c===item.category?' selected':'')+'>'+c+'</option>'; }).join('')
     + '</select></td>'
-    + '<td style="padding:6px 4px"><input value="' + (item.job||'').replace(/"/g,'&quot;') + '" onchange="mrEstItem(' + idx + ',\'job\',this.value)" style="width:120px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px"></td>'
+    + '<td style="padding:6px 4px"><input value="' + (item.job||'').replace(/"/g,'&quot;') + '" onchange="mrEstItem(' + idx + ',\'job\',this.value)" style="width:100px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px"></td>'
     + '<td style="padding:6px 4px"><select onchange="mrEstItem(' + idx + ',\'tier\',this.value)" style="font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px">'
     + ['','1','2','3'].map(function(v){ return '<option value="'+v+'"'+(v===String(item.tier)?' selected':'')+'>'+( v ? 'Tier '+v : '--')+'</option>'; }).join('')
     + '</select></td>'
-    + '<td style="padding:6px 4px"><input type="number" step="0.01" value="' + (item.ogQty||0) + '" oninput="mrEstItem(' + idx + ',\'ogQty\',parseFloat(this.value)||0);mrRefreshEstRow(' + idx + ')" style="width:75px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px;text-align:right"></td>'
-    + '<td style="padding:6px 4px"><input type="number" step="0.1" value="' + (item.estWastePct||0) + '" onchange="mrEstItem(' + idx + ',\'estWastePct\',parseFloat(this.value)||0)" style="width:65px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px;text-align:right"></td>'
-    + '<td style="padding:6px 4px"><input value="' + (item.unit||'') + '" onchange="mrEstItem(' + idx + ',\'unit\',this.value)" style="width:55px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px"></td>'
-    + '<td style="padding:6px 4px"><input type="number" step="0.01" value="' + (item.actualQty||0) + '" oninput="mrEstItem(' + idx + ',\'actualQty\',parseFloat(this.value)||0);mrRefreshEstRow(' + idx + ')" style="width:80px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px;text-align:right"></td>'
+    + '<td style="padding:6px 4px"><input type="number" step="0.01" value="' + (item.ogQty||0) + '" oninput="mrEstItem(' + idx + ',\'ogQty\',parseFloat(this.value)||0);mrRefreshEstRow(' + idx + ')" style="width:70px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px;text-align:right"></td>'
+    + '<td style="padding:6px 4px"><input type="number" step="0.1" value="' + (item.estWastePct||0) + '" onchange="mrEstItem(' + idx + ',\'estWastePct\',parseFloat(this.value)||0)" style="width:55px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px;text-align:right"></td>'
+    + '<td style="padding:6px 4px"><input value="' + (item.unit||'') + '" onchange="mrEstItem(' + idx + ',\'unit\',this.value)" style="width:45px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px"></td>'
+    + '<td style="padding:6px 8px;font-size:12px;color:#333;text-align:right;white-space:nowrap">' + (item.invoicedQty||0) + '</td>'
+    + '<td style="padding:6px 4px"><input type="number" step="0.01" value="' + (item.returnQty||0) + '" oninput="mrEstItem(' + idx + ',\'returnQty\',parseFloat(this.value)||0);mrRefreshEstRow(' + idx + ')" style="width:70px;font-size:12px;border:1px solid #ddd;border-radius:4px;padding:3px 5px;text-align:right;background:#fff8f0"></td>'
+    + '<td id="mr-est-act-' + idx + '" style="padding:6px 8px;font-size:12px;font-weight:600;color:#1F3971;text-align:right;white-space:nowrap">' + actQtyStr + '</td>'
     + '<td id="mr-est-waste-' + idx + '" style="padding:6px 8px;font-size:12px;' + wasteColor + ';white-space:nowrap">' + (waste || '—') + '</td>'
     + '<td style="padding:6px 4px"><button onclick="mrDeleteEstRow(' + idx + ')" style="background:none;border:none;color:#c33;cursor:pointer;font-size:15px;padding:0 2px">&times;</button></td>'
     + '</tr>';
@@ -3985,9 +4076,11 @@ function mrEstItem(idx, field, value) {
 }
 
 function mrRefreshEstRow(idx) {
+  var item = mrEstItems[idx];
+  var actCell = document.getElementById('mr-est-act-' + idx);
+  if (actCell) actCell.textContent = mrEstActualQty(item).toFixed(2).replace(/\.?0+$/, '');
   var cell = document.getElementById('mr-est-waste-' + idx);
   if (!cell) return;
-  var item = mrEstItems[idx];
   var waste = mrEstActualWaste(item);
   var wNum = parseFloat(waste);
   cell.textContent = waste || '—';
@@ -4013,8 +4106,8 @@ function mrSaveEstHistory() {
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; saveBtn.style.background = '#666'; }
   var today = new Date().toLocaleDateString('en-US');
   var rows = mrEstItems.map(function(it) {
-    var og = parseFloat(it.ogQty) || 0;
-    var act = parseFloat(it.actualQty) || 0;
+    var og  = parseFloat(it.ogQty)       || 0;
+    var act = mrEstActualQty(it);
     var waste = og ? ((act - og) / og * 100) : '';
     return {
       date: today,
@@ -4026,6 +4119,8 @@ function mrSaveEstHistory() {
       ogQty: og,
       estWastePct: it.estWastePct || 0,
       unit: it.unit,
+      invoicedQty: parseFloat(it.invoicedQty) || 0,
+      returnQty: parseFloat(it.returnQty) || 0,
       actualQty: act,
       actualWastePct: waste
     };

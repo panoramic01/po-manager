@@ -716,10 +716,11 @@ function categorizeInvoices(payload) {
     '  Siding Lap      : LP SmartSide lap siding (3/8x8x16), 5/4 cedar trim boards',
     '  Siding B&B      : LP SmartSide panels 4x10 (any groove), battens 19/32x3, 4/4 cedar trim boards',
     '  Siding Flashing : Panel Union Flashing, Z-flashing, brick flashing angles/strips',
-    '  Metal           : Aluminum/steel soffit (solid or vented), fascia trim, J-channel, coil stock, touch-up paint, metal accessories',
+    '  Metal           : Coil stock, touch-up paint, metal accessories (non-soffit/fascia)',
+    '  Soffit & Fascia : Aluminum soffit panels (solid or vented), fascia trim, J-channel, drip edge, coil wrap',
     '  Masonry         : Stone, brick, Lueders, building paper, metal lath, mortar (Type S/N), pallet charges from masonry vendors, lime',
     '  Vinyl           : Vinyl lap or board-and-batten siding panels (any color)',
-    '  Vinyl Extras    : Vinyl starter/finish strips, outside corners, J-channel for vinyl, outlet boxes, light boxes',
+    '  Vinyl Accessories    : Vinyl starter/finish strips, outside corners, J-channel for vinyl, outlet boxes, light boxes',
     '  Stucco          : Stucco base/finish coat, dryvit, mesh, stucco accessories',
     '  Angle Iron      : Steel angle iron, wide flange beams, structural steel, plasma cutting, steel delivery',
     '',
@@ -818,10 +819,11 @@ function suggestCategories(payload) {
     'Siding Lap      : LP SmartSide lap siding, 5/4 cedar trim boards',
     'Siding B&B      : LP SmartSide panels 4x10, battens 19/32x3, 4/4 cedar trim',
     'Siding Flashing : Panel Union Flashing, Z-flashing, brick flashing',
-    'Metal           : Soffit (solid/vented), fascia trim, J-channel, coil stock, touch-up paint',
+    'Metal           : Coil stock, touch-up paint, metal accessories (non-soffit/fascia)',
+    'Soffit & Fascia : Aluminum soffit panels (solid/vented), fascia trim, J-channel, drip edge, coil wrap',
     'Masonry         : Stone, brick, building paper, metal lath, mortar, pallet charges, lime',
     'Vinyl           : Vinyl siding panels',
-    'Vinyl Extras    : Vinyl starter strips, corners, J-channel for vinyl, outlet/light boxes',
+    'Vinyl Accessories    : Vinyl starter strips, corners, J-channel for vinyl, outlet/light boxes',
     'Stucco          : Stucco base/finish, dryvit, mesh',
     'Angle Iron      : Steel angle iron, wide flange beams, structural steel'
   ].join('\n');
@@ -862,19 +864,27 @@ function processEstimateWithMatching(payload) {
     var estimateRows = payload.estimateRows || [];
     var invoiceItems = payload.invoiceItems || [];
     var apiKey = PropertiesService.getScriptProperties().getProperty('CLAUDE_API_KEY');
-    var categories = ['Siding Lap','Siding B&B','Siding Flashing','Metal','Masonry','Vinyl','Vinyl Extras','Stucco','Angle Iron','Beam & Post Wrap'];
+    var categories = ['Siding Lap','Siding B&B','Siding Flashing','Metal','Soffit & Fascia','Masonry','Vinyl','Vinyl Accessories','Stucco','Angle Iron','Beam & Post Wrap'];
 
     var invSummary = invoiceItems.slice(0, 60).map(function(it) {
       return (it.description || '') + (it.qty ? ' | qty:' + it.qty : '') + (it.unit ? ' ' + it.unit : '') + (it.category ? ' [' + it.category + ']' : '');
     }).join('\n');
 
-    var prompt = 'You are analyzing a construction estimate spreadsheet and matching it to actual invoice line items.\n\n'
+    // Support both spreadsheet rows (xlsx) and raw text (pdf)
+    var estimateContent;
+    if (payload.estimateText) {
+      estimateContent = 'ESTIMATE TEXT (from PDF):\n' + payload.estimateText;
+    } else {
+      estimateContent = 'ESTIMATE ROWS (tab-separated):\n'
+        + (payload.estimateRows || []).slice(0, 70).map(function(r){ return r.join('\t'); }).join('\n');
+    }
+
+    var prompt = 'You are analyzing a construction estimate and matching it to actual invoice line items.\n\n'
       + 'CATEGORIES: ' + categories.join(', ') + '\n\n'
-      + 'ESTIMATE ROWS (tab-separated):\n'
-      + estimateRows.slice(0, 70).map(function(r){ return r.join('\t'); }).join('\n')
+      + estimateContent
       + '\n\nINVOICE LINE ITEMS (for matching):\n' + (invSummary || '(none)')
       + '\n\nFor each estimate material line item (skip headers/totals/blank/SqF summary rows):\n'
-      + '1. Extract: description, ogQty (OG Qty column), unit, estWastePct (Was Fac% column, as a number like 7 for 7%)\n'
+      + '1. Extract: description, ogQty (ordered qty), unit, estWastePct (waste factor %, as a number like 7 for 7%)\n'
       + '2. Assign one category from the list above\n'
       + '3. Find the best matching invoice line item(s) and sum their qty as actualQty (0 if no match)\n\n'
       + 'Return ONLY valid JSON:\n'
@@ -909,7 +919,7 @@ function saveMaterialHistory(payload) {
     var sheet = ss.getSheetByName('Material Report History');
     if (!sheet) return { error: 'Sheet "Material Report History" not found in this spreadsheet' };
 
-    var HEADERS = ['Date','Job','Tier','Contractor','Category','Description','OG Qty','Est. Waste%','Unit','Actual Qty','Actual Waste%'];
+    var HEADERS = ['Date','Job','Tier','Contractor','Category','Description','OG Qty','Est. Waste%','Unit','Invoiced Qty','Return Qty','Actual Qty','Actual Waste%'];
     if (sheet.getLastRow() === 0) {
       sheet.appendRow(HEADERS);
       sheet.getRange(1,1,1,HEADERS.length).setFontWeight('bold').setBackground('#1F3971').setFontColor('#ffffff');
@@ -919,7 +929,9 @@ function saveMaterialHistory(payload) {
       sheet.appendRow([
         r.date, r.job, r.tier || '', r.contractor, r.category, r.description || '',
         r.ogQty || '', r.estWastePct || '', r.unit || '',
-        r.actualQty || '',
+        r.invoicedQty !== undefined ? r.invoicedQty : '',
+        r.returnQty   !== undefined ? r.returnQty   : '',
+        r.actualQty   !== undefined ? r.actualQty   : '',
         r.actualWastePct !== '' && r.actualWastePct !== undefined ? r.actualWastePct : ''
       ]);
     });
