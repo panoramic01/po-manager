@@ -831,15 +831,19 @@ function suggestCategories(payload) {
   ].join('\n');
 
   var productList = [
-    'LP 4x10 Natural 8ft','LP 4x10 Natural 10ft','LP 4x10 Cedar Beige 8ft','LP 4x10 Cedar Beige 10ft',
-    'LP 4x10 Slate 8ft','LP 4x10 Slate 10ft','LP 3/8x8 Lap 16ft','LP 3/8x6 Lap 16ft',
-    'Battens 19/32x3 16ft','5/4x4 Cedar Trim 16ft','5/4x6 Cedar Trim 16ft','4/4 Cedar Trim 16ft',
-    'Panel Union Flashing','Z-Flashing','Brick Flashing Angle',
-    'Alum Soffit Solid','Alum Soffit Vented','Fascia Trim 1x4','J-Channel Metal','Drip Edge','Coil Wrap','Coil Stock',
-    'Lueders Stone','Buff Brick','Mortar Type S','Mortar Type N','Metal Lath','Building Paper',
-    'Vinyl Lap Panel','Vinyl B&B Panel','Starter Strip','Outside Corner','J-Channel Vinyl','Outlet Box','Light Box',
-    'Stucco Base Coat','Stucco Finish Coat','Dryvit','Stucco Mesh',
-    'Angle Iron','Wide Flange Beam','Structural Steel'
+    'LP 3/8x8x16 Lap',
+    'Hardboard 4x10 Panel','Hardboard 4x8 Panel','Hardboard Cedar Shake','LP 19/32x3 Battens',
+    '5/4 2" Trim','5/4 4" Trim','5/4 6" Trim','5/4 8" Trim','5/4 10" Trim','5/4 12" Trim',
+    '4/4 2" Trim','4/4 4" Trim','4/4 6" Trim','4/4 8" Trim','4/4 10" Trim','4/4 12" Trim',
+    'Panel Union Flashing','Window Flashing',
+    'Coil Stock','Metal Accessories',
+    'Alum Soffit Solid','Alum Soffit Vented','Alum Fascia','J-Channel','Touch-Up Paint',
+    'Stone Veneer','Modular Brick','King Size Brick','Mortar Type S','Mortar Type N','Metal Lath','Building Paper','Pallet Charge',
+    'Vinyl Lap Panel','Vinyl B&B Panel',
+    'Starter Strip','Outside Corner','J-Channel Vinyl','Outlet Box','Light Box','Finish Trim',
+    'Stucco Base Coat','Stucco Finish Coat','Stucco Mesh','Stucco Accessories',
+    'Angle Iron',
+    'Hardboard 4x10 Panel'
   ].join(', ');
 
   var systemPrompt = 'You are a building materials categorizer. Given a list of invoice line items, assign each to exactly one category AND suggest a canonical product name.\n\n'
