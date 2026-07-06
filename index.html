@@ -520,34 +520,33 @@
       </div>
     </div>
 
-    <div class="card" style="text-align:center;padding:24px 20px">
-      <div style="font-size:15px;font-weight:700;margin-bottom:6px">Job Clean Up Checklist</div>
-      <div style="font-size:13px;color:#A2A092;margin-bottom:16px">Log OpenSpace, materials cleaned, and leftover material for a completed job.</div>
-      <button class="btn btn-secondary" style="width:100%;padding:14px;font-size:15px;border-radius:12px" onclick="openFormOverlay('cleanup-overlay')">Open Cleanup Form</button>
-    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 0 16px">
 
-    <div class="card" style="text-align:center;padding:24px 20px">
-      <div style="font-size:15px;font-weight:700;margin-bottom:6px">Office Notes</div>
-      <div style="font-size:13px;color:#A2A092;margin-bottom:16px">Send a quick note or update to the office task list.</div>
-      <button class="btn btn-secondary" style="width:100%;padding:14px;font-size:15px;border-radius:12px" onclick="openFormOverlay('officenotes-overlay')">Open Office Notes</button>
-    </div>
+      <div onclick="openFormOverlay('cleanup-overlay')" style="background:#fff;border-radius:12px;padding:22px 12px;text-align:center;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.08);display:flex;flex-direction:column;align-items:center;gap:10px">
+        <svg width="32" height="32" fill="none" stroke="#1F3971" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+        <span style="font-size:13px;font-weight:600;color:#1F3971">Job Cleanup</span>
+      </div>
 
-    <div class="card" style="text-align:center;padding:24px 20px">
-      <div style="font-size:15px;font-weight:700;margin-bottom:6px">Reimbursement Form</div>
-      <div style="font-size:13px;color:#A2A092;margin-bottom:16px">Submit a reimbursement request.</div>
-      <button class="btn btn-secondary" style="width:100%;padding:14px;font-size:15px;border-radius:12px" onclick="openFormOverlay('reimbursement-overlay')">Open Reimbursement Form</button>
-    </div>
+      <div onclick="openFormOverlay('officenotes-overlay')" style="background:#fff;border-radius:12px;padding:22px 12px;text-align:center;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.08);display:flex;flex-direction:column;align-items:center;gap:10px">
+        <svg width="32" height="32" fill="none" stroke="#1F3971" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+        <span style="font-size:13px;font-weight:600;color:#1F3971">Office Notes</span>
+      </div>
 
-    <div class="card" style="text-align:center;padding:24px 20px">
-      <div style="font-size:15px;font-weight:700;margin-bottom:6px">Company Credit Card</div>
-      <div style="font-size:13px;color:#A2A092;margin-bottom:16px">Log a company credit card charge.</div>
-      <button class="btn btn-secondary" style="width:100%;padding:14px;font-size:15px;border-radius:12px" onclick="openFormOverlay('creditcard-overlay')">Open CC Form</button>
-    </div>
+      <div onclick="openFormOverlay('reimbursement-overlay')" style="background:#fff;border-radius:12px;padding:22px 12px;text-align:center;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.08);display:flex;flex-direction:column;align-items:center;gap:10px">
+        <svg width="32" height="32" fill="none" stroke="#1F3971" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+        <span style="font-size:13px;font-weight:600;color:#1F3971">Reimbursement</span>
+      </div>
 
-    <div class="card" style="text-align:center;padding:24px 20px">
-      <div style="font-size:15px;font-weight:700;margin-bottom:6px">Material Request</div>
-      <div style="font-size:13px;color:#A2A092;margin-bottom:16px">Submit a request for materials needed on a job.</div>
-      <button class="btn btn-secondary" style="width:100%;padding:14px;font-size:15px;border-radius:12px" onclick="openFormOverlay('materialrequest-overlay')">Open Material Request</button>
+      <div onclick="openFormOverlay('creditcard-overlay')" style="background:#fff;border-radius:12px;padding:22px 12px;text-align:center;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.08);display:flex;flex-direction:column;align-items:center;gap:10px">
+        <svg width="32" height="32" fill="none" stroke="#1F3971" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>
+        <span style="font-size:13px;font-weight:600;color:#1F3971">Credit Card</span>
+      </div>
+
+      <div onclick="openFormOverlay('materialrequest-overlay')" style="background:#fff;border-radius:12px;padding:22px 12px;text-align:center;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.08);display:flex;flex-direction:column;align-items:center;gap:10px">
+        <svg width="32" height="32" fill="none" stroke="#1F3971" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+        <span style="font-size:13px;font-weight:600;color:#1F3971">Material Request</span>
+      </div>
+
     </div>
   </div>
 
@@ -4209,8 +4208,6 @@ function mrSaveEstHistory() {
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save to History'; saveBtn.style.background = '#1F3971'; }
     showToast('Failed to save — check GAS logs');
   });
-}
-
 }
 
 </script>
