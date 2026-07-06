@@ -1,5 +1,5 @@
-var CACHE = 'po-manager-v59';
-var SHELL = ['/po-manager/', '/po-manager/index.html', '/po-manager/manifest.json', '/po-manager/icon-192.png', '/po-manager/icon-512.png', '/po-manager/apple-touch-icon.png'];
+var CACHE = 'po-manager-v60';
+var SHELL = ['/po-manager/', '/po-manager/index.html', '/po-manager/manifest.json', '/po-manager/icon-192.png', '/po-manager/icon-512.png', '/po-manager/apple-touch-icon.png', '/po-manager/panoramic-logo.png'];
 
 self.addEventListener('install', function(e) {
   self.skipWaiting();
