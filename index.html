@@ -929,18 +929,6 @@
 
 
     <!-- SOPs sub-panel -->
-        <!-- Submitter -->
-        <div style="margin-bottom:16px">
-          <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Your Name</label>
-          <input id="qc-submitter" type="text" placeholder="First Last" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;box-sizing:border-box">
-        </div>
-
-        <div id="qc-sections"></div>
-
-        <button id="qc-submit-btn" onclick="submitQualityCheck()" style="width:100%;padding:13px;background:#1F3971;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;margin-top:8px">Submit Quality Check</button>
-        <div id="qc-result" style="display:none;margin-top:12px;padding:12px;border-radius:8px;font-size:14px;text-align:center"></div>
-      </div>
-    </div>
 
     <div id="other-panel-sop" style="display:none">
       <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #f0f0f0;background:#fff;position:sticky;top:0;z-index:1">
@@ -4349,12 +4337,12 @@ var QC_SECTIONS = [
 var G_asanaJobs = null;
 
 function openQualityCheck() {
-  document.getElementById('quality-check-overlay').classList.add('open');
+  document.getElementById('quality-check-overlay').style.display='flex';
   loadQualityPanel();
 }
 
 function closeQualityCheck() {
-  document.getElementById('quality-check-overlay').classList.remove('open');
+  document.getElementById('quality-check-overlay').style.display='none';
 }
 
 function loadQualityPanel() {
@@ -4511,7 +4499,7 @@ function submitQualityCheck() {
 </script>
 
   <!-- Quality Check Overlay -->
-  <div id="quality-check-overlay" class="cleanup-overlay">
+  <div id="quality-check-overlay" style="display:none;position:fixed;inset:0;z-index:400;flex-direction:column;background:#f8f9fb">
     <div class="cleanup-header">
       <h2>Quality Check</h2>
       <button class="cleanup-close" onclick="closeQualityCheck()">Close</button>
