@@ -1130,14 +1130,10 @@ var GAS_URL = 'https://script.google.com/macros/s/AKfycbwvX4xv5kDofWEldpSRJP8O2y
 function gasCall(action, payload, onSuccess, onFailure) {
   fetch(GAS_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: action, payload: payload || {} }),
     redirect: 'follow'
   })
-  .then(function(r) {
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    return r.json();
-  })
+  .then(function(r) { return r.json(); })
   .then(function(data) {
     if (!onSuccess) return;
     try { onSuccess(data); }
