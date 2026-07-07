@@ -605,6 +605,11 @@
           <span style="font-size:13px;font-weight:600;color:#1F3971">SOPs</span>
         </div>
 
+
+        <div id="other-card-pto" onclick="showOtherPanel('pto')" style="background:#fff;border-radius:12px;padding:22px 12px;text-align:center;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.08);display:flex;flex-direction:column;align-items:center;gap:10px">
+          <svg width="32" height="32" fill="none" stroke="#1F3971" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+          <span style="font-size:13px;font-weight:600;color:#1F3971">Time Off</span>
+        </div>
       </div>
     </div>
 
@@ -952,6 +957,80 @@
       <div style="padding:16px">
         <div id="sop-loading" style="text-align:center;padding:40px;color:#888;font-size:14px">Loading...</div>
         <div id="sop-list" style="display:none"></div>
+      </div>
+    </div>
+
+
+    <!-- PTO / Time Off sub-panel -->
+    <div id="other-panel-pto" style="display:none">
+      <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #f0f0f0;background:#fff;position:sticky;top:0;z-index:1">
+        <button onclick="showOtherHome()" style="background:none;border:none;font-size:14px;font-weight:600;color:#1F3971;cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
+        <span style="font-size:16px;font-weight:700;color:#1F3971">Time Off</span>
+      </div>
+      <div style="padding:16px;padding-bottom:80px">
+
+        <!-- Admin: Pending Queue (hidden for non-admins) -->
+        <div id="pto-admin-section" style="display:none;margin-bottom:24px">
+          <div style="font-size:14px;font-weight:700;color:#1F3971;margin-bottom:10px">Pending Requests</div>
+          <div id="pto-queue-loading" style="text-align:center;padding:20px;color:#888;font-size:13px">Loading...</div>
+          <div id="pto-queue-list"></div>
+        </div>
+
+        <!-- Balance card -->
+        <div id="pto-balance-card" style="background:linear-gradient(135deg,#1F3971,#2d5ab5);border-radius:14px;padding:20px;color:#fff;margin-bottom:16px;display:none">
+          <div style="font-size:12px;opacity:0.8;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px">Your PTO Balance</div>
+          <div style="display:flex;gap:24px;margin-top:4px">
+            <div>
+              <div id="pto-remaining" style="font-size:32px;font-weight:800;line-height:1">—</div>
+              <div style="font-size:11px;opacity:0.75;margin-top:2px">days remaining</div>
+            </div>
+            <div style="opacity:0.6;font-size:24px;padding-top:4px">/</div>
+            <div>
+              <div id="pto-allotted" style="font-size:24px;font-weight:700;line-height:1;padding-top:6px">—</div>
+              <div style="font-size:11px;opacity:0.75;margin-top:2px">allotted</div>
+            </div>
+            <div style="margin-left:auto;text-align:right">
+              <div id="pto-used" style="font-size:20px;font-weight:600;padding-top:10px">—</div>
+              <div style="font-size:11px;opacity:0.75;margin-top:2px">used</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Request form -->
+        <div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:16px">
+          <div style="font-size:14px;font-weight:700;color:#1F3971;margin-bottom:12px">Request Time Off</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+            <div>
+              <label style="font-size:11px;font-weight:600;color:#666;display:block;margin-bottom:4px">Start Date</label>
+              <input id="pto-start" type="date" oninput="calcPTODays()"
+                style="width:100%;padding:9px 10px;border:1px solid #dde1ef;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box">
+            </div>
+            <div>
+              <label style="font-size:11px;font-weight:600;color:#666;display:block;margin-bottom:4px">End Date</label>
+              <input id="pto-end" type="date" oninput="calcPTODays()"
+                style="width:100%;padding:9px 10px;border:1px solid #dde1ef;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box">
+            </div>
+          </div>
+          <div id="pto-days-preview" style="display:none;background:#f0f4ff;border-radius:8px;padding:8px 12px;font-size:13px;color:#1F3971;font-weight:600;margin-bottom:10px;text-align:center"></div>
+          <div>
+            <label style="font-size:11px;font-weight:600;color:#666;display:block;margin-bottom:4px">Reason (optional)</label>
+            <textarea id="pto-reason" rows="2" placeholder="e.g. vacation, personal day..."
+              style="width:100%;padding:9px 10px;border:1px solid #dde1ef;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box;resize:none;font-family:inherit"></textarea>
+          </div>
+          <button id="pto-submit-btn" onclick="doSubmitPTO()" disabled
+            style="margin-top:12px;width:100%;background:#1F3971;color:#fff;border:none;border-radius:8px;padding:13px;font-size:14px;font-weight:700;cursor:pointer;opacity:0.5">
+            Submit Request
+          </button>
+          <div id="pto-submit-err" style="display:none;color:#c62828;font-size:12px;text-align:center;margin-top:6px"></div>
+        </div>
+
+        <!-- My request history -->
+        <div>
+          <div style="font-size:14px;font-weight:700;color:#1F3971;margin-bottom:10px">My Requests</div>
+          <div id="pto-history-loading" style="text-align:center;padding:20px;color:#888;font-size:13px">Loading...</div>
+          <div id="pto-history-list"></div>
+        </div>
+
       </div>
     </div>
 
@@ -1410,6 +1489,7 @@ function applyRole(role) {
   sd('other-card-vendor-spend', role === 'admin');
   sd('other-card-material-report', role === 'admin');
   sd('other-card-sop', true);
+  sd('other-card-pto', true);
   sd('receive-po-card', p.canReceivePO);
 
   // Show role badge in header
@@ -2789,7 +2869,7 @@ function submitContactEdit() {
 
 function showOtherPanel(name) {
   document.getElementById('other-home').style.display = 'none';
-  ['pricing', 'contacts', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'sop'].forEach(function(p) {
+  ['pricing', 'contacts', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'sop', 'pto'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
     if (el) el.style.display = p === name ? '' : 'none';
   });
@@ -2801,6 +2881,7 @@ function showOtherPanel(name) {
   if (name === 'vendor-spend') openVendorSpendPanel();
   if (name === 'material-report') openMaterialReportPanel();
   if (name === 'sop') loadSops();
+  if (name === 'pto') loadPTOPanel();
 }
 
 function showOtherHome() {
@@ -4610,6 +4691,177 @@ function submitQualityCheck() {
       res.innerHTML = 'Error: ' + err;
     }
   );
+}
+
+
+// ── PTO / Time Off ────────────────────────────────────────────────────────────
+function loadPTOPanel() {
+  // Show admin queue section only for admins
+  var isAdmin = G.role === 'admin';
+  document.getElementById('pto-admin-section').style.display = isAdmin ? 'block' : 'none';
+
+  // Load data from GAS
+  gasCall('getPTOData', { email: G.userEmail, role: G.role }, function(data) {
+    if (data.error) { showToast('PTO load error: ' + data.error); return; }
+
+    // Balance
+    var b = data.balance || {};
+    document.getElementById('pto-remaining').textContent = b.remaining !== undefined ? b.remaining : '—';
+    document.getElementById('pto-allotted').textContent  = b.allotted  !== undefined ? b.allotted  : '—';
+    document.getElementById('pto-used').textContent      = b.used      !== undefined ? b.used      : '—';
+    document.getElementById('pto-balance-card').style.display = 'block';
+
+    // My request history
+    renderPTOHistory(data.myRequests || []);
+
+    // Admin: pending queue
+    if (isAdmin) renderPTOQueue(data.pendingQueue || []);
+
+  }, function(e) { showToast('Could not load time off data'); });
+}
+
+function calcPTODays() {
+  var start = document.getElementById('pto-start').value;
+  var end   = document.getElementById('pto-end').value;
+  var preview = document.getElementById('pto-days-preview');
+  var btn = document.getElementById('pto-submit-btn');
+  if (!start || !end) {
+    preview.style.display = 'none';
+    btn.disabled = true; btn.style.opacity = '0.5';
+    return;
+  }
+  var s = new Date(start + 'T00:00:00');
+  var e = new Date(end   + 'T00:00:00');
+  if (e < s) {
+    preview.textContent = 'End date must be after start date';
+    preview.style.display = 'block';
+    btn.disabled = true; btn.style.opacity = '0.5';
+    return;
+  }
+  var days = Math.round((e - s) / 86400000) + 1;
+  preview.textContent = days + ' day' + (days !== 1 ? 's' : '') + ' requested';
+  preview.style.display = 'block';
+  btn.disabled = false; btn.style.opacity = '1';
+}
+
+function doSubmitPTO() {
+  var start  = document.getElementById('pto-start').value;
+  var end    = document.getElementById('pto-end').value;
+  var reason = document.getElementById('pto-reason').value.trim();
+  var errEl  = document.getElementById('pto-submit-err');
+  var btn    = document.getElementById('pto-submit-btn');
+  if (!start || !end) return;
+  var days = Math.round((new Date(end + 'T00:00:00') - new Date(start + 'T00:00:00')) / 86400000) + 1;
+  errEl.style.display = 'none';
+  btn.disabled = true; btn.textContent = 'Submitting…'; btn.style.opacity = '0.7';
+  gasCall('submitPTORequest', {
+    email:     G.userEmail,
+    name:      G.config.userName || G.userEmail,
+    startDate: start,
+    endDate:   end,
+    days:      days,
+    reason:    reason
+  }, function(r) {
+    btn.disabled = false; btn.textContent = 'Submit Request'; btn.style.opacity = '1';
+    if (r && r.success) {
+      showToast('Request submitted!');
+      document.getElementById('pto-start').value  = '';
+      document.getElementById('pto-end').value    = '';
+      document.getElementById('pto-reason').value = '';
+      document.getElementById('pto-days-preview').style.display = 'none';
+      btn.disabled = true; btn.style.opacity = '0.5';
+      loadPTOPanel(); // reload to show new request in history
+    } else {
+      errEl.textContent = (r && r.error) ? r.error : 'Submission failed. Try again.';
+      errEl.style.display = 'block';
+    }
+  }, function(e) {
+    btn.disabled = false; btn.textContent = 'Submit Request'; btn.style.opacity = '1';
+    errEl.textContent = 'Could not connect. Try again.';
+    errEl.style.display = 'block';
+  });
+}
+
+function renderPTOHistory(requests) {
+  var loadEl = document.getElementById('pto-history-loading');
+  var listEl = document.getElementById('pto-history-list');
+  loadEl.style.display = 'none';
+  if (!requests.length) {
+    listEl.innerHTML = '<p style="color:#888;font-size:13px;text-align:center;padding:16px 0">No requests yet.</p>';
+    return;
+  }
+  listEl.innerHTML = requests.map(function(r) {
+    var badge = r.status === 'approved'
+      ? '<span style="background:#e8f5e9;color:#2e7d32;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px">Approved</span>'
+      : r.status === 'denied'
+      ? '<span style="background:#fce4ec;color:#c62828;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px">Denied</span>'
+      : '<span style="background:#fff8e1;color:#e65100;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px">Pending</span>';
+    return '<div style="background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,0.07)">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'
+      + '<span style="font-size:13px;font-weight:600;color:#222">' + esc(r.dates) + '</span>' + badge
+      + '</div>'
+      + '<div style="font-size:12px;color:#666">' + r.days + ' day' + (r.days !== 1 ? 's' : '') + (r.reason && r.reason !== 'N/A' ? ' · ' + esc(r.reason) : '') + '</div>'
+      + '</div>';
+  }).join('');
+}
+
+function renderPTOQueue(queue) {
+  var loadEl = document.getElementById('pto-queue-loading');
+  var listEl = document.getElementById('pto-queue-list');
+  if (loadEl) loadEl.style.display = 'none';
+  if (!queue.length) {
+    if (listEl) listEl.innerHTML = '<p style="color:#888;font-size:13px;padding:8px 0 4px">No pending requests.</p>';
+    return;
+  }
+  if (listEl) listEl.innerHTML = queue.map(function(r) {
+    return '<div style="background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,0.07)">'
+      + '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">'
+      + '<div>'
+      + '<div style="font-size:13px;font-weight:700;color:#222">' + esc(r.requesterName) + '</div>'
+      + '<div style="font-size:12px;color:#666;margin-top:1px">' + esc(r.dates) + ' · ' + r.days + ' day' + (r.days !== 1 ? 's' : '') + '</div>'
+      + (r.reason && r.reason !== 'N/A' ? '<div style="font-size:12px;color:#888;margin-top:2px">' + esc(r.reason) + '</div>' : '')
+      + '</div></div>'
+      + '<div style="display:flex;gap:8px;margin-top:8px">'
+      + '<button onclick="doApprovePTO('' + r.gid + '','' + esc(r.requesterEmail) + '',' + r.days + ',this)" '
+      + 'style="flex:1;background:#1F3971;color:#fff;border:none;border-radius:7px;padding:9px;font-size:13px;font-weight:700;cursor:pointer">✓ Approve</button>'
+      + '<button onclick="doDenyPTO('' + r.gid + '',this)" '
+      + 'style="flex:1;background:#fff;color:#c62828;border:1.5px solid #c62828;border-radius:7px;padding:9px;font-size:13px;font-weight:700;cursor:pointer">✗ Deny</button>'
+      + '</div></div>';
+  }).join('');
+}
+
+function doApprovePTO(taskGid, empEmail, days, btn) {
+  var orig = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Approving…';
+  gasCall('approvePTO', { taskGid: taskGid, employeeEmail: empEmail, days: days },
+    function(r) {
+      if (r && r.success) {
+        showToast('Request approved');
+        loadPTOPanel();
+      } else {
+        btn.disabled = false; btn.textContent = orig;
+        showToast('Error: ' + ((r && r.error) || 'unknown'));
+      }
+    }, function() { btn.disabled = false; btn.textContent = orig; showToast('Could not connect'); });
+}
+
+function doDenyPTO(taskGid, btn) {
+  var orig = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Denying…';
+  gasCall('denyPTO', { taskGid: taskGid },
+    function(r) {
+      if (r && r.success) {
+        showToast('Request denied');
+        loadPTOPanel();
+      } else {
+        btn.disabled = false; btn.textContent = orig;
+        showToast('Error: ' + ((r && r.error) || 'unknown'));
+      }
+    }, function() { btn.disabled = false; btn.textContent = orig; showToast('Could not connect'); });
+}
+
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 </script>

@@ -1,5 +1,5 @@
 /**
- * PO Manager Web App — Panoramic Building
+ * PO Manager Web App - Panoramic Building
  * =========================================
  * Paste this into your Google Apps Script project (Extensions > Apps Script).
  * Also paste the contents of PO_Manager_index.html into a new HTML file named "index".
@@ -7,7 +7,7 @@
  */
 
 var SHEET_NAME  = "PO Database";
-var ROLES_SHEET = "Roles";
+var ROLES_SHEET = "HR";
 
 var STATUS_OPTIONS = [
   "Pending Pickup",
@@ -46,7 +46,7 @@ function doGet() {
 }
 
 /**
- * REST-style POST handler — replaces google.script.run for all client calls.
+ * REST-style POST handler - replaces google.script.run for all client calls.
  * Expects JSON body: { action: string, payload: object }
  * Returns JSON via ContentService.
  */
@@ -80,6 +80,11 @@ function doPost(e) {
     else if (action === 'saveMaterialHistory')          result = saveMaterialHistory(payload);
     else if (action === 'getAsanaJobs')                result = getAsanaJobs();
     else if (action === 'submitQualityCheck')           result = submitQualityCheck(payload);
+    else if (action === 'getPTOData')                  result = getPTOData(payload.email, payload.role);
+    else if (action === 'submitPTORequest')             result = submitPTORequest(payload);
+    else if (action === 'getPTOQueue')                  result = getPTOQueue();
+    else if (action === 'approvePTO')                   result = approvePTO(payload);
+    else if (action === 'denyPTO')                      result = denyPTO(payload);
     else                                        result = { error: 'Unknown action: ' + action };
 
     return ContentService
@@ -224,12 +229,12 @@ function findPOByNumber(poNum) {
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) return null;
     var numRows = lastRow - 1;
-    // Search column A only — much faster than loading all columns
+    // Search column A only - much faster than loading all columns
     var colA = sheet.getRange(2, 1, numRows, 1).getValues();
     for (var i = 0; i < colA.length; i++) {
       var cell = (colA[i][0] || '').toString().trim();
       if (cell !== poNum) continue;
-      // Found — load just this single row
+      // Found - load just this single row
       var rowIndex = i + 2;
       var tz  = Session.getScriptTimeZone();
       var row = sheet.getRange(rowIndex, 1, 1, 12).getValues()[0];
@@ -299,7 +304,7 @@ function verifyLogin(email, password) {
 
 /**
  * Returns config (status/vendor lists) + role for a cached/returning user.
- * Only called after a successful verifyLogin() — email is trusted from localStorage.
+ * Only called after a successful verifyLogin() - email is trusted from localStorage.
  */
 function getConfig(email) {
   var roleData = getRoleByEmail(email || '');
@@ -364,7 +369,7 @@ function getUserRole() {
       if (rowEmail === email) return { role: rowRole, email: email };
     }
 
-    // Not in the Roles sheet — default to runner (most restricted)
+    // Not in the Roles sheet - default to runner (most restricted)
     return { role: 'runner', email: email };
   } catch(e) {
     return { role: 'runner', email: '' };
@@ -381,7 +386,7 @@ var PRICING_SHEET = "Pricing";
  * so adding a new vendor column to the sheet requires no code changes.
  *
  * Layout: A=Description, B=U/M, C=Best Price, D=empty, E+=Vendors
- * Category header rows: description in A, everything else blank — no U/M and no prices.
+ * Category header rows: description in A, everything else blank - no U/M and no prices.
  */
 function getPricingData() {
   try {
@@ -754,9 +759,9 @@ function categorizeInvoices(payload) {
   var systemPrompt = [
     'You are a building materials invoice categorizer for Panoramic Building LLC, an exterior siding contractor in Utah.',
     '',
-    'CATEGORIES — use exactly these names:',
+    'CATEGORIES - use exactly these names:',
     '  Siding Lap      : LP SmartSide lap siding (3/8x8x16), 5/4 cedar trim boards',
-    '  Siding B&B      : LP SmartSide panels 4x10 (any groove), battens 19/32x3, 4/4 cedar trim boards — only panels used as WALL SIDING, not wrap',
+    '  Siding B&B      : LP SmartSide panels 4x10 (any groove), battens 19/32x3, 4/4 cedar trim boards - only panels used as WALL SIDING, not wrap',
     '  Siding Flashing : Panel Union Flashing, Z-flashing, brick flashing angles/strips',
     '  Metal           : Coil stock, touch-up paint, metal accessories (non-soffit/fascia)',
     '  Soffit & Fascia : Aluminum soffit panels (solid or vented), fascia trim, J-channel, drip edge, coil wrap',
@@ -773,7 +778,7 @@ function categorizeInvoices(payload) {
     '',
     'INPUT: JSON array of invoice objects, each with fileName and text (raw PDF text, may be messy).',
     '',
-    'OUTPUT: Return ONLY a valid JSON array — no prose, no markdown fences. Each element:',
+    'OUTPUT: Return ONLY a valid JSON array - no prose, no markdown fences. Each element:',
     '{',
     '  "fileName": "...",',
     '  "invoiceNum": "...",',
@@ -804,13 +809,13 @@ function categorizeInvoices(payload) {
     '2. Tax split: item_taxShare = (item_amount / subtotal) * total_tax. If subtotal=0, split evenly.',
     '3. Shipping split: item_shippingShare = (item_amount / subtotal) * total_shipping.',
     '4. Pallet charges go to Masonry.',
-    '5. A delivery line item (not footer total) is treated as shipping — distribute its cost proportionally.',
+    '5. A delivery line item (not footer total) is treated as shipping - distribute its cost proportionally.',
     '6. Returns/credits use negative amounts.',
     '7. Set uncertain:true if category is genuinely unclear.',
     '8. lineItemsSum = sum of all lineItem amounts (not including tax/shipping).',
     '9. balanceCheck = (Math.abs(lineItemsSum - subtotal) < 0.10).',
-    '10. If invoice text is unreadable (scanned PDF), set lineItems:[] and notes:"Scanned — manual entry required".',
-    '11. Do not include tax rows or shipping rows as separate line items — they belong in the tax/shipping fields.'
+    '10. If invoice text is unreadable (scanned PDF), set lineItems:[] and notes:"Scanned - manual entry required".',
+    '11. Do not include tax rows or shipping rows as separate line items - they belong in the tax/shipping fields.'
   ].join('\n');
 
   var invoices = payload.invoices || [];
@@ -860,7 +865,7 @@ function suggestCategories(payload) {
 
   var catList = [
     'Siding Lap      : LP SmartSide lap siding, 5/4 cedar trim boards',
-    'Siding B&B      : LP SmartSide panels 4x10, battens 19/32x3, 4/4 cedar trim — wall siding only, not wrap',
+    'Siding B&B      : LP SmartSide panels 4x10, battens 19/32x3, 4/4 cedar trim - wall siding only, not wrap',
     'Siding Flashing : Panel Union Flashing, Z-flashing, brick flashing',
     'Metal           : Coil stock, touch-up paint, metal accessories (non-soffit/fascia)',
     'Soffit & Fascia : Aluminum soffit panels (solid/vented), fascia trim, J-channel, drip edge, coil wrap',
@@ -1015,7 +1020,7 @@ function saveMaterialHistory(payload) {
   }
 }
 
-// ── SOPs ─────────────────────────────────────────────────────────────────────
+// -- SOPs ---------------------------------------------------------------------
 var SOP_SHEET = "SOPs";
 
 function getSopData() {
@@ -1027,8 +1032,6 @@ function getSopData() {
     if (lastRow < 2) return { sops: [] };
     var numRows  = lastRow - 1;
     var data     = sheet.getRange(2, 1, numRows, 6).getValues();
-    // getRichTextValues on column F so we can read the real Drive URL
-    // from Smart Chip file attachments (getValues() only returns the filename)
     var richCol    = sheet.getRange(2, 6, numRows, 1).getRichTextValues();
     var formulaCol = sheet.getRange(2, 6, numRows, 1).getFormulas();
     var sops = [];
@@ -1038,9 +1041,7 @@ function getSopData() {
       if (row[3]) {
         try { updated = Utilities.formatDate(new Date(row[3]), Session.getScriptTimeZone(), 'MM/dd/yyyy'); } catch(e) { updated = String(row[3]); }
       }
-      // 1) Plain text URL
       var pdfLink = String(row[5] || '');
-      // 2) Rich-text hyperlink (Insert > Link) or Smart Chip
       if (!pdfLink.match(/^https?:\/\//)) {
         var runs = richCol[i][0] ? richCol[i][0].getRuns() : [];
         for (var r = 0; r < runs.length; r++) {
@@ -1048,7 +1049,6 @@ function getSopData() {
           if (u && u.match(/^https?:\/\//)) { pdfLink = u; break; }
         }
       }
-      // 3) =HYPERLINK("url","label") formula
       if (!pdfLink.match(/^https?:\/\//)) {
         var formula = formulaCol[i][0] || '';
         var fm = formula.match(/=HYPERLINK\(\s*"([^"]+)"/i);
@@ -1069,11 +1069,12 @@ function getSopData() {
   }
 }
 
-// ─── Asana Integration ────────────────────────────────────────────────────────
+// -- Asana Integration --------------------------------------------------------
 
 var ASANA_API          = 'https://app.asana.com/api/1.0';
-var ASANA_EXT_SCHED    = '1208049422174439';  // Exteriors Master Schedule
-var ASANA_OFFICE_TASKS = '1208049422174458';  // Office Tasks
+var ASANA_EXT_SCHED    = '1208049422174439';
+var ASANA_OFFICE_TASKS = '1208049422174458';
+var ASANA_PTO_PROJECT  = '1210392177822419';
 
 function getAsanaPAT() {
   return PropertiesService.getScriptProperties().getProperty('ASANA_PAT');
@@ -1097,7 +1098,7 @@ function getAsanaJobs() {
   try {
     var jobs   = [];
     var offset = null;
-    var maxPages = 10; // safety cap — handles up to 1000 tasks
+    var maxPages = 10;
     for (var page = 0; page < maxPages; page++) {
       var url = '/projects/' + ASANA_EXT_SCHED +
         '/tasks?opt_fields=gid,name,completed&limit=100' +
@@ -1107,7 +1108,6 @@ function getAsanaJobs() {
       (result.data || []).forEach(function(t) {
         if (!t.completed && t.name) jobs.push({ gid: t.gid, name: t.name });
       });
-      // Check for next page
       if (result.next_page && result.next_page.offset) {
         offset = result.next_page.offset;
       } else {
@@ -1122,21 +1122,19 @@ function submitQualityCheck(payload) {
   try {
     var jobGid    = payload.jobGid;
     var jobName   = payload.jobName;
-    var sections  = payload.sections;   // [{name, status:'pass'|'flag', notes}]
+    var sections  = payload.sections;
     var submitter = payload.submitter || 'Field';
     var tz        = Session.getScriptTimeZone();
     var date      = Utilities.formatDate(new Date(), tz, 'MM/dd/yyyy');
 
-    // Build subtask body
-    var lines = ['Quality Check — ' + date, 'Submitted by: ' + submitter, ''];
+    var lines = ['Quality Check - ' + date, 'Submitted by: ' + submitter, ''];
     var flagged = [];
     sections.forEach(function(s) {
-      var icon = s.status === 'pass' ? '✓' : '⚠';
-      lines.push(icon + ' ' + s.name + (s.notes ? '\n   ' + s.notes : ''));
+      var icon = s.status === 'pass' ? 'PASS' : 'FLAG';
+      lines.push('[' + icon + '] ' + s.name + (s.notes ? ' - ' + s.notes : ''));
       if (s.status !== 'pass') flagged.push(s);
     });
 
-    // Create subtask on the job task, immediately mark complete
     var sub = asanaRequest('post', '/tasks/' + jobGid + '/subtasks', {
       name:      'Quality Check - ' + date,
       notes:     lines.join('\n'),
@@ -1144,11 +1142,10 @@ function submitQualityCheck(payload) {
     });
     if (sub.errors) return { error: sub.errors[0].message };
 
-    // If anything flagged → create task in Office Tasks
     if (flagged.length > 0) {
       var offLines = ['Quality check flagged items for: ' + jobName + ' (' + date + ')', ''];
       flagged.forEach(function(f) {
-        offLines.push('• ' + f.name + (f.notes ? ': ' + f.notes : ''));
+        offLines.push('- ' + f.name + (f.notes ? ': ' + f.notes : ''));
       });
       asanaRequest('post', '/tasks', {
         projects: [ASANA_OFFICE_TASKS],
@@ -1159,4 +1156,233 @@ function submitQualityCheck(payload) {
 
     return { success: true, flagged: flagged.length };
   } catch(e) { return { error: e.toString() }; }
+}
+
+// -- PTO / HR Functions ───────────────────────────────────────────────────────
+// HR sheet columns: A=Name, B=Email, C=Phone, D=Role, E=Password, F=Allotted, G=Used
+
+/**
+ * Gets PTO balance + request history for an employee (and pending queue for admins).
+ */
+function getPTOData(email, role) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var hrSheet = ss.getSheetByName(ROLES_SHEET);
+    var balance = { allotted: 0, used: 0, remaining: 0, name: '' };
+
+    if (hrSheet) {
+      var lastRow = hrSheet.getLastRow();
+      if (lastRow >= 2) {
+        var data = hrSheet.getRange(2, 1, lastRow - 1, 7).getValues();
+        for (var i = 0; i < data.length; i++) {
+          var rowEmail = (data[i][1] || '').toString().toLowerCase().trim();
+          if (rowEmail === email.toLowerCase().trim()) {
+            balance.name      = (data[i][0] || '').toString().trim();
+            balance.allotted  = parseFloat(data[i][5]) || 0;
+            balance.used      = parseFloat(data[i][6]) || 0;
+            balance.remaining = balance.allotted - balance.used;
+            break;
+          }
+        }
+      }
+    }
+
+    // Fetch all tasks from PTO project
+    var result = asanaRequest('get',
+      '/projects/' + ASANA_PTO_PROJECT +
+      '/tasks?opt_fields=gid,name,notes,completed,memberships.section.name&limit=100');
+    if (result.errors) return { error: result.errors[0].message };
+
+    var myRequests   = [];
+    var pendingQueue = [];
+
+    (result.data || []).forEach(function(task) {
+      var notes = task.notes || '';
+      var section = '';
+      if (task.memberships && task.memberships[0] && task.memberships[0].section) {
+        section = task.memberships[0].section.name || '';
+      }
+
+      var parseField = function(label) {
+        var m = notes.match(new RegExp(label + ':\\s*([^\\n]+)'));
+        return m ? m[1].trim() : '';
+      };
+
+      var taskEmail = parseField('Requester');
+      var status = task.completed ? 'approved'
+                 : section.toLowerCase().indexOf('denied') !== -1 ? 'denied'
+                 : 'pending';
+
+      var req = {
+        gid:            task.gid,
+        requesterEmail: taskEmail,
+        requesterName:  parseField('Name') || task.name,
+        dates:          parseField('Dates'),
+        days:           parseFloat(parseField('Days')) || 0,
+        reason:         parseField('Reason'),
+        status:         status
+      };
+
+      if (taskEmail.toLowerCase() === email.toLowerCase().trim()) {
+        myRequests.push(req);
+      }
+      if (status === 'pending' && role === 'admin') {
+        pendingQueue.push(req);
+      }
+    });
+
+    return { balance: balance, myRequests: myRequests, pendingQueue: pendingQueue };
+  } catch(e) { return { error: e.toString() }; }
+}
+
+/**
+ * Creates a PTO request task in Asana under New Requests.
+ */
+function submitPTORequest(payload) {
+  try {
+    var email  = payload.email;
+    var name   = payload.name || email;
+    var start  = payload.startDate;
+    var end    = payload.endDate;
+    var days   = payload.days;
+    var reason = payload.reason || 'N/A';
+    var tz     = Session.getScriptTimeZone();
+    var today  = Utilities.formatDate(new Date(), tz, 'MM/dd/yyyy');
+
+    var taskName = 'PTO - ' + name + ' (' + start + (start !== end ? ' to ' + end : '') + ')';
+    var notes = [
+      'Name: '      + name,
+      'Requester: ' + email,
+      'Dates: '     + start + (start !== end ? ' - ' + end : ''),
+      'Days: '      + days,
+      'Reason: '    + reason,
+      'Submitted: ' + today
+    ].join('\n');
+
+    // Create task
+    var created = asanaRequest('post', '/tasks', {
+      projects: [ASANA_PTO_PROJECT],
+      name:     taskName,
+      notes:    notes
+    });
+    if (created.errors) return { error: created.errors[0].message };
+
+    // Move to New Requests section
+    var sectionGid = getPTOSectionGid('New Requests');
+    if (sectionGid && created.data && created.data.gid) {
+      asanaRequest('post', '/sections/' + sectionGid + '/addTask', { task: created.data.gid });
+    }
+
+    return { success: true };
+  } catch(e) { return { error: e.toString() }; }
+}
+
+/**
+ * Returns all pending (non-completed, non-denied) PTO requests for admin view.
+ */
+function getPTOQueue() {
+  try {
+    var result = asanaRequest('get',
+      '/projects/' + ASANA_PTO_PROJECT +
+      '/tasks?opt_fields=gid,name,notes,completed,memberships.section.name&limit=100');
+    if (result.errors) return { error: result.errors[0].message };
+
+    var queue = [];
+    (result.data || []).forEach(function(task) {
+      if (task.completed) return;
+      var section = '';
+      if (task.memberships && task.memberships[0] && task.memberships[0].section) {
+        section = task.memberships[0].section.name || '';
+      }
+      if (section.toLowerCase().indexOf('denied') !== -1) return;
+
+      var notes = task.notes || '';
+      var parseField = function(label) {
+        var m = notes.match(new RegExp(label + ':\\s*([^\\n]+)'));
+        return m ? m[1].trim() : '';
+      };
+
+      queue.push({
+        gid:            task.gid,
+        requesterName:  parseField('Name') || task.name,
+        requesterEmail: parseField('Requester'),
+        dates:          parseField('Dates'),
+        days:           parseFloat(parseField('Days')) || 0,
+        reason:         parseField('Reason')
+      });
+    });
+
+    return { queue: queue };
+  } catch(e) { return { error: e.toString() }; }
+}
+
+/**
+ * Marks a PTO request as approved: completes the Asana task + increments Used days on HR sheet.
+ */
+function approvePTO(payload) {
+  try {
+    var taskGid = payload.taskGid;
+    var empEmail = payload.employeeEmail;
+    var days = parseFloat(payload.days) || 0;
+
+    var result = asanaRequest('put', '/tasks/' + taskGid, { completed: true });
+    if (result.errors) return { error: result.errors[0].message };
+
+    if (empEmail && days > 0) updatePTOUsed(empEmail, days);
+    return { success: true };
+  } catch(e) { return { error: e.toString() }; }
+}
+
+/**
+ * Marks a PTO request as denied: renames it [Denied] and completes it.
+ */
+function denyPTO(payload) {
+  try {
+    var taskGid = payload.taskGid;
+    var info = asanaRequest('get', '/tasks/' + taskGid + '?opt_fields=name');
+    var currentName = (info.data && info.data.name) ? info.data.name : '';
+
+    var result = asanaRequest('put', '/tasks/' + taskGid, {
+      name:      '[Denied] ' + currentName,
+      completed: true
+    });
+    if (result.errors) return { error: result.errors[0].message };
+    return { success: true };
+  } catch(e) { return { error: e.toString() }; }
+}
+
+/**
+ * Adds daysToAdd to the Used column (G) for the given employee email.
+ */
+function updatePTOUsed(email, daysToAdd) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var hrSheet = ss.getSheetByName(ROLES_SHEET);
+    if (!hrSheet) return;
+    var lastRow = hrSheet.getLastRow();
+    if (lastRow < 2) return;
+    var data = hrSheet.getRange(2, 1, lastRow - 1, 7).getValues();
+    for (var i = 0; i < data.length; i++) {
+      var rowEmail = (data[i][1] || '').toString().toLowerCase().trim();
+      if (rowEmail === email.toLowerCase().trim()) {
+        var currentUsed = parseFloat(data[i][6]) || 0;
+        hrSheet.getRange(i + 2, 7).setValue(currentUsed + daysToAdd);
+        return;
+      }
+    }
+  } catch(e) { /* silent */ }
+}
+
+/**
+ * Looks up a section GID by name in the PTO project.
+ */
+function getPTOSectionGid(sectionName) {
+  try {
+    var result = asanaRequest('get', '/projects/' + ASANA_PTO_PROJECT + '/sections?opt_fields=gid,name');
+    if (result.errors || !result.data) return null;
+    for (var i = 0; i < result.data.length; i++) {
+      if (result.data[i].name === sectionName) return result.data[i].gid;
+    }
+    return null;
+  } catch(e) { return null; }
 }
