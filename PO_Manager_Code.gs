@@ -1056,12 +1056,25 @@ function asanaRequest(method, endpoint, payload) {
 
 function getAsanaJobs() {
   try {
-    var result = asanaRequest('get',
-      '/projects/' + ASANA_EXT_SCHED + '/tasks?opt_fields=gid,name,completed&limit=100');
-    if (result.errors) return { error: result.errors[0].message };
-    var jobs = result.data
-      .filter(function(t) { return !t.completed && t.name; })
-      .map(function(t)    { return { gid: t.gid, name: t.name }; });
+    var jobs   = [];
+    var offset = null;
+    var maxPages = 10; // safety cap — handles up to 1000 tasks
+    for (var page = 0; page < maxPages; page++) {
+      var url = '/projects/' + ASANA_EXT_SCHED +
+        '/tasks?opt_fields=gid,name,completed&limit=100' +
+        (offset ? '&offset=' + encodeURIComponent(offset) : '');
+      var result = asanaRequest('get', url);
+      if (result.errors) return { error: result.errors[0].message };
+      (result.data || []).forEach(function(t) {
+        if (!t.completed && t.name) jobs.push({ gid: t.gid, name: t.name });
+      });
+      // Check for next page
+      if (result.next_page && result.next_page.offset) {
+        offset = result.next_page.offset;
+      } else {
+        break;
+      }
+    }
     return { jobs: jobs };
   } catch(e) { return { error: e.toString() }; }
 }
