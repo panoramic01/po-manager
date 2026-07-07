@@ -584,6 +584,11 @@
           <span style="font-size:13px;font-weight:600;color:#1F3971">Material Report</span>
         </div>
 
+        <div id="other-card-sop" onclick="showOtherPanel('sop')" style="background:#fff;border-radius:12px;padding:22px 12px;text-align:center;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.08);display:flex;flex-direction:column;align-items:center;gap:10px">
+          <svg width="32" height="32" fill="none" stroke="#1F3971" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+          <span style="font-size:13px;font-weight:600;color:#1F3971">SOPs</span>
+        </div>
+
       </div>
     </div>
 
@@ -916,6 +921,18 @@
 
 
 
+
+    <!-- SOPs sub-panel -->
+    <div id="other-panel-sop" style="display:none">
+      <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #f0f0f0;background:#fff;position:sticky;top:0;z-index:1">
+        <button onclick="showOtherHome()" style="background:none;border:none;font-size:14px;font-weight:600;color:#1F3971;cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
+        <span style="font-size:16px;font-weight:700;color:#1F3971">SOPs</span>
+      </div>
+      <div style="padding:16px">
+        <div id="sop-loading" style="text-align:center;padding:40px;color:#888;font-size:14px">Loading...</div>
+        <div id="sop-list" style="display:none"></div>
+      </div>
+    </div>
 
 </main>
 
@@ -1300,6 +1317,7 @@ function applyRole(role) {
   sd('other-card-missing-inv', role === 'admin');
   sd('other-card-vendor-spend', role === 'admin');
   sd('other-card-material-report', role === 'admin');
+  sd('other-card-sop', true);
   sd('receive-po-card', p.canReceivePO);
 
   // Show role badge in header
@@ -2635,7 +2653,7 @@ function submitContactEdit() {
 
 function showOtherPanel(name) {
   document.getElementById('other-home').style.display = 'none';
-  ['pricing', 'contacts', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report'].forEach(function(p) {
+  ['pricing', 'contacts', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'sop'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
     if (el) el.style.display = p === name ? '' : 'none';
   });
@@ -2646,11 +2664,12 @@ function showOtherPanel(name) {
   if (name === 'missing-inv') loadMissingInvoices();
   if (name === 'vendor-spend') openVendorSpendPanel();
   if (name === 'material-report') openMaterialReportPanel();
+  if (name === 'sop') loadSops();
 }
 
 function showOtherHome() {
   document.getElementById('other-home').style.display = '';
-  ['pricing', 'contacts', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report'].forEach(function(p) {
+  ['pricing', 'contacts', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'sop'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
     if (el) el.style.display = 'none';
   });
@@ -2658,6 +2677,48 @@ function showOtherHome() {
 
 
 // ── Job Cost Summary ──────────────────────────────────────────────────────────
+function loadSops() {
+  var loading = document.getElementById('sop-loading');
+  var list = document.getElementById('sop-list');
+  if (!loading || !list) return;
+  if (list.children.length > 0) { loading.style.display = 'none'; list.style.display = ''; return; }
+  loading.style.display = 'block';
+  list.style.display = 'none';
+  gasCall('getSopData', {}, function(r) {
+    loading.style.display = 'none';
+    list.style.display = '';
+    if (!r.sops || !r.sops.length) {
+      list.innerHTML = '<p style="color:#888;text-align:center;font-size:14px;padding:40px 0">No SOPs found.</p>';
+      return;
+    }
+    var cats = {};
+    r.sops.forEach(function(s) {
+      var cat = s.category || 'General';
+      if (!cats[cat]) cats[cat] = [];
+      cats[cat].push(s);
+    });
+    var out = '';
+    Object.keys(cats).forEach(function(cat) {
+      out += '<p style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin:16px 0 8px">' + esc(cat) + '</p>';
+      cats[cat].forEach(function(s) {
+        var pdfBtn = s.pdfLink ? '<a href="' + s.pdfLink + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:5px;background:#1F3971;color:#fff;border-radius:7px;padding:7px 14px;font-size:12px;font-weight:600;text-decoration:none">Open PDF</a>' : '';
+        var notes = s.notes ? '<p style="font-size:12px;color:#888;margin:6px 0 0">' + esc(s.notes) + '</p>' : '';
+        var role = s.role ? '<span style="display:inline-block;font-size:11px;background:#eef1f8;color:#1F3971;border-radius:4px;padding:2px 7px;font-weight:600;margin-bottom:4px">' + esc(s.role) + '</span>' : '';
+        out += '<div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:10px">';
+        out += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">';
+        out += '<div style="flex:1"><p style="font-size:14px;font-weight:700;color:#1F3971;margin:0 0 4px">' + esc(s.title) + '</p>' + role + notes + '</div>';
+        if (pdfBtn) out += '<div style="flex-shrink:0;padding-top:2px">' + pdfBtn + '</div>';
+        out += '</div></div>';
+      });
+    });
+    list.innerHTML = out;
+  }, function() {
+    loading.style.display = 'none';
+    list.style.display = '';
+    list.innerHTML = '<p style="color:#c0392b;text-align:center;font-size:14px;padding:40px 0">Error loading SOPs.</p>';
+  });
+}
+
 function openJobCostPanel() {
   var dl = document.getElementById('jc-jobs-list');
   if (dl && dl.children.length === 0) {
