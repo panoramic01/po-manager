@@ -218,11 +218,47 @@ function updatePO(rowIndex, updates) {
  * Looks up a single PO by number. Returns the PO object or null.
  */
 function findPOByNumber(poNum) {
-  var pos = getSheetData();
-  for (var i = 0; i < pos.length; i++) {
-    if (pos[i].poNum === poNum) return pos[i];
+  try {
+    if (!poNum) return null;
+    var sheet  = getSheet();
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return null;
+    var numRows = lastRow - 1;
+    // Search column A only — much faster than loading all columns
+    var colA = sheet.getRange(2, 1, numRows, 1).getValues();
+    for (var i = 0; i < colA.length; i++) {
+      var cell = (colA[i][0] || '').toString().trim();
+      if (cell !== poNum) continue;
+      // Found — load just this single row
+      var rowIndex = i + 2;
+      var tz  = Session.getScriptTimeZone();
+      var row = sheet.getRange(rowIndex, 1, 1, 12).getValues()[0];
+      var invoiceLink = '', issuedPOLink = '';
+      try { invoiceLink  = sheet.getRange(rowIndex, 1,  1, 1).getRichTextValues()[0][0].getLinkUrl() || ''; } catch(e2) {}
+      try { issuedPOLink = sheet.getRange(rowIndex, 10, 1, 1).getRichTextValues()[0][0].getLinkUrl() || ''; } catch(e2) {}
+      if (!issuedPOLink) issuedPOLink = str(row[9]);
+      return {
+        rowIndex:      rowIndex,
+        poNum:         (row[0] || '').toString().trim(),
+        dateIssued:    formatDateCell(row[1], tz),
+        builder:       str(row[2]),
+        jobRef:        str(row[3]),
+        vendor:        str(row[4]),
+        vendorInvoice: str(row[5]),
+        status:        str(row[6]).trim(),
+        invoiceTotal:  str(row[7]),
+        deliveryDate:  formatDateCell(row[8], tz),
+        issuedPO:      str(row[9]),
+        issuedPOLink:  issuedPOLink,
+        invoiceLink:   invoiceLink,
+        receivedNote:  str(row[10]),
+        notes:         str(row[11])
+      };
+    }
+    return null;
+  } catch(e) {
+    return { error: e.toString() };
   }
-  return null;
 }
 
 /**

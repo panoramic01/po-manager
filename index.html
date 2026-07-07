@@ -1130,10 +1130,14 @@ var GAS_URL = 'https://script.google.com/macros/s/AKfycbwvX4xv5kDofWEldpSRJP8O2y
 function gasCall(action, payload, onSuccess, onFailure) {
   fetch(GAS_URL, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: action, payload: payload || {} }),
     redirect: 'follow'
   })
-  .then(function(r) { return r.json(); })
+  .then(function(r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  })
   .then(function(data) {
     if (!onSuccess) return;
     try { onSuccess(data); }
@@ -1705,8 +1709,10 @@ function lookupPO() {
     showReceiveInfo(found);
   } else {
     gasCall('findPOByNumber', { poNum: poNum }, function(p) {
-      p ? showReceiveInfo(p) : showToast('PO '+poNum+' not found');
-    }, function(){ showToast('Error:Lookup failed'); });
+      if (!p) { showToast('PO '+poNum+' not found'); return; }
+      if (p.error) { showToast('Error:'+p.error); return; }
+      showReceiveInfo(p);
+    }, function(err){ showToast('Error:Lookup failed — check connection'); console.error(err); });
   }
 }
 
@@ -1754,9 +1760,10 @@ function submitReceive() {
     } else {
       showToast('Error:' + res.error);
     }
-  }, function() {
+  }, function(err) {
     setBtnState('receive-btn', '✓ Update PO', false);
-    showToast('Error:Error updating PO');
+    showToast('Error:Update failed — check connection');
+    console.error('updatePO error:', err);
   });
 }
 
