@@ -488,9 +488,11 @@
 
         <div class="form-group">
           <label class="form-label">Photos (up to 5)</label>
+
           <input type="file" id="photo-input" accept="image/*" capture="environment"
                  style="display:none" onchange="handlePhotoSlot(this)">
           <div id="photo-slots-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:6px"></div>
+          <!-- Hidden field populated on submit -->
           <input type="hidden" id="r-note">
         </div>
         <div class="form-group">
@@ -1974,47 +1976,40 @@ function initPhotoSlots() {
   var grid = document.getElementById('photo-slots-grid');
   if (!grid) return;
   grid.innerHTML = '';
+  var camSvg = '<svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0118.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><circle cx="12" cy="13" r="3" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/></svg>';
   for (var i = 0; i < 5; i++) {
     var slot = document.createElement('div');
     slot.id = 'photo-slot-' + i;
     slot.className = 'photo-slot';
     (function(idx) { slot.onclick = function() { openPhotoSlot(idx); }; })(i);
-    slot.innerHTML = '<div class="ps-add-icon">'
-      + '<svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><circle cx="12" cy="13" r="3" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/></svg>'
-      + '<span>+</span></div>';
+    slot.innerHTML = '<div class="ps-add-icon">' + camSvg + '<span>+</span></div>';
     grid.appendChild(slot);
   }
 }
-
 function openPhotoSlot(idx) {
-  if (G.photoUrls[idx]) return; // already filled — click X to remove
+  if (G.photoUrls[idx]) return;
   G.activePhotoSlot = idx;
   var inp = document.getElementById('photo-input');
   inp.value = '';
   inp.click();
 }
-
 function removePhotoSlot(idx) {
   G.photoUrls[idx] = null;
   var slot = document.getElementById('photo-slot-' + idx);
   if (!slot) return;
+  var camSvg = '<svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0118.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><circle cx="12" cy="13" r="3" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/></svg>';
   slot.className = 'photo-slot';
   slot.onclick = function() { openPhotoSlot(idx); };
-  slot.innerHTML = '<div class="ps-add-icon">'
-    + '<svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><circle cx="12" cy="13" r="3" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/></svg>'
-    + '<span>+</span></div>';
+  slot.innerHTML = '<div class="ps-add-icon">' + camSvg + '<span>+</span></div>';
 }
-
 function handlePhotoSlot(input) {
   var file = input.files && input.files[0];
   if (!file) return;
   var idx = G.activePhotoSlot;
   var slot = document.getElementById('photo-slot-' + idx);
   if (!slot) return;
-
   slot.className = 'photo-slot ps-uploading';
   slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:10px;color:#1F3971">Loading…</span></div>';
-
   var reader = new FileReader();
   reader.onload = function(e) {
     var img = new Image();
@@ -2028,31 +2023,24 @@ function handlePhotoSlot(input) {
       canvas.getContext('2d').drawImage(img, 0, 0, w, h);
       var dataUrl = canvas.toDataURL('image/jpeg', QUALITY);
       var base64  = dataUrl.split(',')[1];
-      var filename = 'PO-' + (G.receivePO ? G.receivePO.poNum : 'received')
-                   + '-' + (idx+1) + '-' + new Date().toISOString().slice(0,10) + '.jpg';
-
-      // Show thumbnail while uploading
+      var filename = 'PO-' + (G.receivePO ? G.receivePO.poNum : 'received') + '-' + (idx+1) + '-' + new Date().toISOString().slice(0,10) + '.jpg';
       slot.className = 'photo-slot ps-filled ps-uploading';
-      slot.innerHTML = '<img src="' + dataUrl + '" alt="photo">'
-        + '<div class="ps-status uploading">Uploading…</div>';
-
+      slot.innerHTML = '<img src="' + dataUrl + '" alt="photo"><div class="ps-status uploading">Uploading…</div>';
       gasCall('savePhotoToDrive', { base64Data: base64, mimeType: 'image/jpeg', filename: filename }, function(res) {
         if (res.success) {
           G.photoUrls[idx] = res.url;
           slot.className = 'photo-slot ps-filled';
           slot.onclick = null;
-          slot.innerHTML = '<img src="' + dataUrl + '" alt="photo">'
-            + '<button class="ps-remove" onclick="removePhotoSlot(' + idx + ');event.stopPropagation()">×</button>'
-            + '<div class="ps-status done">✓</div>';
+          slot.innerHTML = '<img src="' + dataUrl + '" alt="photo"><button class="ps-remove" onclick="removePhotoSlot(' + idx + ');event.stopPropagation()">×</button><div class="ps-status done">✓</div>';
         } else {
           slot.className = 'photo-slot';
           slot.onclick = function() { openPhotoSlot(idx); };
-          slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">Failed — tap to retry</span></div>';
+          slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">Failed — retry</span></div>';
         }
       }, function() {
         slot.className = 'photo-slot';
         slot.onclick = function() { openPhotoSlot(idx); };
-        slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">Error — tap to retry</span></div>';
+        slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">Error — retry</span></div>';
       });
     };
     img.src = e.target.result;
@@ -2120,7 +2108,6 @@ function handleIssuedFile(input) {
 }
 
 function retakePhoto() {
-  // Reset all photo slots
   initPhotoSlots();
   document.getElementById('r-note').value = '';
 }
@@ -4183,4 +4170,35 @@ function mrSaveEstHistory() {
       job: it.job,
       tier: it.tier,
       contractor: (document.getElementById('mr-contractor')||{}).value || '',
-      
+      category: it.category,
+      description: it.description,
+      ogQty: og,
+      estWastePct: it.estWastePct || 0,
+      unit: it.unit,
+      product: it.product || '',
+      invoicedQty: parseFloat(it.invoicedQty) || 0,
+      returnQty: parseFloat(it.returnQty) || 0,
+      actualQty: act,
+      actualWastePct: waste
+    };
+  });
+  gasCall('saveMaterialHistory', { rows: rows }, function(r) {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = '✓ Saved ' + (r && r.saved ? r.saved : rows.length) + ' rows to History';
+      saveBtn.style.background = '#2a7a3b';
+      setTimeout(function() {
+        saveBtn.textContent = 'Save to History';
+        saveBtn.style.background = '#1F3971';
+      }, 3000);
+    }
+  }, function() {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save to History'; saveBtn.style.background = '#1F3971'; }
+    showToast('Failed to save — check GAS logs');
+  });
+}
+
+</script>
+</body>
+</html>
+                                                                                                                                                                                                                                                                                                                                                     

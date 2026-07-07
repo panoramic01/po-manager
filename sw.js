@@ -16,4 +16,18 @@ self.addEventListener('activate', function(e) {
         .then(function() {
           if (isUpdate) {
             return self.clients.matchAll({ type: 'window' }).then(function(cls) {
-              cls.forEach(function
+              cls.forEach(function(c) { c.postMessage({ type: 'SW_UPDATED' }); });
+            });
+          }
+        });
+    })
+  );
+});
+
+self.addEventListener('fetch', function(e) {
+  e.respondWith(
+    caches.match(e.request).then(function(cached) {
+      return cached || fetch(e.request);
+    })
+  );
+});
