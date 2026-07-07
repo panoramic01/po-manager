@@ -277,9 +277,9 @@ function verifyLogin(email, password) {
 
     var data = sheet.getDataRange().getValues();
     for (var i = 1; i < data.length; i++) {
-      var rowEmail = (data[i][0] || '').toString().toLowerCase().trim();
-      var rowRole  = (data[i][1] || '').toString().toLowerCase().trim();
-      var rowPass  = (data[i][2] || '').toString().trim(); // Column C
+      var rowEmail = (data[i][1] || '').toString().toLowerCase().trim(); // Column B
+      var rowRole  = (data[i][3] || '').toString().toLowerCase().trim(); // Column D
+      var rowPass  = (data[i][4] || '').toString().trim();               // Column E
       if (rowEmail === email) {
         if (rowPass && rowPass === password) {
           return {
@@ -326,8 +326,8 @@ function getRoleByEmail(email) {
 
     var data = sheet.getDataRange().getValues();
     for (var i = 1; i < data.length; i++) {
-      var rowEmail = (data[i][0] || '').toString().toLowerCase().trim();
-      var rowRole  = (data[i][1] || '').toString().toLowerCase().trim();
+      var rowEmail = (data[i][1] || '').toString().toLowerCase().trim(); // Column B
+      var rowRole  = (data[i][3] || '').toString().toLowerCase().trim(); // Column D
       if (rowEmail === email) return { role: rowRole, email: email };
     }
     return { role: 'runner', email: email };
