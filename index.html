@@ -1084,8 +1084,12 @@ var JOKES = [
   if (el) el.textContent = JOKES[Math.floor(Math.random() * JOKES.length)];
 })();
 var _splashHidden = false;
+var _splashStart  = Date.now();
+var MIN_SPLASH_MS = 2200;  // always show jokes for at least this long
 function hideSplash() {
   if (_splashHidden) return;
+  var wait = MIN_SPLASH_MS - (Date.now() - _splashStart);
+  if (wait > 0) { setTimeout(hideSplash, wait); return; }
   _splashHidden = true;
   var s = document.getElementById('splash');
   if (!s) return;
