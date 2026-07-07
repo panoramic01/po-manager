@@ -506,6 +506,11 @@
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 0 16px">
 
+      <div onclick="openQualityCheck()" style="background:#fff;border-radius:12px;padding:22px 12px;text-align:center;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.08);display:flex;flex-direction:column;align-items:center;gap:10px">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#1F3971" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        <span style="font-size:13px;font-weight:600;color:#1F3971">Quality Check</span>
+      </div>
+
       <div onclick="openFormOverlay('cleanup-overlay')" style="background:#fff;border-radius:12px;padding:22px 12px;text-align:center;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.08);display:flex;flex-direction:column;align-items:center;gap:10px">
         <svg width="32" height="32" fill="none" stroke="#1F3971" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
         <span style="font-size:13px;font-weight:600;color:#1F3971">Job Cleanup</span>
@@ -924,6 +929,19 @@
 
 
     <!-- SOPs sub-panel -->
+        <!-- Submitter -->
+        <div style="margin-bottom:16px">
+          <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Your Name</label>
+          <input id="qc-submitter" type="text" placeholder="First Last" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;box-sizing:border-box">
+        </div>
+
+        <div id="qc-sections"></div>
+
+        <button id="qc-submit-btn" onclick="submitQualityCheck()" style="width:100%;padding:13px;background:#1F3971;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;margin-top:8px">Submit Quality Check</button>
+        <div id="qc-result" style="display:none;margin-top:12px;padding:12px;border-radius:8px;font-size:14px;text-align:center"></div>
+      </div>
+    </div>
+
     <div id="other-panel-sop" style="display:none">
       <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #f0f0f0;background:#fff;position:sticky;top:0;z-index:1">
         <button onclick="showOtherHome()" style="background:none;border:none;font-size:14px;font-weight:600;color:#1F3971;cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
@@ -4307,7 +4325,195 @@ function mrSaveEstHistory() {
   });
 }
 
+
+// ── Quality Check ─────────────────────────────────────────────────────────────
+
+var QC_SECTIONS = [
+  {
+    id: 'materials',
+    name: 'Materials',
+    items: ['Correct materials delivered', 'No damaged product installed', 'Quantities match the PO']
+  },
+  {
+    id: 'install',
+    name: 'Install Quality',
+    items: ['Work is plumb / level', 'Fastening pattern correct', 'Flashing / waterproofing in place', 'Penetrations caulked / sealed', 'Reveals and gaps consistent']
+  },
+  {
+    id: 'site',
+    name: 'Site',
+    items: ['Area cleaned up', 'No damage to surrounding surfaces', 'Scaffolding / equipment removed']
+  }
+];
+
+var G_asanaJobs = null;
+
+function openQualityCheck() {
+  document.getElementById('quality-check-overlay').classList.add('open');
+  loadQualityPanel();
+}
+
+function closeQualityCheck() {
+  document.getElementById('quality-check-overlay').classList.remove('open');
+}
+
+function loadQualityPanel() {
+  renderQcSections();
+  if (G_asanaJobs) { populateJobSelect(G_asanaJobs); return; }
+  var sel = document.getElementById('qc-job-select');
+  if (sel) sel.innerHTML = '<option value="">Loading jobs...</option>';
+  gasCall('getAsanaJobs', {}, function(r) {
+    G_asanaJobs = r.jobs || [];
+    populateJobSelect(G_asanaJobs);
+  }, function(err) {
+    var sel = document.getElementById('qc-job-select');
+    if (sel) sel.innerHTML = '<option value="">Error loading jobs</option>';
+  });
+}
+
+function populateJobSelect(jobs) {
+  var sel = document.getElementById('qc-job-select');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">Select a job...</option>' +
+    jobs.map(function(j) {
+      return '<option value="' + j.gid + '" data-name="' + j.name.replace(/"/g,'&quot;') + '">' + j.name + '</option>';
+    }).join('');
+}
+
+function renderQcSections() {
+  var el = document.getElementById('qc-sections');
+  if (!el) return;
+  el.innerHTML = QC_SECTIONS.map(function(sec) {
+    var items = sec.items.map(function(item, idx) {
+      var itemId = sec.id + '_' + idx;
+      return '<div style="padding:10px 0;border-bottom:1px solid #f5f5f5">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">' +
+          '<span style="font-size:13px;color:#333;flex:1">' + item + '</span>' +
+          '<div style="display:flex;gap:6px;flex-shrink:0">' +
+            '<button onclick="qcToggle(this,'pass')" data-item="' + itemId + '" data-val="pass" ' +
+              'style="padding:5px 12px;border-radius:20px;border:1.5px solid #ddd;background:#fff;font-size:12px;font-weight:600;cursor:pointer;color:#888">Pass</button>' +
+            '<button onclick="qcToggle(this,'flag')" data-item="' + itemId + '" data-val="flag" ' +
+              'style="padding:5px 12px;border-radius:20px;border:1.5px solid #ddd;background:#fff;font-size:12px;font-weight:600;cursor:pointer;color:#888">Flag</button>' +
+          '</div>' +
+        '</div>' +
+        '<div id="qc-notes-' + itemId + '" style="display:none;margin-top:8px">' +
+          '<textarea placeholder="Notes..." rows="2" ' +
+            'style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;resize:none;box-sizing:border-box" ' +
+            'id="qc-notesval-' + itemId + '"></textarea>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+    return '<div style="margin-bottom:14px;background:#fff;border-radius:10px;padding:4px 14px 2px;box-shadow:0 1px 3px rgba(0,0,0,0.07)">' +
+      '<p style="font-size:11px;font-weight:700;color:#1F3971;letter-spacing:.5px;text-transform:uppercase;margin:10px 0 4px">' + sec.name + '</p>' +
+      items +
+    '</div>';
+  }).join('');
+}
+
+function qcToggle(btn, val) {
+  var itemId = btn.getAttribute('data-item');
+  var siblings = document.querySelectorAll('[data-item="' + itemId + '"]');
+  siblings.forEach(function(b) {
+    var isActive = b.getAttribute('data-val') === val;
+    b.style.background    = isActive ? (val === 'pass' ? '#e6f4ea' : '#fef3cd') : '#fff';
+    b.style.borderColor   = isActive ? (val === 'pass' ? '#34a853' : '#f59e0b') : '#ddd';
+    b.style.color         = isActive ? (val === 'pass' ? '#1e7e34' : '#b45309') : '#888';
+  });
+  var notesDiv = document.getElementById('qc-notes-' + itemId);
+  if (notesDiv) notesDiv.style.display = val === 'flag' ? '' : 'none';
+}
+
+function submitQualityCheck() {
+  var sel  = document.getElementById('qc-job-select');
+  var opt  = sel && sel.options[sel.selectedIndex];
+  var jobGid  = sel ? sel.value : '';
+  var jobName = opt ? opt.getAttribute('data-name') : '';
+  var submitter = (document.getElementById('qc-submitter').value || '').trim();
+
+  if (!jobGid)    { alert('Please select a job.'); return; }
+  if (!submitter) { alert('Please enter your name.'); return; }
+
+  // Collect section results
+  var sections = [];
+  QC_SECTIONS.forEach(function(sec) {
+    sec.items.forEach(function(item, idx) {
+      var itemId  = sec.id + '_' + idx;
+      var btns    = document.querySelectorAll('[data-item="' + itemId + '"]');
+      var status  = 'pass';
+      btns.forEach(function(b) {
+        if (b.style.background !== 'rgb(255, 255, 255)' && b.style.background !== '' && b.style.background !== '#fff') {
+          status = b.getAttribute('data-val');
+        }
+      });
+      var notesEl = document.getElementById('qc-notesval-' + itemId);
+      sections.push({ name: item, status: status, notes: notesEl ? notesEl.value.trim() : '' });
+    });
+  });
+
+  var btn = document.getElementById('qc-submit-btn');
+  btn.disabled = true; btn.textContent = 'Submitting...';
+
+  gasCall('submitQualityCheck',
+    { jobGid: jobGid, jobName: jobName, submitter: submitter, sections: sections },
+    function(r) {
+      btn.disabled = false; btn.textContent = 'Submit Quality Check';
+      var res = document.getElementById('qc-result');
+      res.style.display = '';
+      if (r.flagged > 0) {
+        res.style.background = '#fef3cd'; res.style.color = '#b45309';
+        res.innerHTML = '✓ Submitted. ' + r.flagged + ' item' + (r.flagged > 1 ? 's' : '') + ' flagged — added to Office Tasks.';
+      } else {
+        res.style.background = '#e6f4ea'; res.style.color = '#1e7e34';
+        res.innerHTML = '✓ Quality check submitted and completed in Asana.';
+      }
+      // Reset form
+      setTimeout(function() {
+        renderQcSections();
+        document.getElementById('qc-submitter').value = '';
+        document.getElementById('qc-job-select').selectedIndex = 0;
+        res.style.display = 'none';
+      }, 3000);
+    },
+    function(err) {
+      btn.disabled = false; btn.textContent = 'Submit Quality Check';
+      var res = document.getElementById('qc-result');
+      res.style.display = ''; res.style.background = '#fde8e8'; res.style.color = '#c0392b';
+      res.innerHTML = 'Error: ' + err;
+    }
+  );
+}
+
 </script>
+
+  <!-- Quality Check Overlay -->
+  <div id="quality-check-overlay" class="cleanup-overlay">
+    <div class="cleanup-header">
+      <h2>Quality Check</h2>
+      <button class="cleanup-close" onclick="closeQualityCheck()">Close</button>
+    </div>
+    <div style="flex:1;overflow-y:auto;background:#f8f9fb;padding:16px">
+      <div style="max-width:480px;margin:0 auto">
+
+        <div style="margin-bottom:14px">
+          <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Job</label>
+          <select id="qc-job-select" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;color:#222;background:#fff;box-sizing:border-box">
+            <option value="">Loading jobs...</option>
+          </select>
+        </div>
+
+        <div style="margin-bottom:16px">
+          <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Your Name</label>
+          <input id="qc-submitter" type="text" placeholder="First Last" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;box-sizing:border-box">
+        </div>
+
+        <div id="qc-sections"></div>
+
+        <button id="qc-submit-btn" onclick="submitQualityCheck()" style="width:100%;padding:13px;background:#1F3971;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;margin-top:8px">Submit Quality Check</button>
+        <div id="qc-result" style="display:none;margin-top:12px;padding:12px;border-radius:8px;font-size:14px;text-align:center"></div>
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>
                                                                                                                                                                                                                                                                                                                                                      

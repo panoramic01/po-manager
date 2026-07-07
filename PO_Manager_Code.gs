@@ -26,7 +26,7 @@ var STATUS_OPTIONS = [
 ];
 
 var VENDOR_OPTIONS = [
-  "LW",
+  "ABC Interiors",
   "Lansing",
   "Timberline",
   "Castalite",
@@ -76,7 +76,10 @@ function doPost(e) {
     else if (action === 'categorizeInvoices')  result = categorizeInvoices(payload);
     else if (action === 'suggestCategories')   result = suggestCategories(payload);
     else if (action === 'processEstimateWithMatching') result = processEstimateWithMatching(payload);
+    else if (action === 'getSopData')                  result = getSopData();
     else if (action === 'saveMaterialHistory')          result = saveMaterialHistory(payload);
+    else if (action === 'getAsanaJobs')                result = getAsanaJobs();
+    else if (action === 'submitQualityCheck')           result = submitQualityCheck(payload);
     else                                        result = { error: 'Unknown action: ' + action };
 
     return ContentService
@@ -725,7 +728,7 @@ function categorizeInvoices(payload) {
     '  Angle Iron      : Steel angle iron, wide flange beams, structural steel, plasma cutting, steel delivery',
     '  Beam/Post/Garage Wrap : Hardboard/B&B panels used specifically for wrapping beams, posts, columns, or garage openings (NOT wall siding). If B&B panels are ordered and some are clearly for wrapping, classify those here.',
     '',
-    'IMPORTANT: Do NOT assign a category. Return an empty string \"\" for the category field on every line item.',
+    'IMPORTANT: Do NOT assign a category. Return an empty string "" for the category field on every line item.',
     'Your job is ONLY to extract and structure the line items with correct amounts, tax shares, and shipping shares.',
     'The user will assign categories themselves.',
     '',
@@ -971,4 +974,137 @@ function saveMaterialHistory(payload) {
   } catch(e) {
     return { error: e.toString() };
   }
+}
+
+// ── SOPs ─────────────────────────────────────────────────────────────────────
+var SOP_SHEET = "SOPs";
+
+function getSopData() {
+  try {
+    var ss      = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet   = ss.getSheetByName(SOP_SHEET);
+    if (!sheet) return { sops: [] };
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { sops: [] };
+    var numRows  = lastRow - 1;
+    var data     = sheet.getRange(2, 1, numRows, 6).getValues();
+    // getRichTextValues on column F so we can read the real Drive URL
+    // from Smart Chip file attachments (getValues() only returns the filename)
+    var richCol    = sheet.getRange(2, 6, numRows, 1).getRichTextValues();
+    var formulaCol = sheet.getRange(2, 6, numRows, 1).getFormulas();
+    var sops = [];
+    data.forEach(function(row, i) {
+      if (!row[0]) return;
+      var updated = '';
+      if (row[3]) {
+        try { updated = Utilities.formatDate(new Date(row[3]), Session.getScriptTimeZone(), 'MM/dd/yyyy'); } catch(e) { updated = String(row[3]); }
+      }
+      // 1) Plain text URL
+      var pdfLink = String(row[5] || '');
+      // 2) Rich-text hyperlink (Insert > Link) or Smart Chip
+      if (!pdfLink.match(/^https?:\/\//)) {
+        var runs = richCol[i][0] ? richCol[i][0].getRuns() : [];
+        for (var r = 0; r < runs.length; r++) {
+          var u = runs[r].getLinkUrl();
+          if (u && u.match(/^https?:\/\//)) { pdfLink = u; break; }
+        }
+      }
+      // 3) =HYPERLINK("url","label") formula
+      if (!pdfLink.match(/^https?:\/\//)) {
+        var formula = formulaCol[i][0] || '';
+        var fm = formula.match(/=HYPERLINK\(\s*"([^"]+)"/i);
+        if (fm) pdfLink = fm[1];
+      }
+      sops.push({
+        title:       String(row[0] || ''),
+        category:    String(row[1] || ''),
+        role:        String(row[2] || ''),
+        lastUpdated: updated,
+        notes:       String(row[4] || ''),
+        pdfLink:     pdfLink
+      });
+    });
+    return { sops: sops };
+  } catch(e) {
+    return { error: e.toString() };
+  }
+}
+
+// ─── Asana Integration ────────────────────────────────────────────────────────
+
+var ASANA_API          = 'https://app.asana.com/api/1.0';
+var ASANA_EXT_SCHED    = '1208049422174439';  // Exteriors Master Schedule
+var ASANA_OFFICE_TASKS = '1208049422174458';  // Office Tasks
+
+function getAsanaPAT() {
+  return PropertiesService.getScriptProperties().getProperty('ASANA_PAT');
+}
+
+function asanaRequest(method, endpoint, payload) {
+  var options = {
+    method: method,
+    headers: {
+      'Authorization': 'Bearer ' + getAsanaPAT(),
+      'Content-Type':  'application/json'
+    },
+    muteHttpExceptions: true
+  };
+  if (payload) options.payload = JSON.stringify({ data: payload });
+  var resp = UrlFetchApp.fetch(ASANA_API + endpoint, options);
+  return JSON.parse(resp.getContentText());
+}
+
+function getAsanaJobs() {
+  try {
+    var result = asanaRequest('get',
+      '/projects/' + ASANA_EXT_SCHED + '/tasks?opt_fields=gid,name,completed&limit=100');
+    if (result.errors) return { error: result.errors[0].message };
+    var jobs = result.data
+      .filter(function(t) { return !t.completed && t.name; })
+      .map(function(t)    { return { gid: t.gid, name: t.name }; });
+    return { jobs: jobs };
+  } catch(e) { return { error: e.toString() }; }
+}
+
+function submitQualityCheck(payload) {
+  try {
+    var jobGid    = payload.jobGid;
+    var jobName   = payload.jobName;
+    var sections  = payload.sections;   // [{name, status:'pass'|'flag', notes}]
+    var submitter = payload.submitter || 'Field';
+    var tz        = Session.getScriptTimeZone();
+    var date      = Utilities.formatDate(new Date(), tz, 'MM/dd/yyyy');
+
+    // Build subtask body
+    var lines = ['Quality Check — ' + date, 'Submitted by: ' + submitter, ''];
+    var flagged = [];
+    sections.forEach(function(s) {
+      var icon = s.status === 'pass' ? '✓' : '⚠';
+      lines.push(icon + ' ' + s.name + (s.notes ? '\n   ' + s.notes : ''));
+      if (s.status !== 'pass') flagged.push(s);
+    });
+
+    // Create subtask on the job task, immediately mark complete
+    var sub = asanaRequest('post', '/tasks/' + jobGid + '/subtasks', {
+      name:      'Quality Check - ' + date,
+      notes:     lines.join('\n'),
+      completed: true
+    });
+    if (sub.errors) return { error: sub.errors[0].message };
+
+    // If anything flagged → create task in Office Tasks
+    if (flagged.length > 0) {
+      var offLines = ['Quality check flagged items for: ' + jobName + ' (' + date + ')', ''];
+      flagged.forEach(function(f) {
+        offLines.push('• ' + f.name + (f.notes ? ': ' + f.notes : ''));
+      });
+      asanaRequest('post', '/tasks', {
+        projects: [ASANA_OFFICE_TASKS],
+        name:     'Quality Check - ' + jobName + ' - ' + date,
+        notes:    offLines.join('\n')
+      });
+    }
+
+    return { success: true, flagged: flagged.length };
+  } catch(e) { return { error: e.toString() }; }
 }
