@@ -1782,7 +1782,8 @@ function showReceiveInfo(po) {
     (po.notes ? '<div class="po-note">'+esc(po.notes)+'</div>' : '');
 
   document.getElementById('r-note').value   = po.receivedNote || '';
-  initPhotoSlots();
+  var existingUrls = (po.receivedNote || '').split('\n').filter(function(u){ return /^https?:\/\//.test(u.trim()); });
+  initPhotoSlots(existingUrls);
   document.getElementById('r-notes').value  = '';
   document.getElementById('r-info').style.display = 'block';
 }
@@ -2101,9 +2102,14 @@ function fmtCurrency(n) {
  * 2. Compresses the image via Canvas (keeps file size small for the GAS payload).
  * Multi-photo slot system (up to 5 photos per PO receive).
  */
-function initPhotoSlots() {
+function driveThumbUrl(url) {
+  var m = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  return m ? 'https://drive.google.com/thumbnail?id=' + m[1] + '&sz=w300' : url;
+}
+function initPhotoSlots(existingUrls) {
   G.photoUrls = [null,null,null,null,null];
   G.activePhotoSlot = 0;
+  (existingUrls || []).slice(0, 5).forEach(function(u, i){ G.photoUrls[i] = u.trim(); });
   var grid = document.getElementById('photo-slots-grid');
   if (!grid) return;
   grid.innerHTML = '';
@@ -2111,9 +2117,19 @@ function initPhotoSlots() {
   for (var i = 0; i < 5; i++) {
     var slot = document.createElement('div');
     slot.id = 'photo-slot-' + i;
-    slot.className = 'photo-slot';
-    (function(idx) { slot.onclick = function() { openPhotoSlot(idx); }; })(i);
-    slot.innerHTML = '<div class="ps-add-icon">' + camSvg + '<span>+</span></div>';
+    (function(idx) {
+      if (G.photoUrls[idx]) {
+        // Pre-existing photo — show Drive thumbnail
+        slot.className = 'photo-slot ps-filled';
+        slot.innerHTML = '<img src="' + driveThumbUrl(G.photoUrls[idx]) + '" alt="photo">'
+          + '<button class="ps-remove" onclick="removePhotoSlot(' + idx + ');event.stopPropagation()">×</button>'
+          + '<div class="ps-status done">✓</div>';
+      } else {
+        slot.className = 'photo-slot';
+        slot.onclick = function() { openPhotoSlot(idx); };
+        slot.innerHTML = '<div class="ps-add-icon">' + camSvg + '<span>+</span></div>';
+      }
+    })(i);
     grid.appendChild(slot);
   }
 }
