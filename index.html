@@ -1551,7 +1551,7 @@ function poCard(po, type) {
 
   // Clickable badge for quick status change (admin/office/site_manager)
   var statusBadge = G.perms.canEdit
-    ? '<span class="badge '+badgeCls(po.status)+'" onclick="quickStatusChange(\''+po.poNum+'\','+po.rowIndex+')" style="cursor:pointer" title="Tap to change status">'+esc(po.status)+'</span>'
+    ? '<span class="badge '+badgeCls(po.status)+'" onclick="event.stopPropagation();quickStatusChange(\''+po.poNum+'\','+po.rowIndex+')" style="cursor:pointer" title="Tap to change status">'+esc(po.status)+'</span>'
     : badge(po.status);
 
   // Swipe-to-receive hint arrow
@@ -1559,7 +1559,7 @@ function poCard(po, type) {
     ? '<div class="swipe-bg"><svg width="22" height="22" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>'
     : '';
 
-  return '<div class="po-item '+type+'" data-ponum="'+esc(po.poNum)+'" data-rowindex="'+po.rowIndex+'">' +
+  return '<div class="po-item '+type+'" data-ponum="'+esc(po.poNum)+'" data-rowindex="'+po.rowIndex+'" onclick="openEdit(\''+po.poNum+'\')" style="cursor:pointer">' +
     swipeBg +
     '<div class="row-between">' +
       '<span class="po-num">'+po.poNum+'</span>' + amt +
@@ -1569,10 +1569,9 @@ function poCard(po, type) {
     (po.notes ? '<div class="po-note">'+esc(po.notes)+'</div>' : '') +
     '<div class="po-actions">' +
       statusBadge +
-      (G.perms.canEdit    ? '<button class="btn btn-sm btn-edit"    onclick="openEdit(\''+po.poNum+'\')">Edit</button>'            : '') +
-      (G.perms.canReceivePO ? '<button class="btn btn-sm btn-receive" onclick="quickReceive(\''+po.poNum+'\')">Receive</button>'     : '') +
-      (po.invoiceLink && G.perms.canViewInvoice ? '<a href="'+esc(po.invoiceLink)+'" target="_blank" class="btn btn-sm" style="background:#fff8e1;color:#e65100;text-decoration:none">Invoice</a>' : '') +
-      (po.issuedPOLink ? '<a href="'+esc(po.issuedPOLink)+'" target="_blank" class="btn btn-sm" style="background:#eaedfa;color:#1F3971;text-decoration:none">Issued PO</a>' : '') +
+      (G.perms.canReceivePO ? '<button class="btn btn-sm btn-receive" onclick="event.stopPropagation();quickReceive(\''+po.poNum+'\')">Receive</button>'     : '') +
+      (po.invoiceLink && G.perms.canViewInvoice ? '<a href="'+esc(po.invoiceLink)+'" target="_blank" class="btn btn-sm" style="background:#fff8e1;color:#e65100;text-decoration:none" onclick="event.stopPropagation()">Invoice</a>' : '') +
+      (po.issuedPOLink ? '<a href="'+esc(po.issuedPOLink)+'" target="_blank" class="btn btn-sm" style="background:#eaedfa;color:#1F3971;text-decoration:none" onclick="event.stopPropagation()">Issued PO</a>' : '') +
     '</div>' +
   '</div>';
 }
