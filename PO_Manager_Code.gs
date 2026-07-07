@@ -282,7 +282,10 @@ function verifyLogin(email, password) {
       var rowPass  = (data[i][2] || '').toString().trim(); // Column C
       if (rowEmail === email) {
         if (rowPass && rowPass === password) {
-          return { success: true, role: rowRole, email: email };
+          return {
+            success: true, role: rowRole, email: email,
+            config: { statusOptions: STATUS_OPTIONS, vendorOptions: VENDOR_OPTIONS, userRole: rowRole, userEmail: email }
+          };
         } else {
           return { success: false, error: 'Incorrect password.' };
         }

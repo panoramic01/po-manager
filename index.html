@@ -1164,6 +1164,8 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function showLoginScreen(msg) {
+  // Pre-warm GAS so it's hot when the user hits Sign In
+  gasCall('getConfig', { email: '' }, function(){}, function(){});
   hideSplash();
   localStorage.removeItem('panoramic_ops_email');
   var ls = document.getElementById('login-screen');
@@ -1216,23 +1218,36 @@ function submitLogin() {
   btn.textContent = 'Signing in…';
   errEl.style.display = 'none';
 
-  // Safety timeout — reset button if server never responds (e.g. not redeployed yet)
+  // After 6 seconds show a reassuring message — GAS cold start can take 20–30s
+  var slowMsg = setTimeout(function() {
+    if (btn.disabled) errEl.textContent = 'Server is warming up, please wait…';
+    errEl.style.display = 'block';
+  }, 6000);
+
+  // Hard timeout at 35s
   var loginTimeout = setTimeout(function() {
+    clearTimeout(slowMsg);
     btn.disabled = false;
     btn.textContent = 'Sign In';
-    errEl.textContent = 'Request timed out. Make sure the app is deployed and try again.';
+    errEl.textContent = 'Timed out. The server may be slow — tap Sign In again.';
     errEl.style.display = 'block';
-  }, 15000);
+  }, 35000);
 
   gasCall('verifyLogin', { email: email, password: password }, function(result) {
     clearTimeout(loginTimeout);
+    clearTimeout(slowMsg);
     btn.disabled = false;
     btn.textContent = 'Sign In';
+    errEl.style.display = 'none';
     if (result.success) {
       localStorage.setItem('panoramic_ops_email', result.email);
+      // Cache the config returned by verifyLogin so bootWithEmail skips the second GAS call
+      if (result.config) {
+        localStorage.setItem('panoramic_ops_config', JSON.stringify(result.config));
+      }
       document.getElementById('login-screen').classList.add('hidden');
       document.getElementById('login-password').value = '';
-      G.config    = { statusOptions: [], vendorOptions: [] };
+      G.config = { statusOptions: [], vendorOptions: [] };
       bootWithEmail(result.email);
     } else {
       errEl.textContent = result.error || 'Sign in failed.';
@@ -1241,9 +1256,10 @@ function submitLogin() {
     }
   }, function(e) {
     clearTimeout(loginTimeout);
+    clearTimeout(slowMsg);
     btn.disabled = false;
     btn.textContent = 'Sign In';
-    errEl.textContent = 'Could not connect. Try again.';
+    errEl.textContent = 'Could not connect. Check your connection and try again.';
     errEl.style.display = 'block';
     console.error('verifyLogin failed:', e);
   });
