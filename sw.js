@@ -1,4 +1,4 @@
-var CACHE = 'po-manager-v70';
+var CACHE = 'po-manager-v71';
 var SHELL = ['/po-manager/', '/po-manager/index.html', '/po-manager/manifest.json', '/po-manager/icon-192.png', '/po-manager/icon-512.png', '/po-manager/apple-touch-icon.png', '/po-manager/panoramic-logo.png'];
 
 self.addEventListener('install', function(e) {
@@ -25,6 +25,16 @@ self.addEventListener('activate', function(e) {
 });
 
 self.addEventListener('fetch', function(e) {
+  // Network-first for navigation (HTML) — always load the latest app on open
+  if (e.request.mode === 'navigate') {
+    e.respondWith(
+      fetch(e.request).catch(function() {
+        return caches.match(e.request);
+      })
+    );
+    return;
+  }
+  // Cache-first for all other assets (icons, manifest, etc.)
   e.respondWith(
     caches.match(e.request).then(function(cached) {
       return cached || fetch(e.request);

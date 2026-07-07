@@ -928,6 +928,10 @@
         <button onclick="showOtherHome()" style="background:none;border:none;font-size:14px;font-weight:600;color:#1F3971;cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
         <span style="font-size:16px;font-weight:700;color:#1F3971">SOPs</span>
       </div>
+      <div style="padding:12px 16px 0;background:#fff;border-bottom:1px solid #f0f0f0">
+        <input id="sop-search" type="search" placeholder="Search SOPs..." oninput="renderSops(this.value)"
+               style="width:100%;padding:9px 12px;border:1px solid #dde1ef;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box;background:#f7f6f2">
+      </div>
       <div style="padding:16px">
         <div id="sop-loading" style="text-align:center;padding:40px;color:#888;font-size:14px">Loading...</div>
         <div id="sop-list" style="display:none"></div>
@@ -2677,46 +2681,62 @@ function showOtherHome() {
 
 
 // ── Job Cost Summary ──────────────────────────────────────────────────────────
+var G_sops = null;
+
 function loadSops() {
+  var search = document.getElementById('sop-search');
+  if (search) search.value = '';
+  if (G_sops) { renderSops(''); return; }
   var loading = document.getElementById('sop-loading');
   var list = document.getElementById('sop-list');
-  if (!loading || !list) return;
-  if (list.children.length > 0) { loading.style.display = 'none'; list.style.display = ''; return; }
-  loading.style.display = 'block';
-  list.style.display = 'none';
+  if (loading) loading.style.display = 'block';
+  if (list) list.style.display = 'none';
   gasCall('getSopData', {}, function(r) {
-    loading.style.display = 'none';
-    list.style.display = '';
-    if (!r.sops || !r.sops.length) {
-      list.innerHTML = '<p style="color:#888;text-align:center;font-size:14px;padding:40px 0">No SOPs found.</p>';
-      return;
-    }
-    var cats = {};
-    r.sops.forEach(function(s) {
-      var cat = s.category || 'General';
-      if (!cats[cat]) cats[cat] = [];
-      cats[cat].push(s);
-    });
-    var out = '';
-    Object.keys(cats).forEach(function(cat) {
-      out += '<p style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin:16px 0 8px">' + esc(cat) + '</p>';
-      cats[cat].forEach(function(s) {
-        var pdfBtn = s.pdfLink ? '<a href="' + s.pdfLink + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:5px;background:#1F3971;color:#fff;border-radius:7px;padding:7px 14px;font-size:12px;font-weight:600;text-decoration:none">Open PDF</a>' : '';
-        var notes = s.notes ? '<p style="font-size:12px;color:#888;margin:6px 0 0">' + esc(s.notes) + '</p>' : '';
-        var role = s.role ? '<span style="display:inline-block;font-size:11px;background:#eef1f8;color:#1F3971;border-radius:4px;padding:2px 7px;font-weight:600;margin-bottom:4px">' + esc(s.role) + '</span>' : '';
-        out += '<div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:10px">';
-        out += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">';
-        out += '<div style="flex:1"><p style="font-size:14px;font-weight:700;color:#1F3971;margin:0 0 4px">' + esc(s.title) + '</p>' + role + notes + '</div>';
-        if (pdfBtn) out += '<div style="flex-shrink:0;padding-top:2px">' + pdfBtn + '</div>';
-        out += '</div></div>';
-      });
-    });
-    list.innerHTML = out;
+    if (loading) loading.style.display = 'none';
+    G_sops = (r.sops && r.sops.length) ? r.sops : [];
+    renderSops('');
   }, function() {
-    loading.style.display = 'none';
-    list.style.display = '';
-    list.innerHTML = '<p style="color:#c0392b;text-align:center;font-size:14px;padding:40px 0">Error loading SOPs.</p>';
+    if (loading) loading.style.display = 'none';
+    var list2 = document.getElementById('sop-list');
+    if (list2) { list2.style.display = ''; list2.innerHTML = '<p style="color:#c0392b;text-align:center;font-size:14px;padding:40px 0">Error loading SOPs.</p>'; }
   });
+}
+
+function renderSops(filter) {
+  var list = document.getElementById('sop-list');
+  if (!list) return;
+  list.style.display = '';
+  if (!G_sops) return;
+  var q = (filter || '').toLowerCase().trim();
+  var matches = G_sops.filter(function(s) {
+    if (!q) return true;
+    return (s.title + ' ' + s.category + ' ' + s.role + ' ' + s.notes).toLowerCase().indexOf(q) !== -1;
+  });
+  if (!matches.length) {
+    list.innerHTML = '<p style="color:#888;text-align:center;font-size:14px;padding:40px 0">No SOPs match "' + esc(filter) + '".</p>';
+    return;
+  }
+  var cats = {};
+  matches.forEach(function(s) {
+    var cat = s.category || 'General';
+    if (!cats[cat]) cats[cat] = [];
+    cats[cat].push(s);
+  });
+  var out = '';
+  Object.keys(cats).forEach(function(cat) {
+    out += '<p style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin:16px 0 8px">' + esc(cat) + '</p>';
+    cats[cat].forEach(function(s) {
+      var pdfBtn = s.pdfLink ? '<a href="' + s.pdfLink + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:5px;background:#1F3971;color:#fff;border-radius:7px;padding:7px 14px;font-size:12px;font-weight:600;text-decoration:none">Open PDF</a>' : '';
+      var notes = s.notes ? '<p style="font-size:12px;color:#888;margin:6px 0 0">' + esc(s.notes) + '</p>' : '';
+      var role = s.role ? '<span style="display:inline-block;font-size:11px;background:#eef1f8;color:#1F3971;border-radius:4px;padding:2px 7px;font-weight:600;margin-bottom:4px">' + esc(s.role) + '</span>' : '';
+      out += '<div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:10px">';
+      out += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">';
+      out += '<div style="flex:1"><p style="font-size:14px;font-weight:700;color:#1F3971;margin:0 0 4px">' + esc(s.title) + '</p>' + role + notes + '</div>';
+      if (pdfBtn) out += '<div style="flex-shrink:0;padding-top:2px">' + pdfBtn + '</div>';
+      out += '</div></div>';
+    });
+  });
+  list.innerHTML = out;
 }
 
 function openJobCostPanel() {
