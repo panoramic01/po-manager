@@ -1862,6 +1862,7 @@ function openEdit(poNum) {
     (G.perms.canViewInvoice ? fg('Invoice Total ($)','<input type="number" class="form-control" id="e-total" value="'+esc(po.invoiceTotal)+'" step="0.01" min="0">') : '') +
     fg('Delivery / Pickup Date','<input type="date" class="form-control" id="e-date" value="'+esc(toInputDate(po.deliveryDate))+'">') +
     issuedField +
+    buildPhotoSection(po.receivedNote) +
     fg('Notes',           '<textarea class="form-control" id="e-notes" rows="3">'+esc(po.notes)+'</textarea>') +
     '<div class="modal-actions">' +
       '<button class="btn btn-primary" style="flex:1" onclick="submitEdit()">Save</button>' +
@@ -1873,6 +1874,24 @@ function openEdit(poNum) {
 
 function fg(label, input) {
   return '<div class="form-group"><label class="form-label">'+label+'</label>'+input+'</div>';
+}
+
+function driveThumb(url) {
+  var m = url.match(/\/d\/([a-zA-Z0-9_-]+)/) || url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (!m) return null;
+  return { thumb: 'https://drive.google.com/thumbnail?id=' + m[1] + '&sz=w400', open: url };
+}
+
+function buildPhotoSection(note) {
+  if (!note) return '';
+  var urls = note.split(/[\n,]+/).map(function(u){ return u.trim(); }).filter(function(u){ return u.indexOf('http') === 0; });
+  if (!urls.length) return '';
+  var thumbs = urls.map(function(url) {
+    var d = driveThumb(url);
+    if (d) return '<a href="' + url + '" target="_blank" style="display:block;border-radius:8px;overflow:hidden;border:1px solid #dde1ef"><img src="' + d.thumb + '" style="width:100%;display:block;object-fit:cover;max-height:130px" onerror="this.style.display=\'none\'"></a>';
+    return '<a href="' + url + '" target="_blank" style="display:block;padding:10px;background:#f0f2fa;border-radius:8px;font-size:12px;color:#1F3971">Open photo</a>';
+  }).join('');
+  return '<div class="form-group"><label class="form-label">Received Photos (' + urls.length + ')</label><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">' + thumbs + '</div></div>';
 }
 
 function closeEdit() { document.getElementById('edit-modal').classList.remove('open'); }
