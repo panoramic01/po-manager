@@ -1121,7 +1121,8 @@ var G = {
   contactEditIdx:  null,
   sort:            'newest',
   photoUrls:       [null,null,null,null,null],
-  activePhotoSlot: 0
+  activePhotoSlot: 0,
+  uploadsInProgress: 0
 };
 
 var vsData = null;
@@ -2157,12 +2158,25 @@ function removePhotoSlot(idx) {
   slot.onclick = function() { openPhotoSlot(idx); };
   slot.innerHTML = '<div class="ps-add-icon">' + camSvg + '<span>+</span></div>';
 }
+function setReceiveBtnUploadState() {
+  var btn = document.getElementById('receive-btn');
+  if (!btn) return;
+  if (G.uploadsInProgress > 0) {
+    btn.disabled = true;
+    btn.textContent = 'Uploading photo… wait';
+  } else {
+    btn.disabled = false;
+    btn.textContent = '✓ Update PO';
+  }
+}
 function handlePhotoSlot(input) {
   var file = input.files && input.files[0];
   if (!file) return;
   var idx = G.activePhotoSlot;
   var slot = document.getElementById('photo-slot-' + idx);
   if (!slot) return;
+  G.uploadsInProgress++;
+  setReceiveBtnUploadState();
   slot.className = 'photo-slot ps-uploading';
   slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:10px;color:#1F3971">Loading…</span></div>';
   var reader = new FileReader();
@@ -2182,6 +2196,8 @@ function handlePhotoSlot(input) {
       slot.className = 'photo-slot ps-filled ps-uploading';
       slot.innerHTML = '<img src="' + dataUrl + '" alt="photo"><div class="ps-status uploading">Uploading…</div>';
       gasCall('savePhotoToDrive', { base64Data: base64, mimeType: 'image/jpeg', filename: filename }, function(res) {
+        G.uploadsInProgress = Math.max(0, G.uploadsInProgress - 1);
+        setReceiveBtnUploadState();
         if (res.success) {
           G.photoUrls[idx] = res.url;
           slot.className = 'photo-slot ps-filled';
@@ -2193,6 +2209,8 @@ function handlePhotoSlot(input) {
           slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">Failed — retry</span></div>';
         }
       }, function() {
+        G.uploadsInProgress = Math.max(0, G.uploadsInProgress - 1);
+        setReceiveBtnUploadState();
         slot.className = 'photo-slot';
         slot.onclick = function() { openPhotoSlot(idx); };
         slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">Error — retry</span></div>';
