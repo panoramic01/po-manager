@@ -488,6 +488,7 @@
 
         <div class="form-group">
           <label class="form-label">Photos (up to 5)</label>
+          <p style="font-size:12px;color:#888;margin:2px 0 6px;line-height:1.4">Include the vendor's delivery receipt/packing slip + photos of where the material was dropped on site.</p>
 
           <input type="file" id="photo-input" accept="image/*" capture="environment"
                  style="display:none" onchange="handlePhotoSlot(this)">
@@ -994,7 +995,16 @@
 <!-- ══════════════════ JAVASCRIPT ══════════════════ -->
 <script>
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./sw.js');
+  navigator.serviceWorker.register('./sw.js').then(function(reg) {
+    // Check for a new SW every time the user brings the app to the foreground
+    document.addEventListener('visibilitychange', function() {
+      if (document.visibilityState === 'visible') reg.update();
+    });
+    // When a new SW takes control, reload immediately
+    navigator.serviceWorker.addEventListener('controllerchange', function() {
+      window.location.reload();
+    });
+  });
   navigator.serviceWorker.addEventListener('message', function(e) {
     if (e.data && e.data.type === 'SW_UPDATED') window.location.reload();
   });
@@ -2726,7 +2736,7 @@ function renderSops(filter) {
   Object.keys(cats).forEach(function(cat) {
     out += '<p style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin:16px 0 8px">' + esc(cat) + '</p>';
     cats[cat].forEach(function(s) {
-      var pdfBtn = s.pdfLink ? '<a href="' + s.pdfLink + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:5px;background:#1F3971;color:#fff;border-radius:7px;padding:7px 14px;font-size:12px;font-weight:600;text-decoration:none">Open PDF</a>' : '';
+      var pdfBtn = (s.pdfLink && s.pdfLink.indexOf('http') === 0) ? '<a href="' + s.pdfLink + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:5px;background:#1F3971;color:#fff;border-radius:7px;padding:7px 14px;font-size:12px;font-weight:600;text-decoration:none">Open PDF</a>' : '';
       var notes = s.notes ? '<p style="font-size:12px;color:#888;margin:6px 0 0">' + esc(s.notes) + '</p>' : '';
       var role = s.role ? '<span style="display:inline-block;font-size:11px;background:#eef1f8;color:#1F3971;border-radius:4px;padding:2px 7px;font-weight:600;margin-bottom:4px">' + esc(s.role) + '</span>' : '';
       out += '<div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:10px">';
