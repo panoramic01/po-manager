@@ -1178,9 +1178,31 @@ function showLoginScreen(msg) {
 }
 
 function bootWithEmail(email) {
+  // Use cached config instantly — no GAS round-trip needed on return visits
+  var raw = localStorage.getItem('panoramic_ops_config');
+  if (raw) {
+    try {
+      var cached = JSON.parse(raw);
+      if (cached && cached.userRole) {
+        G.config    = cached;
+        G.role      = cached.userRole  || 'runner';
+        G.userEmail = cached.userEmail || email;
+        applyRole(G.role);
+        fillSelects();
+        loadData();
+        // Refresh config silently in the background
+        gasCall('getConfig', { email: email }, function(fresh) {
+          if (fresh && fresh.userRole) localStorage.setItem('panoramic_ops_config', JSON.stringify(fresh));
+        }, function(){});
+        return;
+      }
+    } catch(e) {}
+  }
+  // No cached config — must wait for GAS (first sign-in or cache cleared)
   gasCall('getConfig', { email: email }, function(cfg) {
     try {
-      if (!cfg) throw new Error('No config returned');
+      if (!cfg || !cfg.userRole) throw new Error('No config');
+      localStorage.setItem('panoramic_ops_config', JSON.stringify(cfg));
       G.config    = cfg;
       G.role      = cfg.userRole  || 'runner';
       G.userEmail = cfg.userEmail || email;
@@ -1296,19 +1318,38 @@ function fillSelects() {
 }
 
 function loadData() {
-  document.getElementById('dash-loading').style.display = 'block';
-  document.getElementById('dash-content').style.display  = 'none';
+  // Show cached POs immediately — no waiting for GAS on return visits
+  var cachedRaw = localStorage.getItem('panoramic_ops_pos_cache');
+  if (cachedRaw) {
+    try {
+      G.pos = JSON.parse(cachedRaw) || [];
+      renderDashboard();
+      runSearch();
+      hideSplash();
+      document.getElementById('dash-loading').style.display = 'none';
+      document.getElementById('dash-content').style.display = 'block';
+    } catch(e) { G.pos = []; }
+  } else {
+    document.getElementById('dash-loading').style.display = 'block';
+    document.getElementById('dash-content').style.display  = 'none';
+  }
 
+  // Always refresh from GAS in background; update UI when fresh data arrives
   gasCall('getSheetData', {}, function(pos) {
     G.pos = pos || [];
+    try { localStorage.setItem('panoramic_ops_pos_cache', JSON.stringify(G.pos)); } catch(e) {}
     renderDashboard();
     runSearch();
+    hideSplash();
     document.getElementById('dash-loading').style.display = 'none';
     document.getElementById('dash-content').style.display  = 'block';
   }, function(e) {
-    document.getElementById('dash-loading').innerHTML =
-      '<p style="color:#c62828;font-size:14px">Error loading data.<br>Please refresh.</p>';
     console.error(e);
+    hideSplash();
+    if (!G.pos || !G.pos.length) {
+      document.getElementById('dash-loading').innerHTML =
+        '<p style="color:#c62828;font-size:14px">Error loading data.<br>Please refresh.</p>';
+    }
   });
 }
 
