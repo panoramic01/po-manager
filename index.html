@@ -1577,6 +1577,7 @@ function showTabDirect(name, btn) {
   document.getElementById('tab-'+name).classList.add('active');
   if (btn) btn.classList.add('active');
   // pricing/contacts now loaded via showOtherPanel()
+  if (!_navPop) history.pushState({ view: 'tab', tab: name }, '');
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -2930,6 +2931,7 @@ function submitContactEdit() {
 
 
 function showOtherPanel(name) {
+  if (!_navPop) history.pushState({ view: 'other-panel', panel: name }, '');
   document.getElementById('other-home').style.display = 'none';
   ['pricing', 'contacts', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'sop', 'pto', 'timeclock'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
@@ -2948,6 +2950,7 @@ function showOtherPanel(name) {
 }
 
 function showOtherHome() {
+  if (!_navPop) history.pushState({ view: 'tab', tab: 'other' }, '');
   document.getElementById('other-home').style.display = '';
   ['pricing', 'contacts', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'sop', 'pto', 'timeclock'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
@@ -5082,6 +5085,39 @@ function doPunch() {
     }, function() { btn.disabled = false; btn.textContent = 'Clock In'; showToast('Could not connect'); });
   }
 }
+
+
+// ── Back button / swipe-back history handling ─────────────────────────────────
+var _navPop = false;
+
+// Seed an initial state so we always have something to pop back to
+window.addEventListener('load', function() {
+  history.replaceState({ view: 'tab', tab: 'dashboard' }, '');
+});
+
+window.addEventListener('popstate', function(e) {
+  _navPop = true;
+  var state = e.state;
+  if (!state) {
+    // No state — we're at the very start; just re-push so app stays open
+    history.pushState({ view: 'tab', tab: 'dashboard' }, '');
+    _navPop = false;
+    return;
+  }
+  if (state.view === 'other-panel') {
+    // Going back from a sub-panel → show Other home
+    showOtherHome();
+  } else if (state.view === 'tab') {
+    // Going back to a tab
+    if (state.tab === 'other') {
+      showOtherHome();
+      showTabDirect('other', null);
+    } else {
+      showTabDirect(state.tab, document.querySelector('.nav-btn[onclick*=\"' + state.tab + '\"]'));
+    }
+  }
+  _navPop = false;
+});
 
 </script>
 
