@@ -5440,8 +5440,14 @@ function doPunchAcct() {
         startAcctTick();
         if (typeof updateClockUI === 'function') updateClockUI(true, r.clockIn);
       } else {
-        btn
-// ── Employee Manager ──────────────────────────────────────────────────────────
+        btn.textContent = 'Clock In';
+        showToast('Error: ' + ((r && r.error) || 'Could not clock in'));
+      }
+    }, function() { btn.disabled = false; btn.textContent = 'Clock In'; showToast('Could not connect'); });
+  }
+}
+
+// ── Employee Manager ──────────────────────────────────────────────────────────────────────
 var _empData = [];
 
 function loadEmpMgr() {
@@ -5645,4 +5651,6 @@ function doEmailPayroll() {
   }, function() { if (btn) { btn.disabled = false; btn.textContent = 'Email'; } showToast('Could not connect'); });
 }
 
-.
+</script>
+</body>
+</html>
