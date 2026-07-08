@@ -606,6 +606,11 @@
         </div>
 
 
+        <div id="other-card-timeclock" onclick="showOtherPanel('timeclock')" style="background:#fff;border-radius:12px;padding:22px 12px;text-align:center;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.08);display:flex;flex-direction:column;align-items:center;gap:10px">
+          <svg width="32" height="32" fill="none" stroke="#1F3971" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 3"/></svg>
+          <span style="font-size:13px;font-weight:600;color:#1F3971">Time Clock</span>
+        </div>
+
         <div id="other-card-pto" onclick="showOtherPanel('pto')" style="background:#fff;border-radius:12px;padding:22px 12px;text-align:center;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.08);display:flex;flex-direction:column;align-items:center;gap:10px">
           <svg width="32" height="32" fill="none" stroke="#1F3971" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
           <span style="font-size:13px;font-weight:600;color:#1F3971">Time Off</span>
@@ -1044,6 +1049,47 @@
           <div style="font-size:14px;font-weight:700;color:#1F3971;margin-bottom:10px">My Requests</div>
           <div id="pto-history-loading" style="text-align:center;padding:20px;color:#888;font-size:13px">Loading...</div>
           <div id="pto-history-list"></div>
+        </div>
+
+      </div>
+    </div>
+
+
+    <!-- Time Clock sub-panel -->
+    <div id="other-panel-timeclock" style="display:none">
+      <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #f0f0f0;background:#fff;position:sticky;top:0;z-index:1">
+        <button onclick="showOtherHome()" style="background:none;border:none;font-size:14px;font-weight:600;color:#1F3971;cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
+        <span style="font-size:16px;font-weight:700;color:#1F3971">Time Clock</span>
+      </div>
+      <div style="padding:16px;padding-bottom:80px">
+
+        <!-- Clock in/out card -->
+        <div id="tc-clock-card" style="background:linear-gradient(135deg,#1F3971,#2d5ab5);border-radius:16px;padding:28px 20px;text-align:center;margin-bottom:16px">
+          <div id="tc-status-label" style="font-size:12px;color:rgba(255,255,255,0.75);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Not clocked in</div>
+          <div id="tc-time-display" style="font-size:36px;font-weight:800;color:#fff;margin-bottom:4px;font-variant-numeric:tabular-nums">--:--</div>
+          <div id="tc-since-label" style="font-size:13px;color:rgba(255,255,255,0.6);margin-bottom:20px;min-height:18px"></div>
+          <button id="tc-punch-btn" onclick="doPunch()" style="background:#fff;color:#1F3971;border:none;border-radius:10px;padding:14px 48px;font-size:16px;font-weight:800;cursor:pointer;width:100%">
+            Clock In
+          </button>
+        </div>
+
+        <!-- My hours this period -->
+        <div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.07);margin-bottom:16px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <span style="font-size:14px;font-weight:700;color:#1F3971">My Hours</span>
+            <span id="tc-period-label" style="font-size:12px;color:#888"></span>
+          </div>
+          <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:12px">
+            <span id="tc-my-hours" style="font-size:40px;font-weight:800;color:#1F3971">--</span>
+            <span style="font-size:14px;color:#888;font-weight:500">hrs this period</span>
+          </div>
+          <div id="tc-my-days" style="border-top:1px solid #f0f0f0;padding-top:10px"></div>
+        </div>
+
+        <!-- Admin: all employees (hidden for non-admins) -->
+        <div id="tc-admin-section" style="display:none">
+          <div style="font-size:14px;font-weight:700;color:#1F3971;margin-bottom:10px">Team Hours This Period</div>
+          <div id="tc-team-list"></div>
         </div>
 
       </div>
@@ -1505,6 +1551,7 @@ function applyRole(role) {
   sd('other-card-material-report', role === 'admin');
   sd('other-card-sop', true);
   sd('other-card-pto', true);
+  sd('other-card-timeclock', true);
   sd('receive-po-card', p.canReceivePO);
 
   // Show role badge in header
@@ -2884,7 +2931,7 @@ function submitContactEdit() {
 
 function showOtherPanel(name) {
   document.getElementById('other-home').style.display = 'none';
-  ['pricing', 'contacts', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'sop', 'pto'].forEach(function(p) {
+  ['pricing', 'contacts', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'sop', 'pto', 'timeclock'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
     if (el) el.style.display = p === name ? '' : 'none';
   });
@@ -2897,6 +2944,7 @@ function showOtherPanel(name) {
   if (name === 'material-report') openMaterialReportPanel();
   if (name === 'sop') loadSops();
   if (name === 'pto') loadPTOPanel();
+  if (name === 'timeclock') loadTimeClock();
 }
 
 function showOtherHome() {
@@ -4909,6 +4957,131 @@ function doDenyPTO(taskGid, btn) {
     }, function() { btn.disabled = false; btn.textContent = orig; showToast('Could not connect'); });
 }
 
+
+
+// ── Time Clock ────────────────────────────────────────────────────────────────
+var _tcClockedIn = false;
+var _tcClockInterval = null;
+var _tcClockInTime = null;
+
+function loadTimeClock() {
+  document.getElementById('tc-admin-section').style.display = G.role === 'admin' ? 'block' : 'none';
+  // Get status + timesheet in parallel
+  gasCall('getClockStatus', { email: G.userEmail }, function(s) {
+    if (s.error) return;
+    _tcClockedIn = s.clockedIn;
+    if (s.clockedIn) {
+      updateClockUI(true, s.since);
+      startClockTick();
+    } else {
+      updateClockUI(false, null);
+    }
+  }, function(){});
+
+  gasCall('getTimesheet', { email: G.userEmail, role: G.role }, function(d) {
+    if (d.error) return;
+    document.getElementById('tc-period-label').textContent = d.periodLabel || '';
+    document.getElementById('tc-my-hours').textContent = d.myHours !== undefined ? d.myHours : '--';
+
+    // Daily breakdown
+    var daysEl = document.getElementById('tc-my-days');
+    var days = d.myDays || {};
+    var keys = Object.keys(days);
+    if (keys.length) {
+      daysEl.innerHTML = keys.map(function(day) {
+        return '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;color:#555;border-bottom:1px solid #f5f5f5">'
+          + '<span>' + day + '</span><span style="font-weight:600">' + days[day] + ' hrs</span></div>';
+      }).join('');
+    } else {
+      daysEl.innerHTML = '<p style="font-size:13px;color:#aaa;margin:0">No hours recorded yet this period.</p>';
+    }
+
+    // Admin team list
+    if (G.role === 'admin' && d.allEmployees && d.allEmployees.length) {
+      document.getElementById('tc-team-list').innerHTML = d.allEmployees.map(function(e) {
+        return '<div style="background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,0.07);display:flex;justify-content:space-between;align-items:center">'
+          + '<span style="font-size:14px;font-weight:600;color:#222">' + e.name + '</span>'
+          + '<span style="font-size:15px;font-weight:700;color:#1F3971">' + e.hours + ' hrs</span>'
+          + '</div>';
+      }).join('');
+    } else if (G.role === 'admin') {
+      document.getElementById('tc-team-list').innerHTML = '<p style="font-size:13px;color:#aaa">No hours recorded yet this period.</p>';
+    }
+  }, function(){});
+}
+
+function updateClockUI(clockedIn, since) {
+  var card = document.getElementById('tc-clock-card');
+  var statusLabel = document.getElementById('tc-status-label');
+  var sinceLabel = document.getElementById('tc-since-label');
+  var btn = document.getElementById('tc-punch-btn');
+
+  if (clockedIn) {
+    card.style.background = 'linear-gradient(135deg,#1b5e20,#2e7d32)';
+    statusLabel.textContent = 'Currently clocked in';
+    sinceLabel.textContent = since ? 'Since ' + since : '';
+    btn.textContent = 'Clock Out';
+    btn.style.color = '#2e7d32';
+    _tcClockedIn = true;
+    updateLiveClock();
+  } else {
+    card.style.background = 'linear-gradient(135deg,#1F3971,#2d5ab5)';
+    statusLabel.textContent = 'Not clocked in';
+    sinceLabel.textContent = '';
+    btn.textContent = 'Clock In';
+    btn.style.color = '#1F3971';
+    document.getElementById('tc-time-display').textContent = '--:--';
+    _tcClockedIn = false;
+    if (_tcClockInterval) { clearInterval(_tcClockInterval); _tcClockInterval = null; }
+  }
+}
+
+function startClockTick() {
+  if (_tcClockInterval) clearInterval(_tcClockInterval);
+  updateLiveClock();
+  _tcClockInterval = setInterval(updateLiveClock, 1000);
+}
+
+function updateLiveClock() {
+  var now = new Date();
+  var h = now.getHours().toString().padStart(2,'0');
+  var m = now.getMinutes().toString().padStart(2,'0');
+  var s = now.getSeconds().toString().padStart(2,'0');
+  var el = document.getElementById('tc-time-display');
+  if (el) el.textContent = h + ':' + m + ':' + s;
+}
+
+function doPunch() {
+  var btn = document.getElementById('tc-punch-btn');
+  btn.disabled = true;
+  btn.textContent = _tcClockedIn ? 'Clocking out...' : 'Clocking in...';
+
+  if (_tcClockedIn) {
+    gasCall('clockOut', { email: G.userEmail }, function(r) {
+      btn.disabled = false;
+      if (r && r.success) {
+        showToast('Clocked out - ' + r.hours + ' hrs logged');
+        updateClockUI(false, null);
+        loadTimeClock();
+      } else {
+        btn.textContent = 'Clock Out';
+        showToast('Error: ' + ((r && r.error) || 'Could not clock out'));
+      }
+    }, function() { btn.disabled = false; btn.textContent = 'Clock Out'; showToast('Could not connect'); });
+  } else {
+    gasCall('clockIn', { email: G.userEmail, name: G.config.userName || G.userEmail }, function(r) {
+      btn.disabled = false;
+      if (r && r.success) {
+        showToast('Clocked in at ' + r.clockIn);
+        updateClockUI(true, r.clockIn);
+        startClockTick();
+      } else {
+        btn.textContent = 'Clock In';
+        showToast('Error: ' + ((r && r.error) || 'Could not clock in'));
+      }
+    }, function() { btn.disabled = false; btn.textContent = 'Clock In'; showToast('Could not connect'); });
+  }
+}
 
 </script>
 

@@ -85,6 +85,10 @@ function doPost(e) {
     else if (action === 'getPTOQueue')                  result = getPTOQueue();
     else if (action === 'approvePTO')                   result = approvePTO(payload);
     else if (action === 'denyPTO')                      result = denyPTO(payload);
+    else if (action === 'clockIn')                      result = clockIn(payload);
+    else if (action === 'clockOut')                     result = clockOut(payload);
+    else if (action === 'getClockStatus')               result = getClockStatus(payload);
+    else if (action === 'getTimesheet')                 result = getTimesheet(payload);
     else                                        result = { error: 'Unknown action: ' + action };
 
     return ContentService
@@ -1386,4 +1390,155 @@ function getPTOSectionGid(sectionName) {
     }
     return null;
   } catch(e) { return null; }
+}
+
+// -- Time Tracking ------------------------------------------------------------
+// Sheet: "Time Tracking"  cols: A=Name, B=Email, C=Date, D=ClockIn, E=ClockOut, F=Hours
+var TIME_SHEET = 'Time Tracking';
+
+// Bi-weekly epoch: Monday 2026-07-06 (adjust if needed)
+var PAYPERIOD_EPOCH_MS = new Date('2026-07-06T00:00:00').getTime();
+var MS_PER_DAY = 86400000;
+
+function getPeriodStart(dateMs) {
+  var daysSinceEpoch = Math.floor((dateMs - PAYPERIOD_EPOCH_MS) / MS_PER_DAY);
+  var periodDay = daysSinceEpoch - (((daysSinceEpoch % 14) + 14) % 14);
+  return new Date(PAYPERIOD_EPOCH_MS + periodDay * MS_PER_DAY);
+}
+
+function getTimeSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(TIME_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(TIME_SHEET);
+    sh.getRange(1, 1, 1, 6).setValues([['Employee Name','Email','Date','Clock In','Clock Out','Hours']]);
+    sh.getRange(1, 1, 1, 6).setFontWeight('bold').setBackground('#1F3971').setFontColor('#ffffff');
+  }
+  return sh;
+}
+
+function clockIn(payload) {
+  try {
+    var email = payload.email;
+    var name  = payload.name || email;
+    var sh    = getTimeSheet_();
+    var tz    = Session.getScriptTimeZone();
+    var now   = new Date();
+
+    // Check for open record
+    var lastRow = sh.getLastRow();
+    if (lastRow >= 2) {
+      var data = sh.getRange(2, 1, lastRow - 1, 6).getValues();
+      for (var i = data.length - 1; i >= 0; i--) {
+        if ((data[i][1] || '').toString().toLowerCase() === email.toLowerCase() && !data[i][4]) {
+          return { error: 'Already clocked in at ' + Utilities.formatDate(new Date(data[i][3]), tz, 'h:mm a') };
+        }
+      }
+    }
+
+    var today = Utilities.formatDate(now, tz, 'MM/dd/yyyy');
+    sh.appendRow([name, email, today, now, '', '']);
+    return { success: true, clockIn: Utilities.formatDate(now, tz, 'h:mm a') };
+  } catch(e) { return { error: e.toString() }; }
+}
+
+function clockOut(payload) {
+  try {
+    var email = payload.email;
+    var sh    = getTimeSheet_();
+    var tz    = Session.getScriptTimeZone();
+    var now   = new Date();
+
+    var lastRow = sh.getLastRow();
+    if (lastRow < 2) return { error: 'No clock-in record found' };
+
+    var data = sh.getRange(2, 1, lastRow - 1, 6).getValues();
+    for (var i = data.length - 1; i >= 0; i--) {
+      if ((data[i][1] || '').toString().toLowerCase() === email.toLowerCase() && !data[i][4]) {
+        var clockInTime = new Date(data[i][3]);
+        var hours = Math.round((now - clockInTime) / 3600000 * 100) / 100;
+        var rowNum = i + 2;
+        sh.getRange(rowNum, 5).setValue(now);
+        sh.getRange(rowNum, 6).setValue(hours);
+        return { success: true, clockOut: Utilities.formatDate(now, tz, 'h:mm a'), hours: hours };
+      }
+    }
+    return { error: 'No open clock-in found' };
+  } catch(e) { return { error: e.toString() }; }
+}
+
+function getClockStatus(payload) {
+  try {
+    var email = payload.email;
+    var sh    = getTimeSheet_();
+    var tz    = Session.getScriptTimeZone();
+    var lastRow = sh.getLastRow();
+
+    if (lastRow >= 2) {
+      var data = sh.getRange(2, 1, lastRow - 1, 6).getValues();
+      for (var i = data.length - 1; i >= 0; i--) {
+        if ((data[i][1] || '').toString().toLowerCase() === email.toLowerCase() && !data[i][4]) {
+          return { clockedIn: true, since: Utilities.formatDate(new Date(data[i][3]), tz, 'h:mm a') };
+        }
+      }
+    }
+    return { clockedIn: false };
+  } catch(e) { return { error: e.toString() }; }
+}
+
+function getTimesheet(payload) {
+  try {
+    var email = payload.email;
+    var role  = payload.role;
+    var sh    = getTimeSheet_();
+    var tz    = Session.getScriptTimeZone();
+    var now   = new Date();
+
+    var periodStart = getPeriodStart(now.getTime());
+    var periodEnd   = new Date(periodStart.getTime() + 14 * MS_PER_DAY);
+    var periodLabel = Utilities.formatDate(periodStart, tz, 'MMM d') + ' - ' +
+                      Utilities.formatDate(new Date(periodEnd.getTime() - MS_PER_DAY), tz, 'MMM d');
+
+    var lastRow = sh.getLastRow();
+    if (lastRow < 2) return { myHours: 0, periodLabel: periodLabel, allEmployees: [] };
+
+    var data = sh.getRange(2, 1, lastRow - 1, 6).getValues();
+
+    // Filter to current pay period
+    var periodRows = data.filter(function(row) {
+      if (!row[2]) return false;
+      var d = new Date(row[2]);
+      return d >= periodStart && d < periodEnd;
+    });
+
+    // My hours
+    var myHours = 0;
+    var myDays  = {};
+    periodRows.forEach(function(row) {
+      if ((row[1] || '').toString().toLowerCase() !== email.toLowerCase()) return;
+      var h = parseFloat(row[5]) || 0;
+      myHours += h;
+      var day = Utilities.formatDate(new Date(row[2]), tz, 'EEE MM/dd');
+      myDays[day] = (myDays[day] || 0) + h;
+    });
+    myHours = Math.round(myHours * 100) / 100;
+
+    // Admin: all employees
+    var allEmployees = [];
+    if (role === 'admin') {
+      var empMap = {};
+      periodRows.forEach(function(row) {
+        var emp = (row[0] || row[1] || '').toString();
+        var h   = parseFloat(row[5]) || 0;
+        if (!empMap[emp]) empMap[emp] = 0;
+        empMap[emp] += h;
+      });
+      Object.keys(empMap).forEach(function(name) {
+        allEmployees.push({ name: name, hours: Math.round(empMap[name] * 100) / 100 });
+      });
+      allEmployees.sort(function(a, b) { return b.hours - a.hours; });
+    }
+
+    return { myHours: myHours, myDays: myDays, periodLabel: periodLabel, allEmployees: allEmployees };
+  } catch(e) { return { error: e.toString() }; }
 }
