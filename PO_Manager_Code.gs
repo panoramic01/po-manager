@@ -90,6 +90,13 @@ function doPost(e) {
     else if (action === 'getClockStatus')               result = getClockStatus(payload);
     else if (action === 'getTimesheet')                 result = getTimesheet(payload);
     else if (action === 'updateProfile')               result = updateProfile(payload);
+    else if (action === 'getEmployees')                result = getEmployees();
+    else if (action === 'addEmployee')                 result = addEmployee(payload);
+    else if (action === 'updateEmployee')              result = updateEmployee(payload);
+    else if (action === 'removeEmployee')              result = removeEmployee(payload);
+    else if (action === 'getPTOOverview')              result = getPTOOverview();
+    else if (action === 'getPayrollSummary')           result = getPayrollSummary();
+    else if (action === 'emailPayroll')                result = emailPayroll(payload);
     else                                        result = { error: 'Unknown action: ' + action };
 
     return ContentService
@@ -1430,14 +1437,21 @@ function getPTOSectionGid(sectionName) {
 // Sheet: "Time Tracking"  cols: A=Name, B=Email, C=Date, D=ClockIn, E=ClockOut, F=Hours
 var TIME_SHEET = 'Time Tracking';
 
-// Bi-weekly epoch: Monday 2026-07-06 (adjust if needed)
-var PAYPERIOD_EPOCH_MS = new Date('2026-07-06T00:00:00').getTime();
-var MS_PER_DAY = 86400000;
-
-function getPeriodStart(dateMs) {
-  var daysSinceEpoch = Math.floor((dateMs - PAYPERIOD_EPOCH_MS) / MS_PER_DAY);
-  var periodDay = daysSinceEpoch - (((daysSinceEpoch % 14) + 14) % 14);
-  return new Date(PAYPERIOD_EPOCH_MS + periodDay * MS_PER_DAY);
+// Semi-monthly pay periods: 1st-15th and 16th-end of month
+function getPeriodBounds(d) {
+  var tz    = Session.getScriptTimeZone();
+  var year  = parseInt(Utilities.formatDate(d, tz, 'yyyy'));
+  var month = parseInt(Utilities.formatDate(d, tz, 'M')) - 1; // 0-indexed
+  var day   = parseInt(Utilities.formatDate(d, tz, 'd'));
+  var start, end;
+  if (day <= 15) {
+    start = new Date(year, month, 1);
+    end   = new Date(year, month, 15);
+  } else {
+    start = new Date(year, month, 16);
+    end   = new Date(year, month + 1, 0); // day 0 of next month = last day of this month
+  }
+  return { start: start, end: end };
 }
 
 function getTimeSheet_() {
@@ -1522,57 +1536,256 @@ function getClockStatus(payload) {
 
 function getTimesheet(payload) {
   try {
-    var email = payload.email;
-    var role  = payload.role;
-    var sh    = getTimeSheet_();
-    var tz    = Session.getScriptTimeZone();
-    var now   = new Date();
+    var email  = payload.email;
+    var role   = payload.role || 'runner';
+    var sh     = getTimeSheet_();
+    var tz     = Session.getScriptTimeZone();
+    var now    = new Date();
+    var bounds = getPeriodBounds(now);
+    var pStart = bounds.start;
+    var pEnd   = bounds.end;
 
-    var periodStart = getPeriodStart(now.getTime());
-    var periodEnd   = new Date(periodStart.getTime() + 14 * MS_PER_DAY);
-    var periodLabel = Utilities.formatDate(periodStart, tz, 'MMM d') + ' - ' +
-                      Utilities.formatDate(new Date(periodEnd.getTime() - MS_PER_DAY), tz, 'MMM d');
+    // Format label: "Jul 1 - Jul 15" or "Jul 16 - Jul 31"
+    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var sm = months[pStart.getMonth()];
+    var em = months[pEnd.getMonth()];
+    var periodLabel = sm + ' ' + pStart.getDate() + ' - ' + em + ' ' + pEnd.getDate();
+
+    var myHours   = 0;
+    var myDays    = {};
+    var empMap    = {}; // email -> { name, hours }
 
     var lastRow = sh.getLastRow();
-    if (lastRow < 2) return { myHours: 0, periodLabel: periodLabel, allEmployees: [] };
+    if (lastRow >= 2) {
+      var data = sh.getRange(2, 1, lastRow - 1, 6).getValues();
+      for (var i = 0; i < data.length; i++) {
+        var rowEmail = (data[i][1] || '').toString().toLowerCase().trim();
+        var rowDate  = data[i][2] ? new Date(data[i][2]) : null;
+        var rowHours = parseFloat(data[i][5]) || 0;
+        if (!rowDate) continue;
+        // Normalize rowDate to midnight for comparison
+        var rd = new Date(rowDate.getFullYear(), rowDate.getMonth(), rowDate.getDate());
+        if (rd < pStart || rd > pEnd) continue;
 
-    var data = sh.getRange(2, 1, lastRow - 1, 6).getValues();
+        // My rows
+        if (rowEmail === email.toLowerCase().trim()) {
+          myHours += rowHours;
+          var dayLabel = months[rd.getMonth()] + ' ' + rd.getDate();
+          myDays[dayLabel] = Math.round(((myDays[dayLabel] || 0) + rowHours) * 100) / 100;
+        }
 
-    // Filter to current pay period
-    var periodRows = data.filter(function(row) {
-      if (!row[2]) return false;
-      var d = new Date(row[2]);
-      return d >= periodStart && d < periodEnd;
-    });
-
-    // My hours
-    var myHours = 0;
-    var myDays  = {};
-    periodRows.forEach(function(row) {
-      if ((row[1] || '').toString().toLowerCase() !== email.toLowerCase()) return;
-      var h = parseFloat(row[5]) || 0;
-      myHours += h;
-      var day = Utilities.formatDate(new Date(row[2]), tz, 'EEE MM/dd');
-      myDays[day] = (myDays[day] || 0) + h;
-    });
-    myHours = Math.round(myHours * 100) / 100;
-
-    // Admin: all employees
-    var allEmployees = [];
-    if (role === 'admin') {
-      var empMap = {};
-      periodRows.forEach(function(row) {
-        var emp = (row[0] || row[1] || '').toString();
-        var h   = parseFloat(row[5]) || 0;
-        if (!empMap[emp]) empMap[emp] = 0;
-        empMap[emp] += h;
-      });
-      Object.keys(empMap).forEach(function(name) {
-        allEmployees.push({ name: name, hours: Math.round(empMap[name] * 100) / 100 });
-      });
-      allEmployees.sort(function(a, b) { return b.hours - a.hours; });
+        // All employees (admin)
+        if (role === 'admin') {
+          if (!empMap[rowEmail]) empMap[rowEmail] = { name: (data[i][0] || rowEmail).toString().trim(), hours: 0 };
+          empMap[rowEmail].hours = Math.round((empMap[rowEmail].hours + rowHours) * 100) / 100;
+        }
+      }
     }
 
-    return { myHours: myHours, myDays: myDays, periodLabel: periodLabel, allEmployees: allEmployees };
+    var allEmployees = [];
+    if (role === 'admin') {
+      allEmployees = Object.keys(empMap).map(function(e) {
+        return { name: empMap[e].name, hours: empMap[e].hours };
+      }).sort(function(a, b) { return b.hours - a.hours; });
+    }
+
+    return {
+      myHours:      Math.round(myHours * 100) / 100,
+      myDays:       myDays,
+      periodLabel:  periodLabel,
+      allEmployees: allEmployees
+    };
+  } catch(e) { return { error: e.toString() }; }
+}
+
+// ── Admin: Employee Manager ───────────────────────────────────────────────────
+function getEmployees() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sh = ss.getSheetByName(ROLES_SHEET);
+    if (!sh) return { error: 'HR sheet not found' };
+    var lastRow = sh.getLastRow();
+    if (lastRow < 2) return { employees: [] };
+    var data = sh.getRange(2, 1, lastRow - 1, 7).getValues();
+    var employees = [];
+    for (var i = 0; i < data.length; i++) {
+      if (!data[i][1]) continue;
+      employees.push({
+        rowIndex:  i + 2,
+        name:      (data[i][0] || '').toString().trim(),
+        email:     (data[i][1] || '').toString().trim(),
+        phone:     (data[i][2] || '').toString().trim(),
+        role:      (data[i][3] || '').toString().trim(),
+        allotted:  parseFloat(data[i][5]) || 0,
+        used:      parseFloat(data[i][6]) || 0,
+        remaining: (parseFloat(data[i][5]) || 0) - (parseFloat(data[i][6]) || 0)
+      });
+    }
+    return { employees: employees };
+  } catch(e) { return { error: e.toString() }; }
+}
+
+function addEmployee(payload) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sh = ss.getSheetByName(ROLES_SHEET);
+    if (!sh) return { error: 'HR sheet not found' };
+    var email = (payload.email || '').toLowerCase().trim();
+    if (!email || !payload.name) return { error: 'Name and email are required' };
+    var lastRow = sh.getLastRow();
+    if (lastRow >= 2) {
+      var existing = sh.getRange(2, 1, lastRow - 1, 2).getValues();
+      for (var i = 0; i < existing.length; i++) {
+        if ((existing[i][1] || '').toLowerCase().trim() === email) {
+          return { error: 'An employee with that email already exists' };
+        }
+      }
+    }
+    sh.appendRow([
+      payload.name.trim(),
+      email,
+      (payload.phone || '').trim(),
+      (payload.role  || 'runner').trim(),
+      (payload.password || '').trim(),
+      parseFloat(payload.allotted) || 0,
+      0
+    ]);
+    return { success: true };
+  } catch(e) { return { error: e.toString() }; }
+}
+
+function updateEmployee(payload) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sh = ss.getSheetByName(ROLES_SHEET);
+    if (!sh) return { error: 'HR sheet not found' };
+    var email = (payload.email || '').toLowerCase().trim();
+    var lastRow = sh.getLastRow();
+    if (lastRow < 2) return { error: 'Employee not found' };
+    var data = sh.getRange(2, 1, lastRow - 1, 7).getValues();
+    for (var i = 0; i < data.length; i++) {
+      if ((data[i][1] || '').toLowerCase().trim() === email) {
+        var row = i + 2;
+        if (payload.name     !== undefined) sh.getRange(row, 1).setValue(payload.name);
+        if (payload.phone    !== undefined) sh.getRange(row, 3).setValue(payload.phone);
+        if (payload.role     !== undefined) sh.getRange(row, 4).setValue(payload.role);
+        if (payload.password !== undefined && payload.password !== '') sh.getRange(row, 5).setValue(payload.password);
+        if (payload.allotted !== undefined) sh.getRange(row, 6).setValue(parseFloat(payload.allotted) || 0);
+        return { success: true };
+      }
+    }
+    return { error: 'Employee not found' };
+  } catch(e) { return { error: e.toString() }; }
+}
+
+function removeEmployee(payload) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sh = ss.getSheetByName(ROLES_SHEET);
+    if (!sh) return { error: 'HR sheet not found' };
+    var email = (payload.email || '').toLowerCase().trim();
+    var lastRow = sh.getLastRow();
+    if (lastRow < 2) return { error: 'Employee not found' };
+    var data = sh.getRange(2, 2, lastRow - 1, 1).getValues();
+    for (var i = 0; i < data.length; i++) {
+      if ((data[i][0] || '').toLowerCase().trim() === email) {
+        sh.deleteRow(i + 2);
+        return { success: true };
+      }
+    }
+    return { error: 'Employee not found' };
+  } catch(e) { return { error: e.toString() }; }
+}
+
+// ── Admin: PTO Overview ───────────────────────────────────────────────────────
+function getPTOOverview() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sh = ss.getSheetByName(ROLES_SHEET);
+    var balances = [];
+    if (sh && sh.getLastRow() >= 2) {
+      var data = sh.getRange(2, 1, sh.getLastRow() - 1, 7).getValues();
+      for (var i = 0; i < data.length; i++) {
+        if (!data[i][1]) continue;
+        var allotted  = parseFloat(data[i][5]) || 0;
+        var used      = parseFloat(data[i][6]) || 0;
+        balances.push({ name: (data[i][0] || '').toString().trim(), email: (data[i][1] || '').toString().trim(), allotted: allotted, used: used, remaining: allotted - used });
+      }
+    }
+    var result = asanaRequest('get', '/projects/' + ASANA_PTO_PROJECT + '/tasks?opt_fields=gid,name,notes,memberships.section.name&limit=100');
+    var requests = [];
+    if (!result.errors) {
+      (result.data || []).forEach(function(task) {
+        var notes = task.notes || '';
+        var section = (task.memberships && task.memberships[0] && task.memberships[0].section) ? task.memberships[0].section.name : '';
+        var parseField = function(label) { var m = notes.match(new RegExp(label + ':\s*([^\n]+)')); return m ? m[1].trim() : ''; };
+        requests.push({
+          gid:    task.gid,
+          name:   parseField('Name') || task.name,
+          email:  parseField('Requester'),
+          dates:  parseField('Dates'),
+          days:   parseFloat(parseField('Days')) || 0,
+          reason: parseField('Reason'),
+          status: section === 'Approved' ? 'approved' : section === 'Denied' ? 'denied' : 'pending'
+        });
+      });
+    }
+    return { balances: balances, requests: requests };
+  } catch(e) { return { error: e.toString() }; }
+}
+
+// ── Admin: Payroll Summary ────────────────────────────────────────────────────
+function getPayrollSummary() {
+  try {
+    var sh  = getTimeSheet_();
+    var tz  = Session.getScriptTimeZone();
+    var now = new Date();
+    var bounds = getPeriodBounds(now);
+    var pStart = bounds.start;
+    var pEnd   = bounds.end;
+    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var periodLabel = months[pStart.getMonth()] + ' ' + pStart.getDate() + ' - ' + months[pEnd.getMonth()] + ' ' + pEnd.getDate();
+    var empMap = {};
+    var lastRow = sh.getLastRow();
+    if (lastRow >= 2) {
+      var data = sh.getRange(2, 1, lastRow - 1, 6).getValues();
+      for (var i = 0; i < data.length; i++) {
+        var rowEmail = (data[i][1] || '').toString().toLowerCase().trim();
+        var rowDate  = data[i][2] ? new Date(data[i][2]) : null;
+        var rowHours = parseFloat(data[i][5]) || 0;
+        if (!rowDate || !rowEmail) continue;
+        var rd = new Date(rowDate.getFullYear(), rowDate.getMonth(), rowDate.getDate());
+        if (rd < pStart || rd > pEnd) continue;
+        if (!empMap[rowEmail]) empMap[rowEmail] = { name: (data[i][0] || rowEmail).toString().trim(), total: 0, days: {} };
+        empMap[rowEmail].total = Math.round((empMap[rowEmail].total + rowHours) * 100) / 100;
+        var dayLabel = months[rd.getMonth()] + ' ' + rd.getDate();
+        empMap[rowEmail].days[dayLabel] = Math.round(((empMap[rowEmail].days[dayLabel] || 0) + rowHours) * 100) / 100;
+      }
+    }
+    var employees = Object.keys(empMap).map(function(e) {
+      return { email: e, name: empMap[e].name, total: empMap[e].total, days: empMap[e].days };
+    }).sort(function(a, b) { return a.name.localeCompare(b.name); });
+    return { employees: employees, periodLabel: periodLabel };
+  } catch(e) { return { error: e.toString() }; }
+}
+
+function emailPayroll(payload) {
+  try {
+    var to = payload.to || Session.getActiveUser().getEmail();
+    var summary = getPayrollSummary();
+    if (summary.error) return { error: summary.error };
+    var lines = ['Payroll Summary - ' + summary.periodLabel, '===========================', ''];
+    var grandTotal = 0;
+    summary.employees.forEach(function(e) {
+      lines.push(e.name + ': ' + e.total + ' hrs');
+      var dayKeys = Object.keys(e.days);
+      dayKeys.forEach(function(d) { lines.push('  ' + d + ': ' + e.days[d] + ' hrs'); });
+      lines.push('');
+      grandTotal += e.total;
+    });
+    lines.push('---------------------------');
+    lines.push('Grand Total: ' + Math.round(grandTotal * 100) / 100 + ' hrs');
+    GmailApp.sendEmail(to, 'Payroll Summary - ' + summary.periodLabel, lines.join('\n'));
+    return { success: true };
   } catch(e) { return { error: e.toString() }; }
 }
