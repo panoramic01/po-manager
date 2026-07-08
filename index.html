@@ -1133,6 +1133,18 @@
           <div id="acct-since-label" style="font-size:12px;color:rgba(255,255,255,0.6);margin-bottom:16px;min-height:16px"></div>
           <button id="acct-punch-btn" onclick="doPunchAcct()" style="background:#fff;color:#1F3971;border:none;border-radius:9px;padding:12px 40px;font-size:15px;font-weight:800;cursor:pointer;width:100%">Clock In</button>
         </div>
+        <!-- Hours this period -->
+        <div style="padding:0 0 4px">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0 8px;border-top:1px solid #f0f0f0;margin-top:12px">
+            <span style="font-size:13px;font-weight:700;color:#1F3971">Hours This Period</span>
+            <span id="acct-period-label" style="font-size:12px;color:#888"></span>
+          </div>
+          <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:10px">
+            <span id="acct-my-hours" style="font-size:36px;font-weight:800;color:#1F3971">--</span>
+            <span style="font-size:13px;color:#888;font-weight:500">hrs</span>
+          </div>
+          <div id="acct-my-days" style="border-top:1px solid #f0f0f0;padding-top:8px"></div>
+        </div>
       </div>
     </div>
 
@@ -5212,6 +5224,24 @@ function loadAccount() {
     _acctClockedIn = s.clockedIn;
     updateAcctClockUI(s.clockedIn, s.since || null);
     if (s.clockedIn) startAcctTick();
+  }, function(){});
+
+  // Load timesheet hours
+  gasCall('getTimesheet', { email: email, role: G.role }, function(d) {
+    if (d.error) return;
+    document.getElementById('acct-period-label').textContent = d.periodLabel || '';
+    document.getElementById('acct-my-hours').textContent = d.myHours !== undefined ? d.myHours : '--';
+    var daysEl = document.getElementById('acct-my-days');
+    var days = d.myDays || {};
+    var keys = Object.keys(days);
+    if (keys.length) {
+      daysEl.innerHTML = keys.map(function(day) {
+        return '<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:13px;color:#555;border-bottom:1px solid #f5f5f5">'
+          + '<span>' + day + '</span><span style="font-weight:600">' + days[day] + ' hrs</span></div>';
+      }).join('');
+    } else {
+      daysEl.innerHTML = '<p style="font-size:13px;color:#aaa;margin:0">No hours recorded yet this period.</p>';
+    }
   }, function(){});
 
   // Load PTO balance
