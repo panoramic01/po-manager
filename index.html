@@ -5227,26 +5227,28 @@ function loadAccount() {
   }, function(){});
 
   // Load PTO balance
-  gasCall('getPTOData', { email: email }, function(d) {
+  gasCall('getPTOData', { email: email, role: G.role }, function(d) {
     if (d.error) return;
-    document.getElementById('acct-pto-allotted').textContent  = d.allotted  !== undefined ? d.allotted  : '--';
-    document.getElementById('acct-pto-used').textContent      = d.used       !== undefined ? d.used      : '--';
-    document.getElementById('acct-pto-remaining').textContent = d.remaining  !== undefined ? d.remaining : '--';
+    var bal = d.balance || {};
+    document.getElementById('acct-pto-allotted').textContent  = bal.allotted  !== undefined ? bal.allotted  : '--';
+    document.getElementById('acct-pto-used').textContent      = bal.used       !== undefined ? bal.used      : '--';
+    document.getElementById('acct-pto-remaining').textContent = bal.remaining  !== undefined ? bal.remaining : '--';
 
-    // Show recent/upcoming requests
-    var list = d.history || [];
+    // Show recent requests
+    var list = d.myRequests || [];
     var listEl = document.getElementById('acct-pto-list');
     if (list.length === 0) {
       listEl.innerHTML = '<p style="font-size:13px;color:#aaa;margin:0">No time off requests yet.</p>';
       return;
     }
-    var statusColor = { Approved: '#2e7d32', Denied: '#c62828', Pending: '#e65100' };
+    var statusColor = { approved: '#2e7d32', denied: '#c62828', pending: '#e65100' };
     listEl.innerHTML = list.slice(0, 4).map(function(r) {
       var color = statusColor[r.status] || '#888';
+      var label = r.status.charAt(0).toUpperCase() + r.status.slice(1);
       return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f5f5f5">'
-        + '<div><div style="font-size:13px;font-weight:600;color:#222">' + esc(r.startDate) + (r.endDate && r.endDate !== r.startDate ? ' – ' + esc(r.endDate) : '') + '</div>'
+        + '<div><div style="font-size:13px;font-weight:600;color:#222">' + esc(r.dates || '') + '</div>'
         + '<div style="font-size:12px;color:#888">' + r.days + ' day' + (r.days !== 1 ? 's' : '') + '</div></div>'
-        + '<span style="font-size:12px;font-weight:700;color:' + color + '">' + esc(r.status) + '</span>'
+        + '<span style="font-size:12px;font-weight:700;color:' + color + '">' + label + '</span>'
         + '</div>';
     }).join('');
   }, function(){});
