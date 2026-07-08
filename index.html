@@ -2949,7 +2949,7 @@ function showOtherPanel(name) {
 
 function showOtherHome() {
   document.getElementById('other-home').style.display = '';
-  ['pricing', 'contacts', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'sop'].forEach(function(p) {
+  ['pricing', 'contacts', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'sop', 'pto', 'timeclock'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
     if (el) el.style.display = 'none';
   });

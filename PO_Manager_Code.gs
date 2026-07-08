@@ -289,11 +289,12 @@ function verifyLogin(email, password) {
       var rowEmail = (data[i][1] || '').toString().toLowerCase().trim(); // Column B
       var rowRole  = (data[i][3] || '').toString().toLowerCase().trim(); // Column D
       var rowPass  = (data[i][4] || '').toString().trim();               // Column E
+      var rowName  = (data[i][0] || '').toString().trim();               // Column A
       if (rowEmail === email) {
         if (rowPass && rowPass === password) {
           return {
             success: true, role: rowRole, email: email,
-            config: { statusOptions: STATUS_OPTIONS, vendorOptions: VENDOR_OPTIONS, userRole: rowRole, userEmail: email }
+            config: { statusOptions: STATUS_OPTIONS, vendorOptions: VENDOR_OPTIONS, userRole: rowRole, userEmail: email, userName: rowName }
           };
         } else {
           return { success: false, error: 'Incorrect password.' };
@@ -316,7 +317,8 @@ function getConfig(email) {
     statusOptions: STATUS_OPTIONS,
     vendorOptions: VENDOR_OPTIONS,
     userRole:      roleData.role,
-    userEmail:     roleData.email
+    userEmail:     roleData.email,
+    userName:      roleData.name
   };
 }
 
@@ -337,11 +339,12 @@ function getRoleByEmail(email) {
     for (var i = 1; i < data.length; i++) {
       var rowEmail = (data[i][1] || '').toString().toLowerCase().trim(); // Column B
       var rowRole  = (data[i][3] || '').toString().toLowerCase().trim(); // Column D
-      if (rowEmail === email) return { role: rowRole, email: email };
+      var rowName  = (data[i][0] || '').toString().trim();               // Column A
+      if (rowEmail === email) return { role: rowRole, email: email, name: rowName };
     }
-    return { role: 'runner', email: email };
+    return { role: 'runner', email: email, name: '' };
   } catch(e) {
-    return { role: 'runner', email: email };
+    return { role: 'runner', email: email, name: '' };
   }
 }
 
