@@ -999,16 +999,31 @@
         <!-- Request form -->
         <div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:16px">
           <div style="font-size:14px;font-weight:700;color:#1F3971;margin-bottom:12px">Request Time Off</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
-            <div>
-              <label style="font-size:11px;font-weight:600;color:#666;display:block;margin-bottom:4px">Start Date</label>
-              <input id="pto-start" type="date" oninput="calcPTODays()"
-                style="width:100%;padding:9px 10px;border:1px solid #dde1ef;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box">
+          <!-- Date range -->
+          <div style="background:#f7f8fc;border:1px solid #dde1ef;border-radius:10px;padding:12px;margin-bottom:10px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="flex:1">
+                <label style="font-size:10px;font-weight:700;color:#888;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px">From</label>
+                <input id="pto-start" type="date" oninput="calcPTODays()"
+                  style="width:100%;padding:7px 8px;border:none;background:transparent;font-size:14px;outline:none;box-sizing:border-box;color:#1F3971;font-weight:600">
+              </div>
+              <svg width="18" height="18" fill="none" stroke="#aaa" stroke-width="2" viewBox="0 0 24 24" style="flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M12 5l7 7-7 7"/></svg>
+              <div style="flex:1">
+                <label style="font-size:10px;font-weight:700;color:#888;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.4px">To</label>
+                <input id="pto-end" type="date" oninput="calcPTODays()" id="pto-end"
+                  style="width:100%;padding:7px 8px;border:none;background:transparent;font-size:14px;outline:none;box-sizing:border-box;color:#1F3971;font-weight:600">
+              </div>
             </div>
-            <div>
-              <label style="font-size:11px;font-weight:600;color:#666;display:block;margin-bottom:4px">End Date</label>
-              <input id="pto-end" type="date" oninput="calcPTODays()"
-                style="width:100%;padding:9px 10px;border:1px solid #dde1ef;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box">
+            <!-- Half day toggle -->
+            <div style="border-top:1px solid #dde1ef;margin-top:10px;padding-top:10px;display:flex;align-items:center;justify-content:space-between">
+              <span style="font-size:13px;color:#555;font-weight:500">Half day</span>
+              <label style="display:flex;align-items:center;cursor:pointer;gap:8px">
+                <div style="position:relative;display:inline-block;width:40px;height:22px">
+                  <input type="checkbox" id="pto-halfday" onchange="calcPTODays()" style="opacity:0;width:0;height:0;position:absolute">
+                  <span id="pto-halfday-track" style="position:absolute;inset:0;background:#ccc;border-radius:22px;transition:0.2s"></span>
+                  <span id="pto-halfday-thumb" style="position:absolute;left:3px;top:3px;width:16px;height:16px;background:#fff;border-radius:50%;transition:0.2s;box-shadow:0 1px 3px rgba(0,0,0,0.2)"></span>
+                </div>
+              </label>
             </div>
           </div>
           <div id="pto-days-preview" style="display:none;background:#f0f4ff;border-radius:8px;padding:8px 12px;font-size:13px;color:#1F3971;font-weight:600;margin-bottom:10px;text-align:center"></div>
@@ -4720,11 +4735,36 @@ function loadPTOPanel() {
   }, function(e) { showToast('Could not load time off data'); });
 }
 
+function countWeekdays(s, e) {
+  var days = 0;
+  var cur = new Date(s.getTime());
+  while (cur <= e) {
+    var d = cur.getDay();
+    if (d !== 0 && d !== 6) days++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return days;
+}
+
 function calcPTODays() {
-  var start = document.getElementById('pto-start').value;
-  var end   = document.getElementById('pto-end').value;
+  var start   = document.getElementById('pto-start').value;
+  var end     = document.getElementById('pto-end').value;
+  var half    = document.getElementById('pto-halfday').checked;
   var preview = document.getElementById('pto-days-preview');
-  var btn = document.getElementById('pto-submit-btn');
+  var btn     = document.getElementById('pto-submit-btn');
+  var track   = document.getElementById('pto-halfday-track');
+  var thumb   = document.getElementById('pto-halfday-thumb');
+
+  // Update toggle visual
+  if (track) track.style.background = half ? '#1F3971' : '#ccc';
+  if (thumb) thumb.style.left = half ? '21px' : '3px';
+
+  // If half day: lock end = start
+  if (half && start) {
+    document.getElementById('pto-end').value = start;
+    end = start;
+  }
+
   if (!start || !end) {
     preview.style.display = 'none';
     btn.disabled = true; btn.style.opacity = '0.5';
@@ -4738,8 +4778,15 @@ function calcPTODays() {
     btn.disabled = true; btn.style.opacity = '0.5';
     return;
   }
-  var days = Math.round((e - s) / 86400000) + 1;
-  preview.textContent = days + ' day' + (days !== 1 ? 's' : '') + ' requested';
+  var days = half ? 0.5 : countWeekdays(s, e);
+  if (days === 0) {
+    preview.textContent = 'Selected range falls on a weekend';
+    preview.style.display = 'block';
+    btn.disabled = true; btn.style.opacity = '0.5';
+    return;
+  }
+  preview.textContent = days + ' day' + (days !== 1 ? 's' : '') + ' requested (weekdays only)';
+  if (half) preview.textContent = '0.5 days requested (half day)';
   preview.style.display = 'block';
   btn.disabled = false; btn.style.opacity = '1';
 }
@@ -4751,7 +4798,8 @@ function doSubmitPTO() {
   var errEl  = document.getElementById('pto-submit-err');
   var btn    = document.getElementById('pto-submit-btn');
   if (!start || !end) return;
-  var days = Math.round((new Date(end + 'T00:00:00') - new Date(start + 'T00:00:00')) / 86400000) + 1;
+  var half = document.getElementById('pto-halfday').checked;
+  var days = half ? 0.5 : countWeekdays(new Date(start + 'T00:00:00'), new Date(end + 'T00:00:00'));
   errEl.style.display = 'none';
   btn.disabled = true; btn.textContent = 'Submitting…'; btn.style.opacity = '0.7';
   gasCall('submitPTORequest', {
@@ -4768,6 +4816,7 @@ function doSubmitPTO() {
       document.getElementById('pto-start').value  = '';
       document.getElementById('pto-end').value    = '';
       document.getElementById('pto-reason').value = '';
+      document.getElementById('pto-halfday').checked = false;
       document.getElementById('pto-days-preview').style.display = 'none';
       btn.disabled = true; btn.style.opacity = '0.5';
       loadPTOPanel(); // reload to show new request in history

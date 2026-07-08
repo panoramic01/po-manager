@@ -1209,8 +1209,8 @@ function getPTOData(email, role) {
       };
 
       var taskEmail = parseField('Requester');
-      var status = task.completed ? 'approved'
-                 : section.toLowerCase().indexOf('denied') !== -1 ? 'denied'
+      var status = section === 'Approved' ? 'approved'
+                 : section === 'Denied' ? 'denied'
                  : 'pending';
 
       var req = {
@@ -1294,7 +1294,7 @@ function getPTOQueue() {
       if (task.memberships && task.memberships[0] && task.memberships[0].section) {
         section = task.memberships[0].section.name || '';
       }
-      if (section.toLowerCase().indexOf('denied') !== -1) return;
+      if (section === 'Approved' || section === 'Denied') return;
 
       var notes = task.notes || '';
       var parseField = function(label) {
@@ -1321,12 +1321,15 @@ function getPTOQueue() {
  */
 function approvePTO(payload) {
   try {
-    var taskGid = payload.taskGid;
+    var taskGid  = payload.taskGid;
     var empEmail = payload.employeeEmail;
-    var days = parseFloat(payload.days) || 0;
+    var days     = parseFloat(payload.days) || 0;
 
-    var result = asanaRequest('put', '/tasks/' + taskGid, { completed: true });
-    if (result.errors) return { error: result.errors[0].message };
+    // Move to Approved section (triggers Asana email rule)
+    var approvedGid = getPTOSectionGid('Approved');
+    if (!approvedGid) return { error: 'Approved section not found in Asana project' };
+    var moved = asanaRequest('post', '/sections/' + approvedGid + '/addTask', { task: taskGid });
+    if (moved.errors) return { error: moved.errors[0].message };
 
     if (empEmail && days > 0) updatePTOUsed(empEmail, days);
     return { success: true };
@@ -1339,14 +1342,12 @@ function approvePTO(payload) {
 function denyPTO(payload) {
   try {
     var taskGid = payload.taskGid;
-    var info = asanaRequest('get', '/tasks/' + taskGid + '?opt_fields=name');
-    var currentName = (info.data && info.data.name) ? info.data.name : '';
 
-    var result = asanaRequest('put', '/tasks/' + taskGid, {
-      name:      '[Denied] ' + currentName,
-      completed: true
-    });
-    if (result.errors) return { error: result.errors[0].message };
+    // Move to Denied section (triggers Asana email rule)
+    var deniedGid = getPTOSectionGid('Denied');
+    if (!deniedGid) return { error: 'Denied section not found in Asana project' };
+    var moved = asanaRequest('post', '/sections/' + deniedGid + '/addTask', { task: taskGid });
+    if (moved.errors) return { error: moved.errors[0].message };
     return { success: true };
   } catch(e) { return { error: e.toString() }; }
 }
