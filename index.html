@@ -4822,9 +4822,9 @@ function renderPTOQueue(queue) {
       + (r.reason && r.reason !== 'N/A' ? '<div style="font-size:12px;color:#888;margin-top:2px">' + esc(r.reason) + '</div>' : '')
       + '</div></div>'
       + '<div style="display:flex;gap:8px;margin-top:8px">'
-      + '<button onclick="doApprovePTO('' + r.gid + '','' + esc(r.requesterEmail) + '',' + r.days + ',this)" '
+      + '<button onclick="doApprovePTO(\'' + r.gid + '\',\'' + esc(r.requesterEmail) + '\',' + r.days + ',this)" '
       + 'style="flex:1;background:#1F3971;color:#fff;border:none;border-radius:7px;padding:9px;font-size:13px;font-weight:700;cursor:pointer">✓ Approve</button>'
-      + '<button onclick="doDenyPTO('' + r.gid + '',this)" '
+      + '<button onclick="doDenyPTO(\'' + r.gid + '\',this)" '
       + 'style="flex:1;background:#fff;color:#c62828;border:1.5px solid #c62828;border-radius:7px;padding:9px;font-size:13px;font-weight:700;cursor:pointer">✗ Deny</button>'
       + '</div></div>';
   }).join('');
@@ -4860,9 +4860,6 @@ function doDenyPTO(taskGid, btn) {
     }, function() { btn.disabled = false; btn.textContent = orig; showToast('Could not connect'); });
 }
 
-function esc(s) {
-  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
 
 </script>
 
