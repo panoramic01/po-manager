@@ -89,6 +89,7 @@ function doPost(e) {
     else if (action === 'clockOut')                     result = clockOut(payload);
     else if (action === 'getClockStatus')               result = getClockStatus(payload);
     else if (action === 'getTimesheet')                 result = getTimesheet(payload);
+    else if (action === 'updateProfile')               result = updateProfile(payload);
     else                                        result = { error: 'Unknown action: ' + action };
 
     return ContentService
@@ -290,11 +291,12 @@ function verifyLogin(email, password) {
       var rowRole  = (data[i][3] || '').toString().toLowerCase().trim(); // Column D
       var rowPass  = (data[i][4] || '').toString().trim();               // Column E
       var rowName  = (data[i][0] || '').toString().trim();               // Column A
+      var rowPhone = (data[i][2] || '').toString().trim();               // Column C
       if (rowEmail === email) {
         if (rowPass && rowPass === password) {
           return {
             success: true, role: rowRole, email: email,
-            config: { statusOptions: STATUS_OPTIONS, vendorOptions: VENDOR_OPTIONS, userRole: rowRole, userEmail: email, userName: rowName }
+            config: { statusOptions: STATUS_OPTIONS, vendorOptions: VENDOR_OPTIONS, userRole: rowRole, userEmail: email, userName: rowName, userPhone: rowPhone }
           };
         } else {
           return { success: false, error: 'Incorrect password.' };
@@ -318,8 +320,36 @@ function getConfig(email) {
     vendorOptions: VENDOR_OPTIONS,
     userRole:      roleData.role,
     userEmail:     roleData.email,
-    userName:      roleData.name
+    userName:      roleData.name,
+    userPhone:     roleData.phone
   };
+}
+
+/**
+ * Updates name and phone for an employee in the HR sheet.
+ */
+function updateProfile(payload) {
+  try {
+    var email = (payload.email || '').toLowerCase().trim();
+    var name  = (payload.name  || '').toString().trim();
+    var phone = (payload.phone || '').toString().trim();
+    if (!email || !name) return { error: 'Missing email or name' };
+    var ss    = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(ROLES_SHEET);
+    if (!sheet) return { error: 'HR sheet not found' };
+    var data  = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      var rowEmail = (data[i][1] || '').toString().toLowerCase().trim();
+      if (rowEmail === email) {
+        sheet.getRange(i + 1, 1).setValue(name);  // Column A: Name
+        sheet.getRange(i + 1, 3).setValue(phone); // Column C: Phone
+        return { success: true };
+      }
+    }
+    return { error: 'Employee not found' };
+  } catch(e) {
+    return { error: e.message };
+  }
 }
 
 /**
@@ -340,11 +370,12 @@ function getRoleByEmail(email) {
       var rowEmail = (data[i][1] || '').toString().toLowerCase().trim(); // Column B
       var rowRole  = (data[i][3] || '').toString().toLowerCase().trim(); // Column D
       var rowName  = (data[i][0] || '').toString().trim();               // Column A
-      if (rowEmail === email) return { role: rowRole, email: email, name: rowName };
+      var rowPhone = (data[i][2] || '').toString().trim();               // Column C
+      if (rowEmail === email) return { role: rowRole, email: email, name: rowName, phone: rowPhone };
     }
-    return { role: 'runner', email: email, name: '' };
+    return { role: 'runner', email: email, name: '', phone: '' };
   } catch(e) {
-    return { role: 'runner', email: email, name: '' };
+    return { role: 'runner', email: email, name: '', phone: '' };
   }
 }
 

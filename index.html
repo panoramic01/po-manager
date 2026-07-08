@@ -383,6 +383,13 @@
         <button class="search-clear" id="s-clear" onclick="clearSearch('s-input','s-clear'); runSearch()">✕</button>
       </div>
     </div>
+    <!-- New PO button -->
+    <div id="dash-new-po-btn" style="padding:12px 16px 0">
+      <button onclick="showTabDirect('create', null)" style="width:100%;background:#1F3971;color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 2px 8px rgba(31,57,113,0.25)">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+        New Purchase Order
+      </button>
+    </div>
     <div class="chip-row" id="s-chips" style="display:none">
       <button class="chip active" onclick="setChip('all',this)">All</button>
       <button class="chip" onclick="setChip('Pending Pickup',this)">Pickup</button>
@@ -411,9 +418,15 @@
   <!-- ══ CREATE PO ══ -->
   <div class="tab" id="tab-create">
 
+    <!-- Back header -->
+    <div style="display:flex;align-items:center;padding:12px 16px;background:#fff;border-bottom:1px solid #f0f0f0;position:sticky;top:0;z-index:10">
+      <button onclick="showTabDirect('dashboard', document.getElementById('nav-dashboard'))" style="background:none;border:none;font-size:14px;font-weight:600;color:#1F3971;cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
+      <span style="font-size:16px;font-weight:700;color:#1F3971">New Purchase Order</span>
+    </div>
+
     <!-- Form -->
     <div class="card" id="create-form-card">
-      <div class="card-title">New Purchase Order</div>
+      <div class="card-title" style="display:none">New Purchase Order</div>
 
       <div class="form-group">
         <label class="form-label">Builder</label>
@@ -1095,6 +1108,67 @@
       </div>
     </div>
 
+
+  <!-- ── Account Tab ──────────────────────────────────────────────────────── -->
+  <div id="tab-account" class="tab" style="padding:16px;padding-bottom:80px">
+
+    <!-- Profile card -->
+    <div style="background:#fff;border-radius:14px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px">
+        <div id="acct-avatar" style="width:56px;height:56px;border-radius:50%;background:#1F3971;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800;color:#fff;flex-shrink:0">?</div>
+        <div>
+          <div id="acct-display-name" style="font-size:17px;font-weight:700;color:#1F3971"></div>
+          <div id="acct-role-badge" style="font-size:12px;color:#888;margin-top:2px"></div>
+          <div id="acct-email-label" style="font-size:12px;color:#aaa;margin-top:1px;word-break:break-all"></div>
+        </div>
+      </div>
+      <div style="margin-bottom:12px">
+        <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Full Name</label>
+        <input id="acct-name-input" type="text" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:10px 12px;font-size:14px;outline:none" placeholder="Your name"/>
+      </div>
+      <div style="margin-bottom:16px">
+        <label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Phone</label>
+        <input id="acct-phone-input" type="tel" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:10px 12px;font-size:14px;outline:none" placeholder="Phone number"/>
+      </div>
+      <button onclick="saveProfile()" style="width:100%;background:#1F3971;color:#fff;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer">Save Changes</button>
+    </div>
+
+    <!-- Time Clock widget -->
+    <div style="background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:16px">
+      <div style="padding:14px 16px 10px;font-size:14px;font-weight:700;color:#1F3971;border-bottom:1px solid #f0f0f0">Time Clock</div>
+      <div style="padding:16px">
+        <div id="acct-clock-card" style="background:linear-gradient(135deg,#1F3971,#2d5ab5);border-radius:12px;padding:20px;text-align:center;margin-bottom:0">
+          <div id="acct-status-label" style="font-size:11px;color:rgba(255,255,255,0.75);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Not clocked in</div>
+          <div id="acct-time-display" style="font-size:30px;font-weight:800;color:#fff;margin-bottom:2px;font-variant-numeric:tabular-nums">--:--</div>
+          <div id="acct-since-label" style="font-size:12px;color:rgba(255,255,255,0.6);margin-bottom:16px;min-height:16px"></div>
+          <button id="acct-punch-btn" onclick="doPunchAcct()" style="background:#fff;color:#1F3971;border:none;border-radius:9px;padding:12px 40px;font-size:15px;font-weight:800;cursor:pointer;width:100%">Clock In</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Time Off summary -->
+    <div style="background:#fff;border-radius:14px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:16px">
+      <div style="font-size:14px;font-weight:700;color:#1F3971;margin-bottom:14px">Time Off</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px">
+        <div style="text-align:center;background:#f7f8fc;border-radius:10px;padding:12px 6px">
+          <div id="acct-pto-allotted" style="font-size:22px;font-weight:800;color:#1F3971">--</div>
+          <div style="font-size:11px;color:#888;margin-top:2px">Allotted</div>
+        </div>
+        <div style="text-align:center;background:#f7f8fc;border-radius:10px;padding:12px 6px">
+          <div id="acct-pto-used" style="font-size:22px;font-weight:800;color:#e65100">--</div>
+          <div style="font-size:11px;color:#888;margin-top:2px">Used</div>
+        </div>
+        <div style="text-align:center;background:#f7f8fc;border-radius:10px;padding:12px 6px">
+          <div id="acct-pto-remaining" style="font-size:22px;font-weight:800;color:#2e7d32">--</div>
+          <div style="font-size:11px;color:#888;margin-top:2px">Remaining</div>
+        </div>
+      </div>
+      <div id="acct-pto-list" style="border-top:1px solid #f0f0f0;padding-top:12px"></div>
+      <button onclick="showTab('other');showOtherPanel('pto')" style="width:100%;margin-top:12px;background:none;border:1.5px solid #1F3971;color:#1F3971;border-radius:9px;padding:10px;font-size:13px;font-weight:700;cursor:pointer">Request Time Off</button>
+    </div>
+
+  </div>
+
 </main>
 
 
@@ -1105,10 +1179,6 @@
     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
     Dashboard
   </button>
-  <button id="nav-create" class="nav-btn" onclick="showTab('create',this)">
-    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
-    New PO
-  </button>
   <button id="nav-receive" class="nav-btn" onclick="showTab('receive',this)">
     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
     Log
@@ -1116,6 +1186,10 @@
   <button id="nav-other" class="nav-btn" onclick="showTab('other',this)">
     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h7"/></svg>
     Other
+  </button>
+  <button id="nav-account" class="nav-btn" onclick="showTab('account',this)">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+    Account
   </button>
 
 </nav>
@@ -1532,7 +1606,8 @@ function applyRole(role) {
     canContacts:    role === 'admin' || role === 'office',
     canOther:       role === 'admin' || role === 'office',
     canCleanup:     role === 'admin' || role === 'office' || role === 'site_manager' || role === 'runner',
-    canAdmin:       false
+    canAdmin:       false,
+    canAccount:     true
   };
   G.perms = p;
 
@@ -1542,6 +1617,8 @@ function applyRole(role) {
   sd('nav-create',      p.canCreate);
   sd('nav-receive',     p.canReceive);
   sd('nav-other',       p.canOther);
+  sd('dash-new-po-btn',  p.canCreate);
+  sd('nav-account',     p.canAccount);
   sd('other-card-pricing',   p.canPricing);
   sd('other-card-contacts',  p.canContacts);
   sd('other-card-reconcile', role === 'admin');
@@ -1578,6 +1655,7 @@ function showTabDirect(name, btn) {
   if (btn) btn.classList.add('active');
   // pricing/contacts now loaded via showOtherPanel()
   if (!_navPop) history.pushState({ view: 'tab', tab: name }, '');
+  if (name === 'account') loadAccount();
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -2188,7 +2266,8 @@ function showTab(name, btn) {
     dashboard: !G.perms.canDash,
     create:    !G.perms.canCreate,
     receive:   !G.perms.canReceive,
-    other:     !G.perms.canOther
+    other:     !G.perms.canOther,
+    account:   false
   };
   if (blocked[name]) { showToast("You don't have access to that."); return; }
   showTabDirect(name, btn);
@@ -5118,6 +5197,152 @@ window.addEventListener('popstate', function(e) {
   }
   _navPop = false;
 });
+
+
+// ── Account Tab ───────────────────────────────────────────────────────────────
+var _acctClockedIn = false;
+var _acctClockInterval = null;
+
+function loadAccount() {
+  // Populate profile fields from cached config
+  var name  = G.config.userName  || '';
+  var email = G.userEmail        || '';
+  var phone = G.config.userPhone || '';
+  var role  = G.role             || '';
+
+  var initial = name ? name.charAt(0).toUpperCase() : email.charAt(0).toUpperCase();
+  document.getElementById('acct-avatar').textContent        = initial;
+  document.getElementById('acct-display-name').textContent  = name || email;
+  document.getElementById('acct-role-badge').textContent    = role.charAt(0).toUpperCase() + role.slice(1).replace('_', ' ');
+  document.getElementById('acct-email-label').textContent   = email;
+  document.getElementById('acct-name-input').value          = name;
+  document.getElementById('acct-phone-input').value         = phone;
+
+  // Load clock status
+  gasCall('getClockStatus', { email: email }, function(s) {
+    if (s.error) return;
+    _acctClockedIn = s.clockedIn;
+    updateAcctClockUI(s.clockedIn, s.since || null);
+    if (s.clockedIn) startAcctTick();
+  }, function(){});
+
+  // Load PTO balance
+  gasCall('getPTOData', { email: email }, function(d) {
+    if (d.error) return;
+    document.getElementById('acct-pto-allotted').textContent  = d.allotted  !== undefined ? d.allotted  : '--';
+    document.getElementById('acct-pto-used').textContent      = d.used       !== undefined ? d.used      : '--';
+    document.getElementById('acct-pto-remaining').textContent = d.remaining  !== undefined ? d.remaining : '--';
+
+    // Show recent/upcoming requests
+    var list = d.history || [];
+    var listEl = document.getElementById('acct-pto-list');
+    if (list.length === 0) {
+      listEl.innerHTML = '<p style="font-size:13px;color:#aaa;margin:0">No time off requests yet.</p>';
+      return;
+    }
+    var statusColor = { Approved: '#2e7d32', Denied: '#c62828', Pending: '#e65100' };
+    listEl.innerHTML = list.slice(0, 4).map(function(r) {
+      var color = statusColor[r.status] || '#888';
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f5f5f5">'
+        + '<div><div style="font-size:13px;font-weight:600;color:#222">' + esc(r.startDate) + (r.endDate && r.endDate !== r.startDate ? ' – ' + esc(r.endDate) : '') + '</div>'
+        + '<div style="font-size:12px;color:#888">' + r.days + ' day' + (r.days !== 1 ? 's' : '') + '</div></div>'
+        + '<span style="font-size:12px;font-weight:700;color:' + color + '">' + esc(r.status) + '</span>'
+        + '</div>';
+    }).join('');
+  }, function(){});
+}
+
+function saveProfile() {
+  var name  = document.getElementById('acct-name-input').value.trim();
+  var phone = document.getElementById('acct-phone-input').value.trim();
+  if (!name) { showToast('Name cannot be empty'); return; }
+  var btn = document.querySelector('[onclick="saveProfile()"]');
+  btn.disabled = true; btn.textContent = 'Saving...';
+  gasCall('updateProfile', { email: G.userEmail, name: name, phone: phone }, function(r) {
+    btn.disabled = false; btn.textContent = 'Save Changes';
+    if (r && r.success) {
+      G.config.userName  = name;
+      G.config.userPhone = phone;
+      document.getElementById('acct-display-name').textContent = name;
+      document.getElementById('acct-avatar').textContent = name.charAt(0).toUpperCase();
+      showToast('Profile updated');
+    } else {
+      showToast('Error: ' + ((r && r.error) || 'Could not save'));
+    }
+  }, function() { btn.disabled = false; btn.textContent = 'Save Changes'; showToast('Could not connect'); });
+}
+
+function updateAcctClockUI(clockedIn, since) {
+  var card   = document.getElementById('acct-clock-card');
+  var status = document.getElementById('acct-status-label');
+  var since_ = document.getElementById('acct-since-label');
+  var btn    = document.getElementById('acct-punch-btn');
+  if (!card) return;
+  if (clockedIn) {
+    card.style.background = 'linear-gradient(135deg,#1b5e20,#2e7d32)';
+    status.textContent = 'Currently clocked in';
+    since_.textContent = since ? 'Since ' + since : '';
+    btn.textContent = 'Clock Out';
+    btn.style.color = '#2e7d32';
+    _acctClockedIn = true;
+    updateAcctLiveClock();
+  } else {
+    card.style.background = 'linear-gradient(135deg,#1F3971,#2d5ab5)';
+    status.textContent = 'Not clocked in';
+    since_.textContent = '';
+    btn.textContent = 'Clock In';
+    btn.style.color = '#1F3971';
+    document.getElementById('acct-time-display').textContent = '--:--';
+    _acctClockedIn = false;
+    if (_acctClockInterval) { clearInterval(_acctClockInterval); _acctClockInterval = null; }
+  }
+}
+
+function startAcctTick() {
+  if (_acctClockInterval) clearInterval(_acctClockInterval);
+  updateAcctLiveClock();
+  _acctClockInterval = setInterval(updateAcctLiveClock, 1000);
+}
+
+function updateAcctLiveClock() {
+  var now = new Date();
+  var el = document.getElementById('acct-time-display');
+  if (!el) return;
+  el.textContent = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0') + ':' + now.getSeconds().toString().padStart(2,'0');
+}
+
+function doPunchAcct() {
+  var btn = document.getElementById('acct-punch-btn');
+  btn.disabled = true;
+  btn.textContent = _acctClockedIn ? 'Clocking out...' : 'Clocking in...';
+  if (_acctClockedIn) {
+    gasCall('clockOut', { email: G.userEmail }, function(r) {
+      btn.disabled = false;
+      if (r && r.success) {
+        showToast('Clocked out - ' + r.hours + ' hrs logged');
+        updateAcctClockUI(false, null);
+        // Sync the Other tab clock too if it's loaded
+        if (typeof updateClockUI === 'function') updateClockUI(false, null);
+      } else {
+        btn.textContent = 'Clock Out';
+        showToast('Error: ' + ((r && r.error) || 'Could not clock out'));
+      }
+    }, function() { btn.disabled = false; btn.textContent = 'Clock Out'; showToast('Could not connect'); });
+  } else {
+    gasCall('clockIn', { email: G.userEmail, name: G.config.userName || G.userEmail }, function(r) {
+      btn.disabled = false;
+      if (r && r.success) {
+        showToast('Clocked in at ' + r.clockIn);
+        updateAcctClockUI(true, r.clockIn);
+        startAcctTick();
+        if (typeof updateClockUI === 'function') updateClockUI(true, r.clockIn);
+      } else {
+        btn.textContent = 'Clock In';
+        showToast('Error: ' + ((r && r.error) || 'Could not clock in'));
+      }
+    }, function() { btn.disabled = false; btn.textContent = 'Clock In'; showToast('Could not connect'); });
+  }
+}
 
 </script>
 
