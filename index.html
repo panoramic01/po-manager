@@ -1371,9 +1371,29 @@ var JOKES = [
   "What do you call a pig that does karate? A pork chop.",
   "I used to hate maths but then I realized decimals have a point."
 ];
-(function() {
+function showLocalJoke() {
   var el = document.getElementById('splash-joke');
   if (el) el.textContent = JOKES[Math.floor(Math.random() * JOKES.length)];
+}
+showLocalJoke(); // instant placeholder so there's never a blank/loading flash
+(function fetchApiJoke() {
+  var el = document.getElementById('splash-joke');
+  if (!el || typeof AbortController === 'undefined') return;
+  var ctrl = new AbortController();
+  var timer = setTimeout(function() { ctrl.abort(); }, 2500);
+  fetch('https://icanhazdadjoke.com/', {
+    headers: { 'Accept': 'application/json' },
+    signal: ctrl.signal
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    clearTimeout(timer);
+    if (data && data.joke && !_splashHidden) el.textContent = data.joke;
+  })
+  .catch(function() {
+    clearTimeout(timer);
+    // network error / timeout / offline - local joke set above stays put
+  });
 })();
 var _splashHidden = false;
 var _splashStart  = Date.now();

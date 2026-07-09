@@ -1,0 +1,183 @@
+{
+  "project": "Panoramic Ops PWA",
+  "last_updated": "2026-07-09",
+  "owner": "Aidan Salisbury",
+  "email": "aidansalisbury213@gmail.com",
+
+  "urls": {
+    "app": "https://panoramic01.github.io/po-manager/",
+    "repo": "https://github.com/panoramic01/po-manager",
+    "gas_deployment": "https://script.google.com/macros/s/AKfycbwvX4xv5kDofWEldpSRJP8O2yeVVgMcYVQsgtKmuFyKBZWTj0vfhFIIZAJp2UQob_XJ-Q/exec"
+  },
+
+  "files": {
+    "frontend": "index.html",
+    "service_worker": "sw.js",
+    "gas_backend": "PO_Manager_Code.gs",
+    "manifest": "manifest.json",
+    "repo_path": "C:\\Users\\aidan\\Documents\\GitHub\\po-manager"
+  },
+
+  "current_state": {
+    "sw_cache_version": "po-manager-v111",
+    "nav_tabs": ["dashboard", "receive", "other", "account"],
+    "nav_tab_ids": ["tab-dashboard", "tab-create", "tab-receive", "tab-other", "tab-account"]
+  },
+
+  "critical_rules": {
+    "index_html": "NEVER use the Edit tool on index.html — it truncates the file. Always use Python scripts (read full file, str.replace, write back). After every write, verify '</html>' exists at end of file.",
+    "sw_js": "NEVER use Edit tool on sw.js. Use bash: sed -i 's/po-manager-vN/po-manager-vM/' sw.js",
+    "sw_bump": "Bump SW cache version on EVERY push that changes JS or CSS.",
+    "gas_v8_no_nested_functions": "Never write 'function foo(){}' inside an if/for/function block in GAS. Use 'var foo = function(){}' instead.",
+    "gas_ascii_only": "No em dashes (—), curly quotes, or Unicode punctuation in GAS string literals. ASCII only.",
+    "gas_brace_balance": "After any GAS edit, verify open/close brace counts match: python3 -c \"t=open('PO_Manager_Code.gs').read(); print(t.count('{'), t.count('}'))\"",
+    "gas_cors": "gasCall() fetch must have NO Content-Type header. GAS rejects OPTIONS preflight. Body is plain JSON string, no headers.",
+    "gas_redeploy": "GAS changes only go live after manual redeploy: Deploy > Manage Deployments > pencil > New version > Deploy.",
+    "powershell_git": "PowerShell does not support &&. Use separate lines: git add, git commit, git push.",
+    "git_index_lock": "If git complains about index.lock: find /path/.git -name 'index.lock' -exec rm {} \\; then retry.",
+    "node_check": "Always run node --check on extracted JS before pushing.",
+    "tab_css": "Tab divs must NOT have inline display:none — the .tab CSS class handles hiding. Inline style overrides .tab.active { display: block }.",
+    "truncation_check": "After any file write to index.html, check: python3 -c \"h=open('index.html').read(); print(h.count('</html>'), h[-50:])\"",
+    "js_syntax_check": "python3 -c \"h=open('index.html').read(); js=h[h.find('<script>')+8:h.rfind('</script>')]; open('/tmp/c.js','w').write(js)\" && node --check /tmp/c.js"
+  },
+
+  "stack": {
+    "frontend": "Single-file PWA — vanilla JS + inline CSS in index.html",
+    "backend": "Google Apps Script web app, REST-style doPost() routing",
+    "hosting": "GitHub Pages",
+    "auth": "Email + password verified against HR Google Sheet",
+    "data": "Google Sheets (PO Database, HR, Time Tracking)",
+    "integrations": ["Asana (PTO requests, tasks)", "Google Drive (photo uploads)"],
+    "caching": "Service worker, cache-first strategy"
+  },
+
+  "google_sheets": {
+    "HR": {
+      "columns": "A=Name, B=Email, C=Phone, D=Role, E=Password, F=Allotted PTO, G=Used PTO, H=Remaining PTO"
+    },
+    "Time_Tracking": {
+      "columns": "A=Name, B=Email, C=Date, D=ClockIn, E=ClockOut, F=Hours"
+    },
+    "PO_Database": "Main PO data sheet"
+  },
+
+  "roles": ["admin", "office", "site_manager", "runner", "accountant"],
+  "role_visibility": {
+    "admin_only": ["emp-mgr panel", "pto-overview panel", "payroll panel", "pricing panel", "reconcile", "job-cost", "missing-inv", "vendor-spend", "material-report"],
+    "office_and_admin": ["contacts panel", "dash-new-po-btn", "create tab", "other tab"],
+    "all_roles": ["account tab", "sop panel"]
+  },
+
+  "tab_and_panel_system": {
+    "tabs": {
+      "dashboard": "PO stats, New PO button (admin/office only), recent POs",
+      "receive (tab-create)": "Log a received PO with photos",
+      "other (tab-other)": "Grid of tool panels",
+      "account (tab-account)": "Profile edit, time clock, PTO summary"
+    },
+    "other_panels": [
+      "pricing", "contacts", "reconcile", "job-cost", "missing-inv",
+      "vendor-spend", "material-report", "sop", "pto", "timeclock",
+      "emp-mgr", "pto-overview", "payroll"
+    ],
+    "panel_system_note": "ALL_PANELS array must be kept in sync in both showOtherHome() and showOtherPanel() forEach loops. Missing panel = panel leaks visible on wrong page."
+  },
+
+  "gas_routes": [
+    "getConfig", "login", "getSheetData", "updatePO", "addPO", "deletePO",
+    "savePhotoToDrive", "getPTOData", "submitPTO", "approvePTO", "denyPTO",
+    "clockIn", "clockOut", "getClockStatus", "getTimesheet",
+    "getEmployees", "addEmployee", "updateEmployee", "removeEmployee",
+    "getPTOOverview", "getPayrollSummary", "emailPayroll", "updateProfile"
+  ],
+
+  "key_functions": {
+    "gasCall": "fetch(GAS_URL, { method:'POST', redirect:'follow', body: JSON.stringify({action, ...payload}) }) — NO Content-Type header",
+    "getPeriodBounds": "Semi-monthly pay periods. day<=15 → 1st–15th. day>15 → 16th–last day of month.",
+    "applyRole": "Called after login. Calls hideSplash(), sets G.perms, shows/hides elements via sd(id, bool), calls showTabDirect.",
+    "showOtherPanel": "Hides all panels via ALL_PANELS forEach, shows target panel, calls load function.",
+    "loadAccount": "Calls getClockStatus + getTimesheet + getPTOData. PTO fields: d.balance.allotted (NOT d.allotted), d.myRequests (NOT d.history), r.dates (NOT r.startDate), status keys lowercase.",
+    "hideSplash": "Called by applyRole, showLoginScreen, loadData. 8s safety net timeout also calls it.",
+    "initPhotoSlots": "Renders 5 photo slots. Pre-existing slots show Drive thumbnails via driveThumbUrl()."
+  },
+
+  "global_state": {
+    "G_object": "G = { pos, config, filter, role, userEmail, perms, pricing, contacts, ... }",
+    "G_name": "G.config.userName — employee display name from HR col A",
+    "G_role": "G.role — set from config.userRole on login",
+    "localStorage": {
+      "panoramic_ops_email": "Cached email for auto-login",
+      "panoramic_ops_config": "Cached config object (userRole, statusOptions, vendorOptions, userName, userPhone, userEmail)",
+      "panoramic_ops_pos_cache": "Cached PO list for instant dashboard load"
+    }
+  },
+
+  "asana": {
+    "pat_location": "GAS Script Properties only — never frontend or chat",
+    "pto_project_gid": "1210392177822419",
+    "pto_sections": ["New Requests", "Approved", "Denied"],
+    "note": "All Asana calls go through GAS backend. Frontend never calls Asana directly."
+  },
+
+  "features_built": [
+    "PO management (create, receive, edit, search, filter)",
+    "Photo upload to Google Drive (up to 5 per PO)",
+    "Quality Checklist (Asana-linked)",
+    "Job Cleanup checklist",
+    "SOP viewer",
+    "Pricing lookup",
+    "Contacts directory",
+    "Reconciliation tool",
+    "Job cost tracker",
+    "Missing invoice tracker",
+    "Vendor spend chart",
+    "Material report generator",
+    "PTO requests (submit, approve, deny via Asana)",
+    "Time Clock (clock in/out, hours this period)",
+    "Account tab (profile edit, time clock widget, PTO summary)",
+    "Employee Manager (admin: add/edit/remove employees)",
+    "PTO Overview (admin: balance bars + pending queue)",
+    "Payroll Summary (admin: hours per employee, email summary)",
+    "Back button / swipe navigation (History API)",
+    "Service worker with offline caching"
+  ],
+
+  "features_planned": [
+    "Office Notes tab (notes sheet + optional Asana subtask with per-note flag)",
+    "Announcements (admin posts once-per-version message, localStorage dismissal)"
+  ],
+
+  "known_bugs_fixed": [
+    "index.html truncation: Edit tool truncates large files — always use Python scripts",
+    "Tab not showing: inline style display:none overrides .tab.active CSS class",
+    "Panel leaking: panel name missing from ALL_PANELS forEach list",
+    "Employee name showing as email: getRoleByEmail() wasn't returning name field",
+    "PTO balance showing --: field path was d.allotted, should be d.balance.allotted",
+    "getTimesheet truncated: file ended mid-function, restored with semi-monthly logic",
+    "App stuck on splash: index.html truncated mid-function, missing </script></body></html>",
+    "Photo upload stuck on Loading: iOS suspends JS when app backgrounds mid-upload — added 45s/90s timeouts",
+    "HEIC photos stuck: no img.onerror handler — canvas decode fails silently for HEIC format",
+    "git index.lock: lock file on Windows machine, use find -exec rm to delete from Linux sandbox",
+    "Payroll showing email: Time Tracking name col had email stored — fixed to cross-ref HR sheet",
+    "PowerShell &&: not supported, use separate lines"
+  ],
+
+  "skills_installed": [
+    "panoramic-app-builder (primary dev skill — read before any app work)",
+    "panoramic-sop (builds SOP PDFs from screenshots)",
+    "material-report (fills Excel cost report from Drive invoices)",
+    "po-received (fills Google Form for PO logging)",
+    "morning-assistant (daily planning with Google Calendar + Tasks)",
+    "ynab-financial-planner (YNAB budget review)"
+  ],
+
+  "deployment_workflow": [
+    "1. Edit GAS: verify brace balance, no nested functions, ASCII only",
+    "2. Redeploy GAS: Deploy > Manage Deployments > New version",
+    "3. Edit index.html: Python script only",
+    "4. Verify JS: node --check",
+    "5. Bump SW: sed -i s/vN/vM/ sw.js",
+    "6. Git push: separate lines (add, commit, push)",
+    "7. Hard refresh app: pull-to-refresh on mobile or Ctrl+Shift+R"
+  ]
+}
