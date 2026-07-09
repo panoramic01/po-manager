@@ -1375,10 +1375,9 @@ function showLocalJoke() {
   var el = document.getElementById('splash-joke');
   if (el) el.textContent = JOKES[Math.floor(Math.random() * JOKES.length)];
 }
-showLocalJoke(); // instant placeholder so there's never a blank/loading flash
 (function fetchApiJoke() {
   var el = document.getElementById('splash-joke');
-  if (!el || typeof AbortController === 'undefined') return;
+  if (!el || typeof AbortController === 'undefined') { showLocalJoke(); return; }
   var ctrl = new AbortController();
   var timer = setTimeout(function() { ctrl.abort(); }, 2500);
   fetch('https://icanhazdadjoke.com/', {
@@ -1389,10 +1388,12 @@ showLocalJoke(); // instant placeholder so there's never a blank/loading flash
   .then(function(data) {
     clearTimeout(timer);
     if (data && data.joke && !_splashHidden) el.textContent = data.joke;
+    else showLocalJoke();
   })
   .catch(function() {
     clearTimeout(timer);
-    // network error / timeout / offline - local joke set above stays put
+    // network error / timeout / offline - fall back to a local joke
+    if (!_splashHidden) showLocalJoke();
   });
 })();
 var _splashHidden = false;
