@@ -1745,6 +1745,17 @@ function getPayrollSummary() {
     var pEnd   = bounds.end;
     var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     var periodLabel = months[pStart.getMonth()] + ' ' + pStart.getDate() + ' - ' + months[pEnd.getMonth()] + ' ' + pEnd.getDate();
+    // Build email->name lookup from HR sheet (authoritative source)
+    var hrNameMap = {};
+    var hrSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('HR');
+    if (hrSheet) {
+      var hrData = hrSheet.getDataRange().getValues();
+      for (var h = 1; h < hrData.length; h++) {
+        var hrEmail = (hrData[h][1] || '').toString().toLowerCase().trim();
+        var hrName  = (hrData[h][0] || '').toString().trim();
+        if (hrEmail) hrNameMap[hrEmail] = hrName;
+      }
+    }
     var empMap = {};
     var lastRow = sh.getLastRow();
     if (lastRow >= 2) {
@@ -1756,7 +1767,10 @@ function getPayrollSummary() {
         if (!rowDate || !rowEmail) continue;
         var rd = new Date(rowDate.getFullYear(), rowDate.getMonth(), rowDate.getDate());
         if (rd < pStart || rd > pEnd) continue;
-        if (!empMap[rowEmail]) empMap[rowEmail] = { name: (data[i][0] || rowEmail).toString().trim(), total: 0, days: {} };
+        if (!empMap[rowEmail]) {
+          var resolvedName = hrNameMap[rowEmail] || (data[i][0] || '').toString().trim() || rowEmail;
+          empMap[rowEmail] = { name: resolvedName, total: 0, days: {} };
+        }
         empMap[rowEmail].total = Math.round((empMap[rowEmail].total + rowHours) * 100) / 100;
         var dayLabel = months[rd.getMonth()] + ' ' + rd.getDate();
         empMap[rowEmail].days[dayLabel] = Math.round(((empMap[rowEmail].days[dayLabel] || 0) + rowHours) * 100) / 100;
