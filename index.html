@@ -2492,10 +2492,35 @@ function handlePhotoSlot(input) {
     }
   }, 45000);
   var reader = new FileReader();
+  reader.onerror = function() {
+    clearTimeout(_uploadTimeout);
+    G.uploadsInProgress = Math.max(0, G.uploadsInProgress - 1);
+    setReceiveBtnUploadState();
+    slot.className = 'photo-slot';
+    slot.onclick = function() { openPhotoSlot(idx); };
+    slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">Could not read file — try a different photo</span></div>';
+  };
   reader.onload = function(e) {
     clearTimeout(_uploadTimeout);
     var img = new Image();
+    // Timeout if canvas decode hangs (e.g. HEIC format on some devices)
+    var _imgTimeout = setTimeout(function() {
+      G.uploadsInProgress = Math.max(0, G.uploadsInProgress - 1);
+      setReceiveBtnUploadState();
+      slot.className = 'photo-slot';
+      slot.onclick = function() { openPhotoSlot(idx); };
+      slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">Format not supported — take a screenshot of the photo and upload that</span></div>';
+    }, 15000);
+    img.onerror = function() {
+      clearTimeout(_imgTimeout);
+      G.uploadsInProgress = Math.max(0, G.uploadsInProgress - 1);
+      setReceiveBtnUploadState();
+      slot.className = 'photo-slot';
+      slot.onclick = function() { openPhotoSlot(idx); };
+      slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">Format not supported — take a screenshot of the photo and upload that</span></div>';
+    };
     img.onload = function() {
+      clearTimeout(_imgTimeout);
       var MAX_W = 1600, MAX_H = 1600, QUALITY = 0.82;
       var w = img.width, h = img.height;
       if (w > MAX_W) { h = Math.round(h * MAX_W / w); w = MAX_W; }
