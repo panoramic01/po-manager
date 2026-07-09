@@ -2480,8 +2480,20 @@ function handlePhotoSlot(input) {
   setReceiveBtnUploadState();
   slot.className = 'photo-slot ps-uploading';
   slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:10px;color:#1F3971">Loading…</span></div>';
+  // Safety timeout — if stuck for >45s reset slot so user can retry
+  var _uploadTimeout = setTimeout(function() {
+    if (slot.className.indexOf('ps-uploading') !== -1 && slot.innerHTML.indexOf('Loading') !== -1) {
+      G.uploadsInProgress = Math.max(0, G.uploadsInProgress - 1);
+      setReceiveBtnUploadState();
+      var camSvg = '<svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0118.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><circle cx="12" cy="13" r="3" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/></svg>';
+      slot.className = 'photo-slot';
+      slot.onclick = function() { openPhotoSlot(idx); };
+      slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">Timed out — tap to retry</span></div>';
+    }
+  }, 45000);
   var reader = new FileReader();
   reader.onload = function(e) {
+    clearTimeout(_uploadTimeout);
     var img = new Image();
     img.onload = function() {
       var MAX_W = 1600, MAX_H = 1600, QUALITY = 0.82;
@@ -2496,7 +2508,18 @@ function handlePhotoSlot(input) {
       var filename = 'PO-' + (G.receivePO ? G.receivePO.poNum : 'received') + '-' + (idx+1) + '-' + new Date().toISOString().slice(0,10) + '.jpg';
       slot.className = 'photo-slot ps-filled ps-uploading';
       slot.innerHTML = '<img src="' + dataUrl + '" alt="photo"><div class="ps-status uploading">Uploading…</div>';
+      // Timeout if Drive upload hangs >90s
+      var _driveTimeout = setTimeout(function() {
+        if (slot.className.indexOf('ps-uploading') !== -1) {
+          G.uploadsInProgress = Math.max(0, G.uploadsInProgress - 1);
+          setReceiveBtnUploadState();
+          slot.className = 'photo-slot';
+          slot.onclick = function() { openPhotoSlot(idx); };
+          slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">Timed out — tap to retry</span></div>';
+        }
+      }, 90000);
       gasCall('savePhotoToDrive', { base64Data: base64, mimeType: 'image/jpeg', filename: filename }, function(res) {
+        clearTimeout(_driveTimeout);
         G.uploadsInProgress = Math.max(0, G.uploadsInProgress - 1);
         setReceiveBtnUploadState();
         if (res.success) {
@@ -2510,6 +2533,7 @@ function handlePhotoSlot(input) {
           slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">Failed — retry</span></div>';
         }
       }, function() {
+        clearTimeout(_driveTimeout);
         G.uploadsInProgress = Math.max(0, G.uploadsInProgress - 1);
         setReceiveBtnUploadState();
         slot.className = 'photo-slot';
