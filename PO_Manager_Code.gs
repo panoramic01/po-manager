@@ -97,6 +97,7 @@ function doPost(e) {
     else if (action === 'getPTOOverview')              result = getPTOOverview();
     else if (action === 'getPayrollSummary')           result = getPayrollSummary();
     else if (action === 'emailPayroll')                result = emailPayroll(payload);
+    else if (action === 'verifyDeviceLock')            result = verifyDeviceLock(payload.code);
     else                                        result = { error: 'Unknown action: ' + action };
 
     return ContentService
@@ -320,6 +321,20 @@ function verifyLogin(email, password) {
  * Returns config (status/vendor lists) + role for a cached/returning user.
  * Only called after a successful verifyLogin() - email is trusted from localStorage.
  */
+/**
+ * Checks a submitted passcode against the APP_LOCK_CODE script property.
+ * This is a shared device-unlock code (not tied to any one user's HR password),
+ * used to gate the app on returning devices. Set the value via
+ * Project Settings > Script Properties in the Apps Script editor - never
+ * hardcode it in this file.
+ */
+function verifyDeviceLock(code) {
+  var expected = PropertiesService.getScriptProperties().getProperty('APP_LOCK_CODE');
+  if (!expected) return { success: false, error: 'Lock code not configured. Contact admin.' };
+  if ((code || '').toString().trim() === expected.toString().trim()) return { success: true };
+  return { success: false, error: 'Incorrect code.' };
+}
+
 function getConfig(email) {
   var roleData = getRoleByEmail(email || '');
   return {
@@ -1789,17 +1804,4 @@ function emailPayroll(payload) {
     var summary = getPayrollSummary();
     if (summary.error) return { error: summary.error };
     var lines = ['Payroll Summary - ' + summary.periodLabel, '===========================', ''];
-    var grandTotal = 0;
-    summary.employees.forEach(function(e) {
-      lines.push(e.name + ': ' + e.total + ' hrs');
-      var dayKeys = Object.keys(e.days);
-      dayKeys.forEach(function(d) { lines.push('  ' + d + ': ' + e.days[d] + ' hrs'); });
-      lines.push('');
-      grandTotal += e.total;
-    });
-    lines.push('---------------------------');
-    lines.push('Grand Total: ' + Math.round(grandTotal * 100) / 100 + ' hrs');
-    GmailApp.sendEmail(to, 'Payroll Summary - ' + summary.periodLabel, lines.join('\n'));
-    return { success: true };
-  } catch(e) { return { error: e.toString() }; }
-}
+    var grandTotal

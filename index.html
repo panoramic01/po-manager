@@ -349,7 +349,7 @@
 <header class="app-header">
   <div>
     <h1>Panoramic Ops</h1>
-    <p>Panoramic Building <span style="font-size:10px;opacity:0.5">v62</span></p>
+    <p>Panoramic Building</p>
   </div>
   <div style="display:flex;gap:8px">
     <button class="refresh-btn" onclick="forceUpdate()" style="background:rgba(255,255,255,0.15)">↑ Update</button>
@@ -1273,6 +1273,28 @@
 
 </nav>
 
+<!-- Device Lock Screen -->
+<div class="login-screen hidden" id="device-lock-screen" style="z-index:600">
+  <div class="login-logo">
+    <svg width="40" height="40" viewBox="0 0 64 64" fill="none">
+      <path d="M16 24l16-8 16 8v16l-16 8-16-8V24z" stroke="white" stroke-width="2.5" stroke-linejoin="round"/>
+      <path d="M16 24l16 8 16-8M32 32v16" stroke="white" stroke-width="2.5" stroke-linejoin="round"/>
+    </svg>
+  </div>
+  <div class="login-title">Panoramic Ops</div>
+  <div class="login-sub">Enter the device passcode</div>
+  <div class="login-card">
+    <div class="login-field">
+      <label>Passcode</label>
+      <input type="password" id="device-lock-code" placeholder="••••••••"
+             autocomplete="off" autocapitalize="none"
+             onkeydown="if(event.key==='Enter') submitDeviceLock()">
+    </div>
+    <div class="login-error" id="device-lock-error"></div>
+    <button class="login-btn" id="device-lock-btn" onclick="submitDeviceLock()">Unlock</button>
+  </div>
+</div>
+
 <!-- Login Screen -->
 <div class="login-screen hidden" id="login-screen">
   <div class="login-logo">
@@ -1469,6 +1491,17 @@ function gasCall(action, payload, onSuccess, onFailure) {
 // ── Boot ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', function() {
   initStmtDrop();
+  if (sessionStorage.getItem('panoramic_ops_unlocked') === 'true') {
+    bootApp();
+  } else {
+    // Pre-warm GAS so it's hot by the time the user submits the passcode
+    gasCall('getConfig', { email: '' }, function(){}, function(){});
+    document.getElementById('device-lock-screen').classList.remove('hidden');
+    setTimeout(function(){ document.getElementById('device-lock-code').focus(); }, 300);
+  }
+});
+
+function bootApp() {
   var cachedEmail = localStorage.getItem('panoramic_ops_email');
   if (cachedEmail) {
     // Returning user — boot directly from cached email, no password needed
@@ -1479,7 +1512,60 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('login-screen').classList.remove('hidden');
     setTimeout(function(){ document.getElementById('login-email').focus(); }, 300);
   }
-});
+}
+
+function submitDeviceLock() {
+  var code  = (document.getElementById('device-lock-code').value || '').trim();
+  var errEl = document.getElementById('device-lock-error');
+  var btn   = document.getElementById('device-lock-btn');
+
+  if (!code) {
+    errEl.textContent = 'Enter the passcode.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Checking…';
+  errEl.style.display = 'none';
+
+  var slowMsg = setTimeout(function() {
+    if (btn.disabled) { errEl.textContent = 'Server is warming up, please wait…'; errEl.style.display = 'block'; }
+  }, 6000);
+  var lockTimeout = setTimeout(function() {
+    clearTimeout(slowMsg);
+    btn.disabled = false;
+    btn.textContent = 'Unlock';
+    errEl.textContent = 'Timed out. Tap Unlock again.';
+    errEl.style.display = 'block';
+  }, 35000);
+
+  gasCall('verifyDeviceLock', { code: code }, function(result) {
+    clearTimeout(lockTimeout);
+    clearTimeout(slowMsg);
+    btn.disabled = false;
+    btn.textContent = 'Unlock';
+    if (result.success) {
+      sessionStorage.setItem('panoramic_ops_unlocked', 'true');
+      document.getElementById('device-lock-screen').classList.add('hidden');
+      document.getElementById('device-lock-code').value = '';
+      errEl.style.display = 'none';
+      bootApp();
+    } else {
+      errEl.textContent = result.error || 'Incorrect passcode.';
+      errEl.style.display = 'block';
+      document.getElementById('device-lock-code').focus();
+    }
+  }, function(e) {
+    clearTimeout(lockTimeout);
+    clearTimeout(slowMsg);
+    btn.disabled = false;
+    btn.textContent = 'Unlock';
+    errEl.textContent = 'Could not connect. Check your connection and try again.';
+    errEl.style.display = 'block';
+    console.error('verifyDeviceLock failed:', e);
+  });
+}
 
 function showLoginScreen(msg) {
   // Pre-warm GAS so it's hot when the user hits Sign In
@@ -1736,7 +1822,7 @@ function applyRole(role) {
   var labels = { admin:'Admin', office:'Office', site_manager:'Site Manager', runner:'Runner', accountant:'Accountant' };
   var headerP = document.querySelector('.app-header p');
   if (headerP && labels[role]) {
-    headerP.innerHTML = 'Panoramic Building <span style="font-size:10px;opacity:0.5">v67</span>' +
+    headerP.innerHTML = 'Panoramic Building' +
       ' &nbsp;<span onclick="switchAccount()" style="cursor:pointer;font-size:11px;background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:6px" title="Switch account">' + labels[role] + '</span>';
   }
 
