@@ -670,6 +670,7 @@
           <button class="search-clear" id="ct-clear" onclick="clearSearch('ct-input','ct-clear'); runContactSearch()">✕</button>
         </div>
       </div>
+      <div class="chip-row" id="ct-cats" style="display:none"></div>
       <div id="ct-loading" style="display:none">
         <div class="loading"><div class="spinner"></div><p>Loading contacts…</p></div>
       </div>
@@ -1431,6 +1432,7 @@ var G = {
   contacts:        [],
   contactsHeaders: [],
   contactsLoaded:  false,
+  contactType:     '',
   contactEditIdx:  null,
   sort:            'newest',
   photoUrls:       [null,null,null,null,null],
@@ -2986,6 +2988,7 @@ function loadContacts() {
     G.contactsLoaded  = true;
     document.getElementById('ct-loading').style.display = 'none';
     document.getElementById('ct-results').style.display = 'block';
+    buildContactTypeChips();
     runContactSearch();
   }, function() {
     document.getElementById('ct-loading').style.display = 'none';
@@ -2994,19 +2997,51 @@ function loadContacts() {
   });
 }
 
+function getContactType(c) {
+  return (c['Contact Type'] || c['Type'] || c['ContactType'] || '').toString().trim();
+}
+
+function buildContactTypeChips() {
+  var seen = {};
+  var types = [];
+  G.contacts.forEach(function(c) {
+    var t = getContactType(c);
+    if (t && !seen[t]) { seen[t] = true; types.push(t); }
+  });
+  var el = document.getElementById('ct-cats');
+  if (!types.length) { el.style.display = 'none'; return; }
+  types.sort();
+
+  var html = '<button class="chip active" id="ctcat-all" onclick="setContactType(\'\',this)">All</button>';
+  types.forEach(function(t) {
+    html += '<button class="chip" onclick="setContactType(\'' + esc(t) + '\',this)">' + esc(t) + '</button>';
+  });
+  el.innerHTML = html;
+  el.style.display = 'flex';
+}
+
+function setContactType(type, btn) {
+  G.contactType = type;
+  document.querySelectorAll('#ct-cats .chip').forEach(function(b){ b.classList.remove('active'); });
+  if (btn) btn.classList.add('active');
+  runContactSearch();
+}
+
 function runContactSearch() {
   var q = (document.getElementById('ct-input').value || '').toLowerCase().trim();
+  var type = G.contactType; // '' = All, otherwise a specific Contact Type
   var el = document.getElementById('ct-results');
   if (!G.contacts.length) { el.innerHTML = '<div class="empty">No contacts found. Add people to the Contacts tab in the database.</div>'; return; }
 
   var tokens = q.split(/\s+/).filter(Boolean);
   var filtered = G.contacts.filter(function(c) {
+    if (type && getContactType(c) !== type) return false;
     if (!q) return true;
     var text = Object.values(c).join(' ').toLowerCase();
     return tokens.every(function(t){ return text.includes(t); });
   });
 
-  if (!filtered.length) { el.innerHTML = '<div class="empty">No contacts match "' + esc(q) + '".</div>'; return; }
+  if (!filtered.length) { el.innerHTML = '<div class="empty">No contacts match' + (type ? ' in ' + esc(type) : '') + (q ? ' "' + esc(q) + '"' : '') + '.</div>'; return; }
 
   // Pass the index in G.contacts so the edit button knows which contact to open
   el.innerHTML = filtered.map(function(c) {
