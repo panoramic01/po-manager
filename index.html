@@ -1309,23 +1309,36 @@
     <button class="cleanup-close" onclick="closeQualityCheck()">Close</button>
   </div>
   <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;background:#f5f5f7">
-    <div class="form-group" style="position:relative">
-      <label class="form-label">Job</label>
-      <input type="text" class="form-control" id="qc-job-input" placeholder="Search jobs…"
-             autocomplete="off"
-             oninput="qcJobFilter(this.value); document.getElementById('qc-job-gid').value='';"
-             onfocus="qcJobFilter(this.value)">
-      <input type="hidden" id="qc-job-gid" value="">
-      <div id="qc-job-dropdown" style="display:none;position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #ddd;border-radius:8px;margin-top:4px;max-height:220px;overflow-y:auto;z-index:20;box-shadow:0 4px 12px rgba(0,0,0,0.12)"></div>
+    <div id="qc-step1">
+      <div class="form-group" style="position:relative">
+        <label class="form-label">Job</label>
+        <input type="text" class="form-control" id="qc-job-input" placeholder="Search jobs…"
+               autocomplete="off"
+               oninput="qcJobFilter(this.value); document.getElementById('qc-job-gid').value='';"
+               onfocus="qcJobFilter(this.value)">
+        <input type="hidden" id="qc-job-gid" value="">
+        <div id="qc-job-dropdown" style="display:none;position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #ddd;border-radius:8px;margin-top:4px;max-height:220px;overflow-y:auto;z-index:20;box-shadow:0 4px 12px rgba(0,0,0,0.12)"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Your Name</label>
+        <input type="text" class="form-control" id="qc-submitter" placeholder="Enter your name">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Which trades apply to this check?</label>
+        <div class="chip-row" id="qc-trade-chips" style="flex-wrap:wrap;overflow-x:visible"></div>
+      </div>
     </div>
-    <div class="form-group">
-      <label class="form-label">Your Name</label>
-      <input type="text" class="form-control" id="qc-submitter" placeholder="Enter your name">
+
+    <div id="qc-step2" style="display:none">
+      <button onclick="qcGoToStep1()" style="background:none;border:none;color:#1F3971;font-weight:600;font-size:13px;cursor:pointer;padding:4px 0;margin-bottom:10px">&larr; Back</button>
+      <div id="qc-sections"></div>
+      <div id="qc-result" style="display:none;margin-top:4px;margin-bottom:16px;padding:12px;border-radius:8px;font-size:13px;font-weight:600;text-align:center"></div>
     </div>
-    <div id="qc-sections"></div>
-    <div id="qc-result" style="display:none;margin-top:4px;margin-bottom:16px;padding:12px;border-radius:8px;font-size:13px;font-weight:600;text-align:center"></div>
   </div>
-  <div style="padding:14px 16px;background:#fff;border-top:1px solid #eee">
+  <div style="padding:14px 16px;background:#fff;border-top:1px solid #eee" id="qc-footer-step1">
+    <button class="btn btn-primary" style="width:100%" onclick="qcGoToStep2()">Next</button>
+  </div>
+  <div style="padding:14px 16px;background:#fff;border-top:1px solid #eee;display:none" id="qc-footer-step2">
     <button class="btn btn-primary" style="width:100%" id="qc-submit-btn" onclick="submitQualityCheck()">Submit Quality Check</button>
   </div>
 </div>
@@ -4874,33 +4887,106 @@ function mrSaveEstHistory() {
 
 // ── Quality Check ─────────────────────────────────────────────────────────────
 
+// General items always apply, regardless of which trades are selected.
+// Trade sections only show up if that trade is selected on step 1.
+// NOTE: placeholder items for now - Aidan will supply the real checklist per trade later.
 var QC_SECTIONS = [
   {
-    id: 'materials',
-    name: 'Materials',
-    items: ['Correct materials delivered', 'No damaged product installed', 'Quantities match the PO']
+    id: 'general',
+    name: 'General',
+    trade: null,
+    alwaysInclude: true,
+    items: ['Correct materials delivered', 'No damaged product installed', 'Quantities match the PO', 'Area cleaned up', 'No damage to surrounding surfaces', 'Scaffolding / equipment removed']
   },
   {
-    id: 'install',
-    name: 'Install Quality',
-    items: ['Work is plumb / level', 'Fastening pattern correct', 'Flashing / waterproofing in place', 'Penetrations caulked / sealed', 'Reveals and gaps consistent']
+    id: 'masonry',
+    name: 'Masonry',
+    trade: 'Masonry',
+    items: ['Mortar joints consistent', 'Masonry plumb and level', 'Weep holes clear', 'No visible cracking or staining']
   },
   {
-    id: 'site',
-    name: 'Site',
-    items: ['Area cleaned up', 'No damage to surrounding surfaces', 'Scaffolding / equipment removed']
+    id: 'siding',
+    name: 'Siding',
+    trade: 'Siding',
+    items: ['Panels aligned and level', 'Fastening pattern correct', 'Seams and laps proper', 'Caulking / sealant applied']
+  },
+  {
+    id: 'gutters',
+    name: 'Gutters',
+    trade: 'Gutters',
+    items: ['Gutters pitched correctly for drainage', 'Downspouts secured', 'End caps sealed', 'Hangers spaced properly']
+  },
+  {
+    id: 'vinyl',
+    name: 'Vinyl',
+    trade: 'Vinyl',
+    items: ['Panels locked and level', 'Expansion gap maintained', 'J-channel and trim secure', 'No visible warping']
+  },
+  {
+    id: 'stucco',
+    name: 'Stucco',
+    trade: 'Stucco',
+    items: ['Finish coat consistent texture', 'Control joints placed correctly', 'No cracking visible', 'Proper cure time observed']
   }
 ];
 
+var QC_TRADES = ['Masonry', 'Siding', 'Gutters', 'Vinyl', 'Stucco'];
+
 var G_asanaJobs = null;
+var G_qcSelectedTrades = [];
+
+function qcResetForm() {
+  G_qcSelectedTrades = [];
+  var ji = document.getElementById('qc-job-input');   if (ji) ji.value = '';
+  var jg = document.getElementById('qc-job-gid');     if (jg) jg.value = '';
+  var su = document.getElementById('qc-submitter');   if (su) su.value = '';
+  buildTradeChips();
+  qcGoToStep1();
+}
+
+function buildTradeChips() {
+  var el = document.getElementById('qc-trade-chips');
+  if (!el) return;
+  el.innerHTML = QC_TRADES.map(function(t) {
+    return '<button type="button" class="chip" data-trade="' + esc(t) + '" onclick="qcToggleTrade(\'' + esc(t) + '\', this)">' + esc(t) + '</button>';
+  }).join('');
+}
+
+function qcToggleTrade(trade, btn) {
+  var idx = G_qcSelectedTrades.indexOf(trade);
+  if (idx === -1) { G_qcSelectedTrades.push(trade); btn.classList.add('active'); }
+  else { G_qcSelectedTrades.splice(idx, 1); btn.classList.remove('active'); }
+}
+
+function qcGoToStep1() {
+  document.getElementById('qc-step1').style.display = '';
+  document.getElementById('qc-step2').style.display = 'none';
+  document.getElementById('qc-footer-step1').style.display = '';
+  document.getElementById('qc-footer-step2').style.display = 'none';
+}
+
+function qcGoToStep2() {
+  var jobGid  = (document.getElementById('qc-job-gid') || {}).value || '';
+  var submitter = (document.getElementById('qc-submitter').value || '').trim();
+  if (!jobGid)    { alert('Please select a job.'); return; }
+  if (!submitter) { alert('Please enter your name.'); return; }
+
+  renderQcSections();
+  document.getElementById('qc-step1').style.display = 'none';
+  document.getElementById('qc-step2').style.display = '';
+  document.getElementById('qc-footer-step1').style.display = 'none';
+  document.getElementById('qc-footer-step2').style.display = '';
+}
 
 function openQualityCheck() {
   document.getElementById('quality-check-overlay').style.display='flex';
+  qcResetForm();
   loadQualityPanel();
 }
 
 function closeQualityCheck() {
   document.getElementById('quality-check-overlay').style.display='none';
+  qcResetForm();
 }
 
 function loadQualityPanel() {
@@ -4955,7 +5041,10 @@ function qcSelectJob(gid, name) {
 function renderQcSections() {
   var el = document.getElementById('qc-sections');
   if (!el) return;
-  el.innerHTML = QC_SECTIONS.map(function(sec) {
+  var sections = QC_SECTIONS.filter(function(sec) {
+    return sec.alwaysInclude || G_qcSelectedTrades.indexOf(sec.trade) !== -1;
+  });
+  el.innerHTML = sections.map(function(sec) {
     var items = sec.items.map(function(item, idx) {
       var itemId = sec.id + '_' + idx;
       return '<div style="padding:10px 0;border-bottom:1px solid #f5f5f5">' +
@@ -5003,9 +5092,11 @@ function submitQualityCheck() {
   if (!jobGid)    { alert('Please select a job.'); return; }
   if (!submitter) { alert('Please enter your name.'); return; }
 
-  // Collect section results
+  // Collect section results (only from sections actually shown - i.e. General + selected trades)
   var sections = [];
-  QC_SECTIONS.forEach(function(sec) {
+  QC_SECTIONS.filter(function(sec) {
+    return sec.alwaysInclude || G_qcSelectedTrades.indexOf(sec.trade) !== -1;
+  }).forEach(function(sec) {
     sec.items.forEach(function(item, idx) {
       var itemId  = sec.id + '_' + idx;
       var btns    = document.querySelectorAll('[data-item="' + itemId + '"]');
@@ -5024,7 +5115,7 @@ function submitQualityCheck() {
   btn.disabled = true; btn.textContent = 'Submitting...';
 
   gasCall('submitQualityCheck',
-    { jobGid: jobGid, jobName: jobName, submitter: submitter, sections: sections },
+    { jobGid: jobGid, jobName: jobName, submitter: submitter, trades: G_qcSelectedTrades.slice(), sections: sections },
     function(r) {
       btn.disabled = false; btn.textContent = 'Submit Quality Check';
       var res = document.getElementById('qc-result');
@@ -5036,12 +5127,9 @@ function submitQualityCheck() {
         res.style.background = '#e6f4ea'; res.style.color = '#1e7e34';
         res.innerHTML = '✓ Quality check submitted and completed in Asana.';
       }
-      // Reset form
+      // Reset form back to step 1 for the next check
       setTimeout(function() {
-        renderQcSections();
-        document.getElementById('qc-submitter').value = '';
-        var _ji=document.getElementById('qc-job-input'); if(_ji) _ji.value='';
-        var _jg=document.getElementById('qc-job-gid'); if(_jg) _jg.value='';
+        qcResetForm();
         res.style.display = 'none';
       }, 3000);
     },
