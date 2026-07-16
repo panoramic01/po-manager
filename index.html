@@ -1302,6 +1302,34 @@
   </div>
 </div>
 
+<!-- Quality Check Overlay -->
+<div class="cleanup-overlay" id="quality-check-overlay" style="display:none">
+  <div class="cleanup-header">
+    <h2>Quality Check</h2>
+    <button class="cleanup-close" onclick="closeQualityCheck()">Close</button>
+  </div>
+  <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;background:#f5f5f7">
+    <div class="form-group" style="position:relative">
+      <label class="form-label">Job</label>
+      <input type="text" class="form-control" id="qc-job-input" placeholder="Search jobs…"
+             autocomplete="off"
+             oninput="qcJobFilter(this.value); document.getElementById('qc-job-gid').value='';"
+             onfocus="qcJobFilter(this.value)">
+      <input type="hidden" id="qc-job-gid" value="">
+      <div id="qc-job-dropdown" style="display:none;position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #ddd;border-radius:8px;margin-top:4px;max-height:220px;overflow-y:auto;z-index:20;box-shadow:0 4px 12px rgba(0,0,0,0.12)"></div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Your Name</label>
+      <input type="text" class="form-control" id="qc-submitter" placeholder="Enter your name">
+    </div>
+    <div id="qc-sections"></div>
+    <div id="qc-result" style="display:none;margin-top:4px;margin-bottom:16px;padding:12px;border-radius:8px;font-size:13px;font-weight:600;text-align:center"></div>
+  </div>
+  <div style="padding:14px 16px;background:#fff;border-top:1px solid #eee">
+    <button class="btn btn-primary" style="width:100%" id="qc-submit-btn" onclick="submitQualityCheck()">Submit Quality Check</button>
+  </div>
+</div>
+
 <!-- ══════════════════ JAVASCRIPT ══════════════════ -->
 <script>
 if ('serviceWorker' in navigator) {
