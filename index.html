@@ -281,7 +281,7 @@
     }
     .login-screen.hidden { display: none; }
     .login-logo {
-      width: 72px; height: 72px;
+      height: 72px; padding: 0 22px;
       background: rgba(255,255,255,0.15);
       border-radius: 20px;
       display: flex; align-items: center; justify-content: center;
@@ -1286,10 +1286,7 @@
 <!-- Login Screen -->
 <div class="login-screen hidden" id="login-screen">
   <div class="login-logo">
-    <svg width="40" height="40" viewBox="0 0 64 64" fill="none">
-      <path d="M16 24l16-8 16 8v16l-16 8-16-8V24z" stroke="white" stroke-width="2.5" stroke-linejoin="round"/>
-      <path d="M16 24l16 8 16-8M32 32v16" stroke="white" stroke-width="2.5" stroke-linejoin="round"/>
-    </svg>
+    <img src="./panoramic-roofline.png" style="height:34px;width:auto;display:block" alt="Panoramic">
   </div>
   <div class="login-title">Panoramic Ops</div>
   <div class="login-sub">Sign in to continue</div>

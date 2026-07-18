@@ -1,5 +1,5 @@
-var CACHE = 'po-manager-v122';
-var SHELL = ['/po-manager/', '/po-manager/index.html', '/po-manager/manifest.json', '/po-manager/icon-192.png', '/po-manager/icon-512.png', '/po-manager/apple-touch-icon.png', '/po-manager/panoramic-logo.png'];
+var CACHE = 'po-manager-v124';
+var SHELL = ['/po-manager/', '/po-manager/index.html', '/po-manager/manifest.json', '/po-manager/icon-192.png', '/po-manager/icon-512.png', '/po-manager/apple-touch-icon.png', '/po-manager/panoramic-logo.png', '/po-manager/panoramic-roofline.png'];
 
 self.addEventListener('install', function(e) {
   self.skipWaiting();
