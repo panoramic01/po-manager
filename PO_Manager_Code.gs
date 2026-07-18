@@ -349,7 +349,6 @@ function verifyGoogleLogin(idToken) {
     if (!email || email.split('@')[1] !== GOOGLE_HD_DOMAIN) {
       return { success: false, error: 'Google sign-in is limited to @' + GOOGLE_HD_DOMAIN + ' accounts. Use your email and password instead.' };
     }
-
     var ss    = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName(ROLES_SHEET);
     if (!sheet) return { success: false, error: 'System error. Contact admin.' };

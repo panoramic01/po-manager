@@ -299,6 +299,8 @@
     .login-field { margin-bottom: 16px; }
     .login-error { color: #c62828; font-size: 13px; margin-top: 10px; display: none; }
     .google-signin-wrap { display: flex; justify-content: center; margin-bottom: 20px; min-height: 44px; }
+    .google-signin-wrap.busy { opacity: 0.5; pointer-events: none; }
+    .login-google-status { display: none; text-align: center; color: #1F3971; font-size: 14px; font-weight: 600; margin: -12px 0 20px; }
     .login-divider { display: flex; align-items: center; color: #A2A092; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 20px; }
     .login-divider::before, .login-divider::after { content: ''; flex: 1; border-bottom: 1px solid #E8E8E8; }
     .login-divider span { padding: 0 12px; }
@@ -1293,6 +1295,7 @@
   <div class="login-sub">Sign in to continue</div>
   <div class="login-card">
     <div class="google-signin-wrap" id="google-signin-btn"></div>
+    <div class="login-google-status" id="login-google-status">Signing in…</div>
     <div class="login-divider"><span>or sign in with email</span></div>
     <div class="login-field">
       <label>Email</label>
@@ -1517,8 +1520,12 @@ function renderGoogleButton() {
 }
 
 function handleGoogleCredential(response) {
-  var errEl = document.getElementById('login-error');
+  var errEl    = document.getElementById('login-error');
+  var statusEl = document.getElementById('login-google-status');
+  var btnWrap  = document.getElementById('google-signin-btn');
   errEl.style.display = 'none';
+  statusEl.style.display = 'block';
+  btnWrap.classList.add('busy');
   gasCall('verifyGoogleLogin', { credential: response.credential }, function(result) {
     if (result.success) {
       localStorage.setItem('panoramic_ops_email', result.email);
@@ -1529,10 +1536,14 @@ function handleGoogleCredential(response) {
       G.config = { statusOptions: [], vendorOptions: [] };
       bootWithEmail(result.email);
     } else {
+      statusEl.style.display = 'none';
+      btnWrap.classList.remove('busy');
       errEl.textContent = result.error || 'Google sign-in failed.';
       errEl.style.display = 'block';
     }
   }, function(e) {
+    statusEl.style.display = 'none';
+    btnWrap.classList.remove('busy');
     errEl.textContent = 'Could not connect. Check your connection and try again.';
     errEl.style.display = 'block';
     console.error('verifyGoogleLogin failed:', e);
