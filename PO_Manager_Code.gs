@@ -9,6 +9,9 @@
 var SHEET_NAME  = "PO Database";
 var ROLES_SHEET = "HR";
 
+var GOOGLE_CLIENT_ID = '740908602873-3k73e1sscs32ohhbtoc4ha8hdpvp05t9.apps.googleusercontent.com';
+var GOOGLE_HD_DOMAIN = 'panoramicbuildingllc.com';
+
 var STATUS_OPTIONS = [
   "Pending Pickup",
   "Pending Delivery",
@@ -59,6 +62,7 @@ function doPost(e) {
 
     if      (action === 'getConfig')        result = getConfig(payload.email);
     else if (action === 'verifyLogin')       result = verifyLogin(payload.email, payload.password);
+    else if (action === 'verifyGoogleLogin') result = verifyGoogleLogin(payload.credential);
     else if (action === 'getSheetData')      result = getSheetData();
     else if (action === 'createPO')          result = createPO(payload);
     else if (action === 'updatePO')          result = updatePO(payload.rowIndex, payload.updates);
@@ -308,6 +312,59 @@ function verifyLogin(email, password) {
         } else {
           return { success: false, error: 'Incorrect password.' };
         }
+      }
+    }
+    return { success: false, error: 'Email not recognized. Contact your admin.' };
+  } catch(e) {
+    return { success: false, error: 'System error. Try again.' };
+  }
+}
+
+/**
+ * Verifies a Google Identity Services ID token (from the "Sign in with Google"
+ * button) and looks up the resulting email in the Roles sheet, same as verifyLogin.
+ * Restricted to GOOGLE_HD_DOMAIN — other Google accounts must use email+password.
+ */
+function verifyGoogleLogin(idToken) {
+  try {
+    if (!idToken) return { success: false, error: 'Missing Google credential.' };
+
+    var resp = UrlFetchApp.fetch(
+      'https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken),
+      { muteHttpExceptions: true }
+    );
+    if (resp.getResponseCode() !== 200) {
+      return { success: false, error: 'Could not verify Google sign-in. Try again.' };
+    }
+
+    var token = JSON.parse(resp.getContentText());
+    if (token.aud !== GOOGLE_CLIENT_ID) {
+      return { success: false, error: 'Invalid Google sign-in.' };
+    }
+    if (token.email_verified !== 'true' && token.email_verified !== true) {
+      return { success: false, error: 'Google email is not verified.' };
+    }
+
+    var email = (token.email || '').toLowerCase().trim();
+    if (!email || email.split('@')[1] !== GOOGLE_HD_DOMAIN) {
+      return { success: false, error: 'Google sign-in is limited to @' + GOOGLE_HD_DOMAIN + ' accounts. Use your email and password instead.' };
+    }
+
+    var ss    = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(ROLES_SHEET);
+    if (!sheet) return { success: false, error: 'System error. Contact admin.' };
+
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      var rowEmail = (data[i][1] || '').toString().toLowerCase().trim(); // Column B
+      if (rowEmail === email) {
+        var rowRole  = (data[i][3] || '').toString().toLowerCase().trim(); // Column D
+        var rowName  = (data[i][0] || '').toString().trim();               // Column A
+        var rowPhone = (data[i][2] || '').toString().trim();               // Column C
+        return {
+          success: true, role: rowRole, email: email,
+          config: { statusOptions: STATUS_OPTIONS, vendorOptions: VENDOR_OPTIONS, userRole: rowRole, userEmail: email, userName: rowName, userPhone: rowPhone }
+        };
       }
     }
     return { success: false, error: 'Email not recognized. Contact your admin.' };

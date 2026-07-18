@@ -15,6 +15,9 @@
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 
+  <!-- Google Sign-In -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+
   <!-- PWA / Add to Home Screen — hides the browser URL bar on iOS & Android -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -295,6 +298,10 @@
     .login-card input:focus { border-color: #1F3971; }
     .login-field { margin-bottom: 16px; }
     .login-error { color: #c62828; font-size: 13px; margin-top: 10px; display: none; }
+    .google-signin-wrap { display: flex; justify-content: center; margin-bottom: 20px; min-height: 44px; }
+    .login-divider { display: flex; align-items: center; color: #A2A092; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 20px; }
+    .login-divider::before, .login-divider::after { content: ''; flex: 1; border-bottom: 1px solid #E8E8E8; }
+    .login-divider span { padding: 0 12px; }
     .login-btn { width: 100%; margin-top: 4px; padding: 15px; background: #1F3971; color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 700; cursor: pointer; }
     .login-btn:active { opacity: 0.85; }
     .login-btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -1285,6 +1292,8 @@
   <div class="login-title">Panoramic Ops</div>
   <div class="login-sub">Sign in to continue</div>
   <div class="login-card">
+    <div class="google-signin-wrap" id="google-signin-btn"></div>
+    <div class="login-divider"><span>or sign in with email</span></div>
     <div class="login-field">
       <label>Email</label>
       <input type="email" id="login-email" placeholder="you@example.com"
@@ -1488,6 +1497,48 @@ function fmtMoney(n) { return (+(n) || 0).toLocaleString('en-US', { minimumFract
 // ── GAS endpoint (fetch() replaces google.script.run) ────────────────────────
 var GAS_URL = 'https://script.google.com/macros/s/AKfycbwvX4xv5kDofWEldpSRJP8O2yeVVgMcYVQsgtKmuFyKBZWTj0vfhFIIZAJp2UQob_XJ-Q/exec';
 
+// ── Google Sign-In ───────────────────────────────────────────────────────────
+var GOOGLE_CLIENT_ID  = '740908602873-3k73e1sscs32ohhbtoc4ha8hdpvp05t9.apps.googleusercontent.com';
+var GOOGLE_HD_DOMAIN  = 'panoramicbuildingllc.com';
+
+function renderGoogleButton() {
+  if (window.google && google.accounts && google.accounts.id) {
+    google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      hd: GOOGLE_HD_DOMAIN,
+      callback: handleGoogleCredential
+    });
+    google.accounts.id.renderButton(document.getElementById('google-signin-btn'), {
+      theme: 'outline', size: 'large', width: 300, text: 'signin_with'
+    });
+  } else {
+    setTimeout(renderGoogleButton, 200);
+  }
+}
+
+function handleGoogleCredential(response) {
+  var errEl = document.getElementById('login-error');
+  errEl.style.display = 'none';
+  gasCall('verifyGoogleLogin', { credential: response.credential }, function(result) {
+    if (result.success) {
+      localStorage.setItem('panoramic_ops_email', result.email);
+      if (result.config) {
+        localStorage.setItem('panoramic_ops_config', JSON.stringify(result.config));
+      }
+      document.getElementById('login-screen').classList.add('hidden');
+      G.config = { statusOptions: [], vendorOptions: [] };
+      bootWithEmail(result.email);
+    } else {
+      errEl.textContent = result.error || 'Google sign-in failed.';
+      errEl.style.display = 'block';
+    }
+  }, function(e) {
+    errEl.textContent = 'Could not connect. Check your connection and try again.';
+    errEl.style.display = 'block';
+    console.error('verifyGoogleLogin failed:', e);
+  });
+}
+
 function gasCall(action, payload, onSuccess, onFailure) {
   fetch(GAS_URL, {
     method: 'POST',
@@ -1512,6 +1563,7 @@ function gasCall(action, payload, onSuccess, onFailure) {
 // ── Boot ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', function() {
   initStmtDrop();
+  renderGoogleButton();
   var cachedEmail = localStorage.getItem('panoramic_ops_email');
   if (cachedEmail) {
     // Returning user — boot directly from cached email, no password needed
