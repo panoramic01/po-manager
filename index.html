@@ -386,14 +386,6 @@
         <button class="search-clear" id="s-clear" onclick="clearSearch('s-input','s-clear'); runSearch()">✕</button>
       </div>
     </div>
-    <!-- New PO button -->
-    <div id="dash-new-po-btn" style="padding:16px 16px 8px">
-      <button onclick="showTabDirect('create', null)" style="width:100%;background:#1F3971;color:#fff;border:none;border-radius:14px;padding:18px 20px;font-size:16px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;box-shadow:0 3px 10px rgba(31,57,113,0.28);letter-spacing:0.2px">
-        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
-        New Purchase Order
-      </button>
-    </div>
-
     <!-- Deliveries & Jobsite Pickups summary card -->
     <div class="card" id="dash-delpick-card">
       <div class="row-between" style="margin-bottom:2px">
@@ -1849,7 +1841,6 @@ function applyRole(role) {
   sd('nav-create',      p.canCreate);
   sd('nav-receive',     p.canReceive);
   sd('nav-other',       p.canOther);
-  sd('dash-new-po-btn',  p.canCreate);
   sd('nav-account',     p.canAccount);
   sd('other-card-pricing',   p.canPricing);
   sd('other-card-contacts',  p.canContacts);
