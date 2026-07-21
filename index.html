@@ -393,6 +393,32 @@
         New Purchase Order
       </button>
     </div>
+
+    <!-- Deliveries & Jobsite Pickups summary card -->
+    <div class="card" id="dash-delpick-card">
+      <div class="row-between" style="margin-bottom:2px">
+        <div class="card-title" style="margin-bottom:0">Deliveries &amp; Jobsite Pickups</div>
+        <button class="btn btn-sm btn-secondary" onclick="viewAllOrders()">View All</button>
+      </div>
+      <div class="status-tabs" style="margin:10px 0 0">
+        <button class="status-tab active" id="dp-tab-today" onclick="setDelPickTab('today')">Today</button>
+        <button class="status-tab" id="dp-tab-upcoming" onclick="setDelPickTab('upcoming')">Upcoming</button>
+      </div>
+      <div id="dash-delpick-content"></div>
+    </div>
+
+    <!-- Recent Orders summary card -->
+    <div class="card" id="dash-recent-card">
+      <div class="row-between" style="margin-bottom:14px">
+        <div class="card-title" style="margin-bottom:0">Recent Orders</div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-sm btn-secondary" onclick="viewAllOrders()">View All</button>
+          <button class="btn btn-sm btn-primary" onclick="showTabDirect('create', null)">Create New</button>
+        </div>
+      </div>
+      <div id="dash-recent-content"></div>
+    </div>
+
     <div class="chip-row" id="s-chips" style="display:none">
       <button class="chip active" onclick="setChip('all',this)">All</button>
       <button class="chip" onclick="setChip('Pending Pickup',this)">Pickup</button>
@@ -1463,6 +1489,7 @@ var G = {
   config:        { statusOptions: [], vendorOptions: [] },
   filter:        'all',
   dashTab:       'all',
+  delPickTab:    'today',
   receivePO:     null,
   editRow:       null,
   role:          'admin',
@@ -1930,11 +1957,12 @@ function renderDashboard() {
                         buckets.reconcile.length + buckets.complete.length + buckets.other.length;
   var canceledCount  = buckets.canceled.length;
 
-  G.dashCounts = { all: G.pos.length, draft: draftCount, open: openTabCount,
-                   completed: completedCount, canceled: canceledCount };
+  G.dashCounts  = { all: G.pos.length, draft: draftCount, open: openTabCount,
+                    completed: completedCount, canceled: canceledCount };
+  G.dashBuckets = buckets;
 
   var t = G.dashTab || 'all';
-  var h = renderTabBar();
+  var h = '<div id="dash-all-orders-anchor"></div>' + renderTabBar();
 
   // Drafts
   if ((t === 'draft' || t === 'all') && buckets.draft.length) {
@@ -2037,6 +2065,75 @@ function renderDashboard() {
   }
 
   document.getElementById('dash-content').innerHTML = h;
+  renderDelPickCard();
+  renderRecentOrdersCard();
+}
+
+// ── Deliveries & Jobsite Pickups summary card ────────────────────────────────
+function setDelPickTab(tabKey) {
+  G.delPickTab = tabKey;
+  document.getElementById('dp-tab-today').classList.toggle('active', tabKey === 'today');
+  document.getElementById('dp-tab-upcoming').classList.toggle('active', tabKey === 'upcoming');
+  renderDelPickCard();
+}
+
+function renderDelPickCard() {
+  var el = document.getElementById('dash-delpick-content');
+  if (!el || !G.dashBuckets) return;
+  var b = G.dashBuckets;
+  var tab = G.delPickTab || 'today';
+  var list, emptyMsg;
+
+  if (tab === 'today') {
+    list = b.todayDel.concat(b.todayPick);
+    emptyMsg = 'You have no deliveries or pickups today';
+  } else {
+    list = b.upcomingDel.concat(b.upcomingPick, b.futureDel, b.futurePick)
+      .sort(function(a,c){ return parseMMDDYYYY(a.deliveryDate)-parseMMDDYYYY(c.deliveryDate); });
+    emptyMsg = 'You have no upcoming deliveries or pickups';
+  }
+
+  if (!list.length) {
+    el.innerHTML = '<div class="empty" style="padding:26px 10px">' +
+      '<div style="font-weight:700;color:#333;font-size:15px;margin-bottom:4px">No Results Found</div>' +
+      '<div>' + emptyMsg + '</div></div>';
+    return;
+  }
+
+  el.innerHTML = list.map(function(po){
+    return poCard(po, po.status.toLowerCase()==='pending delivery' ? 'delivery' : 'pickup');
+  }).join('');
+}
+
+// ── Recent Orders summary card ───────────────────────────────────────────────
+function renderRecentOrdersCard() {
+  var el = document.getElementById('dash-recent-content');
+  if (!el) return;
+  var recent = G.pos.slice(-5).reverse();
+  if (!recent.length) {
+    el.innerHTML = '<div class="empty">No orders yet.</div>';
+    return;
+  }
+  el.innerHTML = recent.map(recentOrderRow).join('');
+}
+
+function recentOrderRow(po) {
+  return '<div class="po-item" data-ponum="'+esc(po.poNum)+'" onclick="openEdit(\''+po.poNum+'\')" style="cursor:pointer">' +
+    '<div class="row-between">' +
+      '<div>' +
+        '<div class="po-main" style="margin:0;font-size:16px">'+(po.jobRef||po.vendor||'\u2014')+'</div>' +
+        '<div class="po-sub" style="font-size:12px;margin-top:2px">PO# '+(po.poNum||'\u2014')+'</div>' +
+      '</div>' +
+      badge(po.status) +
+    '</div>' +
+  '</div>';
+}
+
+function viewAllOrders() {
+  G.dashTab = 'all';
+  renderDashboard();
+  var anchor = document.getElementById('dash-all-orders-anchor');
+  if (anchor) anchor.scrollIntoView({ behavior:'smooth', block:'start' });
 }
 
 function renderTabBar() {
