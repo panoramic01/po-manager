@@ -139,7 +139,7 @@ function getSheetData() {
   if (lastRow < 2) return [];
 
   var numRows = lastRow - 1;
-  var data     = sheet.getRange(2, 1, numRows, 12).getValues();
+  var data     = sheet.getRange(2, 1, numRows, 13).getValues();
   var tz       = Session.getScriptTimeZone();
   var pos      = [];
 
@@ -180,11 +180,21 @@ function getSheetData() {
       issuedPOLink: issuedPOLink,
       invoiceLink:  invoiceLink,
       receivedNote: str(row[10]),
-      notes:        str(row[11])
+      notes:        str(row[11]),
+      orderedBy:    str(row[12])
     });
   });
 
   return pos;
+}
+
+/**
+ * Returns just the first whitespace-separated token of a full name.
+ */
+function getFirstName(fullName) {
+  var trimmed = (fullName || "").toString().trim();
+  if (!trimmed) return "";
+  return trimmed.split(/\s+/)[0];
 }
 
 /**
@@ -216,6 +226,7 @@ function createPO(data) {
     sheet.getRange(nextRow, 7).setValue(data.status        || "Pending Pickup");
     sheet.getRange(nextRow, 8).setValue(data.invoiceTotal  || "");
     sheet.getRange(nextRow, 12).setValue(data.notes        || "");
+    sheet.getRange(nextRow, 13).setValue(getFirstName(data.orderedBy));
 
     return { success: true, poNumber: poNumber };
   } catch (e) {
@@ -241,6 +252,7 @@ function updatePO(rowIndex, updates) {
     if (updates.issuedPO      !== undefined) sheet.getRange(rowIndex, 10).setValue(updates.issuedPO);
     if (updates.receivedNote  !== undefined) sheet.getRange(rowIndex, 11).setValue(updates.receivedNote);
     if (updates.notes         !== undefined) sheet.getRange(rowIndex, 12).setValue(updates.notes);
+    if (updates.orderedBy     !== undefined) sheet.getRange(rowIndex, 13).setValue(updates.orderedBy);
 
     return { success: true };
   } catch (e) {
@@ -266,7 +278,7 @@ function findPOByNumber(poNum) {
       // Found - load just this single row
       var rowIndex = i + 2;
       var tz  = Session.getScriptTimeZone();
-      var row = sheet.getRange(rowIndex, 1, 1, 12).getValues()[0];
+      var row = sheet.getRange(rowIndex, 1, 1, 13).getValues()[0];
       var invoiceLink = '', issuedPOLink = '';
       try { invoiceLink  = sheet.getRange(rowIndex, 1,  1, 1).getRichTextValues()[0][0].getLinkUrl() || ''; } catch(e2) {}
       try { issuedPOLink = sheet.getRange(rowIndex, 10, 1, 1).getRichTextValues()[0][0].getLinkUrl() || ''; } catch(e2) {}
@@ -286,7 +298,8 @@ function findPOByNumber(poNum) {
         issuedPOLink:  issuedPOLink,
         invoiceLink:   invoiceLink,
         receivedNote:  str(row[10]),
-        notes:         str(row[11])
+        notes:         str(row[11]),
+        orderedBy:     str(row[12])
       };
     }
     return null;

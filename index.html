@@ -2226,7 +2226,8 @@ function submitCreate() {
     vendorInvoice: trim('c-invoice'),
     status:        getVendorValue('c-status', 'c-status-other'),
     invoiceTotal:  val('c-total'),
-    notes:         trim('c-notes')
+    notes:         trim('c-notes'),
+    orderedBy:     G.config.userName || G.userEmail
   }, function(res) {
     setBtnState('create-btn', 'Create PO', false);
     if (res.success) {
