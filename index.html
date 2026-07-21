@@ -1562,6 +1562,14 @@ function gasCall(action, payload, onSuccess, onFailure) {
   });
 }
 
+function empErrorMessage(r) {
+  if (r.code === 'OWNER_PROTECTED')      return r.error || 'This account is protected.';
+  if (r.code === 'LAST_ADMIN_PROTECTED') return r.error || 'Cannot remove the last admin.';
+  if (r.code === 'FORBIDDEN')            return 'You do not have permission to do this.';
+  if (r.code === 'AUTH_REQUIRED')        return 'Please sign in again.';
+  return r.error || 'Something went wrong.';
+}
+
 // ── Boot ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', function() {
   initStmtDrop();
@@ -5717,8 +5725,8 @@ var _empData = [];
 function loadEmpMgr() {
   document.getElementById('emp-list').innerHTML = '<p style="color:#aaa;font-size:13px">Loading...</p>';
   document.getElementById('emp-add-form').style.display = 'none';
-  gasCall('getEmployees', {}, function(r) {
-    if (r.error) { document.getElementById('emp-list').innerHTML = '<p style="color:red;font-size:13px">' + esc(r.error) + '</p>'; return; }
+  gasCall('getEmployees', { callerEmail: G.userEmail }, function(r) {
+    if (r.error) { document.getElementById('emp-list').innerHTML = '<p style="color:red;font-size:13px">' + esc(empErrorMessage(r)) + '</p>'; return; }
     _empData = r.employees || [];
     renderEmpList();
   }, function() { document.getElementById('emp-list').innerHTML = '<p style="color:red;font-size:13px">Could not connect</p>'; });
@@ -5777,8 +5785,8 @@ function doAddEmployee() {
   var role     = document.getElementById('emp-new-role').value;
   var allotted = document.getElementById('emp-new-allotted').value;
   if (!name || !email || !password) { showToast('Name, email and password are required'); return; }
-  gasCall('addEmployee', { name: name, email: email, phone: phone, password: password, role: role, allotted: parseFloat(allotted) || 0 }, function(r) {
-    if (r.error) { showToast('Error: ' + r.error); return; }
+  gasCall('addEmployee', { name: name, email: email, phone: phone, password: password, role: role, allotted: parseFloat(allotted) || 0, callerEmail: G.userEmail }, function(r) {
+    if (r.error) { showToast(empErrorMessage(r)); return; }
     showToast(name + ' added');
     document.getElementById('emp-add-form').style.display = 'none';
     loadEmpMgr();
@@ -5793,10 +5801,11 @@ function doUpdateEmployee(i) {
     phone:    document.getElementById('emp-edit-phone-' + i).value.trim(),
     role:     document.getElementById('emp-edit-role-' + i).value,
     allotted: parseFloat(document.getElementById('emp-edit-allotted-' + i).value) || 0,
-    password: document.getElementById('emp-edit-pw-' + i).value.trim()
+    password: document.getElementById('emp-edit-pw-' + i).value.trim(),
+    callerEmail: G.userEmail
   };
   gasCall('updateEmployee', payload, function(r) {
-    if (r.error) { showToast('Error: ' + r.error); return; }
+    if (r.error) { showToast(empErrorMessage(r)); return; }
     showToast('Saved');
     loadEmpMgr();
   }, function() { showToast('Could not connect'); });
@@ -5804,8 +5813,8 @@ function doUpdateEmployee(i) {
 
 function doRemoveEmployee(i, email) {
   if (!confirm('Remove ' + _empData[i].name + '? This cannot be undone.')) return;
-  gasCall('removeEmployee', { email: email }, function(r) {
-    if (r.error) { showToast('Error: ' + r.error); return; }
+  gasCall('removeEmployee', { email: email, callerEmail: G.userEmail }, function(r) {
+    if (r.error) { showToast(empErrorMessage(r)); return; }
     showToast('Employee removed');
     loadEmpMgr();
   }, function() { showToast('Could not connect'); });
@@ -5815,8 +5824,8 @@ function doRemoveEmployee(i, email) {
 function loadPTOOverview() {
   document.getElementById('pto-overview-balances').innerHTML = '<p style="color:#aaa;font-size:13px">Loading...</p>';
   document.getElementById('pto-overview-pending').innerHTML  = '';
-  gasCall('getPTOOverview', {}, function(d) {
-    if (d.error) { document.getElementById('pto-overview-balances').innerHTML = '<p style="color:red;font-size:13px">' + esc(d.error) + '</p>'; return; }
+  gasCall('getPTOOverview', { callerEmail: G.userEmail }, function(d) {
+    if (d.error) { document.getElementById('pto-overview-balances').innerHTML = '<p style="color:red;font-size:13px">' + esc(empErrorMessage(d)) + '</p>'; return; }
 
     // Balances
     var balances = d.balances || [];
@@ -5868,8 +5877,8 @@ function doPTOOverviewDeny(gid, email, btn) {
 function loadPayroll() {
   document.getElementById('payroll-period-label').textContent = 'Loading...';
   document.getElementById('payroll-emp-list').innerHTML = '';
-  gasCall('getPayrollSummary', {}, function(d) {
-    if (d.error) { document.getElementById('payroll-emp-list').innerHTML = '<p style="color:red;font-size:13px">' + esc(d.error) + '</p>'; return; }
+  gasCall('getPayrollSummary', { callerEmail: G.userEmail }, function(d) {
+    if (d.error) { document.getElementById('payroll-emp-list').innerHTML = '<p style="color:red;font-size:13px">' + esc(empErrorMessage(d)) + '</p>'; return; }
     document.getElementById('payroll-period-label').textContent = d.periodLabel || '';
     var emps = d.employees || [];
     var grandTotal = emps.reduce(function(s, e) { return s + e.total; }, 0);
@@ -5908,9 +5917,9 @@ function togglePayrollRow(i) {
 function doEmailPayroll() {
   var btn = document.querySelector('[onclick="doEmailPayroll()"]');
   if (btn) { btn.disabled = true; btn.textContent = 'Sending...'; }
-  gasCall('emailPayroll', { to: G.userEmail }, function(r) {
+  gasCall('emailPayroll', { to: G.userEmail, callerEmail: G.userEmail }, function(r) {
     if (btn) { btn.disabled = false; btn.textContent = 'Email'; }
-    if (r.error) { showToast('Error: ' + r.error); return; }
+    if (r.error) { showToast(empErrorMessage(r)); return; }
     showToast('Summary emailed to ' + G.userEmail);
   }, function() { if (btn) { btn.disabled = false; btn.textContent = 'Email'; } showToast('Could not connect'); });
 }

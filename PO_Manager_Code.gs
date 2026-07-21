@@ -12,6 +12,18 @@ var ROLES_SHEET = "HR";
 var GOOGLE_CLIENT_ID = '740908602873-3k73e1sscs32ohhbtoc4ha8hdpvp05t9.apps.googleusercontent.com';
 var GOOGLE_HD_DOMAIN = 'panoramicbuildingllc.com';
 
+// Owner accounts always resolve to admin and can never be demoted or removed
+// through the app, regardless of what the HR sheet says.
+var OWNER_EMAILS = ['aidan@panoramicbuildingllc.com', 'aidansalisbury213@gmail.com'];
+
+function isOwnerEmail(email) {
+  email = (email || '').toString().toLowerCase().trim();
+  for (var i = 0; i < OWNER_EMAILS.length; i++) {
+    if (OWNER_EMAILS[i].toLowerCase() === email) return true;
+  }
+  return false;
+}
+
 var STATUS_OPTIONS = [
   "Pending Pickup",
   "Pending Delivery",
@@ -95,12 +107,12 @@ function doPost(e) {
     else if (action === 'getClockStatus')               result = getClockStatus(payload);
     else if (action === 'getTimesheet')                 result = getTimesheet(payload);
     else if (action === 'updateProfile')               result = updateProfile(payload);
-    else if (action === 'getEmployees')                result = getEmployees();
+    else if (action === 'getEmployees')                result = getEmployees(payload);
     else if (action === 'addEmployee')                 result = addEmployee(payload);
     else if (action === 'updateEmployee')              result = updateEmployee(payload);
     else if (action === 'removeEmployee')              result = removeEmployee(payload);
-    else if (action === 'getPTOOverview')              result = getPTOOverview();
-    else if (action === 'getPayrollSummary')           result = getPayrollSummary();
+    else if (action === 'getPTOOverview')              result = getPTOOverview(payload);
+    else if (action === 'getPayrollSummary')           result = getPayrollSummary(payload);
     else if (action === 'emailPayroll')                result = emailPayroll(payload);
     else                                        result = { error: 'Unknown action: ' + action };
 
@@ -306,6 +318,7 @@ function verifyLogin(email, password) {
       var rowPhone = (data[i][2] || '').toString().trim();               // Column C
       if (rowEmail === email) {
         if (rowPass && rowPass === password) {
+          if (isOwnerEmail(email)) rowRole = 'admin';
           return {
             success: true, role: rowRole, email: email,
             config: { statusOptions: STATUS_OPTIONS, vendorOptions: VENDOR_OPTIONS, userRole: rowRole, userEmail: email, userName: rowName, userPhone: rowPhone }
@@ -361,6 +374,7 @@ function verifyGoogleLogin(idToken) {
         var rowRole  = (data[i][3] || '').toString().toLowerCase().trim(); // Column D
         var rowName  = (data[i][0] || '').toString().trim();               // Column A
         var rowPhone = (data[i][2] || '').toString().trim();               // Column C
+        if (isOwnerEmail(email)) rowRole = 'admin';
         return {
           success: true, role: rowRole, email: email,
           config: { statusOptions: STATUS_OPTIONS, vendorOptions: VENDOR_OPTIONS, userRole: rowRole, userEmail: email, userName: rowName, userPhone: rowPhone }
@@ -427,7 +441,7 @@ function getRoleByEmail(email) {
 
     var ss    = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName(ROLES_SHEET);
-    if (!sheet) return { role: 'runner', email: email };
+    if (!sheet) return { role: isOwnerEmail(email) ? 'admin' : 'runner', email: email };
 
     var data = sheet.getDataRange().getValues();
     for (var i = 1; i < data.length; i++) {
@@ -435,12 +449,39 @@ function getRoleByEmail(email) {
       var rowRole  = (data[i][3] || '').toString().toLowerCase().trim(); // Column D
       var rowName  = (data[i][0] || '').toString().trim();               // Column A
       var rowPhone = (data[i][2] || '').toString().trim();               // Column C
-      if (rowEmail === email) return { role: rowRole, email: email, name: rowName, phone: rowPhone };
+      if (rowEmail === email) {
+        if (isOwnerEmail(email)) rowRole = 'admin';
+        return { role: rowRole, email: email, name: rowName, phone: rowPhone };
+      }
     }
-    return { role: 'runner', email: email, name: '', phone: '' };
+    return { role: isOwnerEmail(email) ? 'admin' : 'runner', email: email, name: '', phone: '' };
   } catch(e) {
-    return { role: 'runner', email: email, name: '', phone: '' };
+    return { role: isOwnerEmail(email) ? 'admin' : 'runner', email: email, name: '', phone: '' };
   }
+}
+
+/**
+ * Server-side authorization gate for privileged actions. Requires payload.callerEmail
+ * to resolve (via getRoleByEmail, which applies the owner override above) to one of
+ * allowedRoles. Callers must check .ok before proceeding.
+ */
+function authorizeCaller(payload, allowedRoles) {
+  var callerEmail = ((payload && payload.callerEmail) || '').toString().toLowerCase().trim();
+  if (!callerEmail) return { ok: false, code: 'AUTH_REQUIRED', error: 'You must be signed in to do this.' };
+  var role = getRoleByEmail(callerEmail).role;
+  if (allowedRoles.indexOf(role) === -1) {
+    return { ok: false, code: 'FORBIDDEN', error: 'You do not have permission to do this.' };
+  }
+  return { ok: true, role: role, email: callerEmail };
+}
+
+/** Counts rows whose role (column D, index 3) is 'admin'. */
+function countAdminRows(data) {
+  var n = 0;
+  for (var i = 0; i < data.length; i++) {
+    if ((data[i][3] || '').toString().toLowerCase().trim() === 'admin') n++;
+  }
+  return n;
 }
 
 /**
@@ -1657,8 +1698,10 @@ function getTimesheet(payload) {
 }
 
 // ── Admin: Employee Manager ───────────────────────────────────────────────────
-function getEmployees() {
+function getEmployees(payload) {
   try {
+    var auth = authorizeCaller(payload, ['admin']);
+    if (!auth.ok) return { error: auth.error, code: auth.code };
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sh = ss.getSheetByName(ROLES_SHEET);
     if (!sh) return { error: 'HR sheet not found' };
@@ -1685,11 +1728,16 @@ function getEmployees() {
 
 function addEmployee(payload) {
   try {
+    var auth = authorizeCaller(payload, ['admin']);
+    if (!auth.ok) return { error: auth.error, code: auth.code };
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sh = ss.getSheetByName(ROLES_SHEET);
     if (!sh) return { error: 'HR sheet not found' };
     var email = (payload.email || '').toLowerCase().trim();
     if (!email || !payload.name) return { error: 'Name and email are required' };
+    if (isOwnerEmail(email) && (payload.role || '').toLowerCase().trim() !== 'admin') {
+      return { error: 'This account is protected and must be added as admin.', code: 'OWNER_PROTECTED' };
+    }
     var lastRow = sh.getLastRow();
     if (lastRow >= 2) {
       var existing = sh.getRange(2, 1, lastRow - 1, 2).getValues();
@@ -1714,6 +1762,8 @@ function addEmployee(payload) {
 
 function updateEmployee(payload) {
   try {
+    var auth = authorizeCaller(payload, ['admin']);
+    if (!auth.ok) return { error: auth.error, code: auth.code };
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sh = ss.getSheetByName(ROLES_SHEET);
     if (!sh) return { error: 'HR sheet not found' };
@@ -1723,6 +1773,16 @@ function updateEmployee(payload) {
     var data = sh.getRange(2, 1, lastRow - 1, 7).getValues();
     for (var i = 0; i < data.length; i++) {
       if ((data[i][1] || '').toLowerCase().trim() === email) {
+        var newRole = payload.role !== undefined ? payload.role.toString().toLowerCase().trim() : undefined;
+        if (newRole !== undefined && newRole !== 'admin') {
+          if (isOwnerEmail(email)) {
+            return { error: 'This account is protected and must remain admin.', code: 'OWNER_PROTECTED' };
+          }
+          var currentRole = (data[i][3] || '').toString().toLowerCase().trim();
+          if (currentRole === 'admin' && countAdminRows(data) <= 1) {
+            return { error: 'Cannot demote the last remaining admin.', code: 'LAST_ADMIN_PROTECTED' };
+          }
+        }
         var row = i + 2;
         if (payload.name     !== undefined) sh.getRange(row, 1).setValue(payload.name);
         if (payload.phone    !== undefined) sh.getRange(row, 3).setValue(payload.phone);
@@ -1738,15 +1798,24 @@ function updateEmployee(payload) {
 
 function removeEmployee(payload) {
   try {
+    var auth = authorizeCaller(payload, ['admin']);
+    if (!auth.ok) return { error: auth.error, code: auth.code };
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sh = ss.getSheetByName(ROLES_SHEET);
     if (!sh) return { error: 'HR sheet not found' };
     var email = (payload.email || '').toLowerCase().trim();
     var lastRow = sh.getLastRow();
     if (lastRow < 2) return { error: 'Employee not found' };
-    var data = sh.getRange(2, 2, lastRow - 1, 1).getValues();
+    var data = sh.getRange(2, 1, lastRow - 1, 7).getValues();
     for (var i = 0; i < data.length; i++) {
-      if ((data[i][0] || '').toLowerCase().trim() === email) {
+      if ((data[i][1] || '').toLowerCase().trim() === email) {
+        if (isOwnerEmail(email)) {
+          return { error: 'This account is protected and cannot be removed.', code: 'OWNER_PROTECTED' };
+        }
+        var currentRole = (data[i][3] || '').toString().toLowerCase().trim();
+        if (currentRole === 'admin' && countAdminRows(data) <= 1) {
+          return { error: 'Cannot remove the last remaining admin.', code: 'LAST_ADMIN_PROTECTED' };
+        }
         sh.deleteRow(i + 2);
         return { success: true };
       }
@@ -1756,8 +1825,10 @@ function removeEmployee(payload) {
 }
 
 // ── Admin: PTO Overview ───────────────────────────────────────────────────────
-function getPTOOverview() {
+function getPTOOverview(payload) {
   try {
+    var auth = authorizeCaller(payload, ['admin']);
+    if (!auth.ok) return { error: auth.error, code: auth.code };
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sh = ss.getSheetByName(ROLES_SHEET);
     var balances = [];
@@ -1793,8 +1864,10 @@ function getPTOOverview() {
 }
 
 // ── Admin: Payroll Summary ────────────────────────────────────────────────────
-function getPayrollSummary() {
+function getPayrollSummary(payload) {
   try {
+    var auth = authorizeCaller(payload, ['admin']);
+    if (!auth.ok) return { error: auth.error, code: auth.code };
     var sh  = getTimeSheet_();
     var tz  = Session.getScriptTimeZone();
     var now = new Date();
@@ -1843,8 +1916,10 @@ function getPayrollSummary() {
 
 function emailPayroll(payload) {
   try {
+    var auth = authorizeCaller(payload, ['admin']);
+    if (!auth.ok) return { error: auth.error, code: auth.code };
     var to = payload.to || Session.getActiveUser().getEmail();
-    var summary = getPayrollSummary();
+    var summary = getPayrollSummary(payload);
     if (summary.error) return { error: summary.error };
     var lines = ['Payroll Summary - ' + summary.periodLabel, '===========================', ''];
     var grandTotal = 0;
