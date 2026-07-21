@@ -25,6 +25,7 @@ var STATUS_OPTIONS = [
   "Needs Review",
   "Complete",
   "Draft",
+  "Canceled",
   "Other"
 ];
 
@@ -795,7 +796,8 @@ function getMissingInvoices() {
     // Statuses where we don't yet expect an invoice
     var skipStatuses = { 'draft': true, 'ordered': true, 'being made': true,
                          'pending pickup': true, 'pending delivery': true,
-                         'pending delivery to supplier': true, 'currently picking up': true };
+                         'pending delivery to supplier': true, 'currently picking up': true,
+                         'canceled': true };
     for (var i = 0; i < data.length; i++) {
       var poNum = (data[i][0] || '').toString().trim();
       if (!isValidPONumber(poNum)) continue;

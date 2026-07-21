@@ -69,21 +69,12 @@
     .card { background: white; border-radius: 16px; padding: 20px; margin-bottom: 14px; box-shadow: 0 1px 4px rgba(0,0,0,.07); }
     .card-title { font-size: 16px; font-weight: 700; color: #2E2E2E; margin-bottom: 18px; }
 
-    /* ── Stats Grid ── */
-    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
-    .stat-card { background: white; border-radius: 14px; padding: 16px 8px; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,.07); cursor: pointer; border: 2px solid transparent; transition: border-color 0.15s, box-shadow 0.15s; }
-    .stat-card:active { opacity: 0.8; }
-    .stat-card.active { border-color: #1F3971; box-shadow: 0 0 0 3px rgba(31,57,113,0.15); }
-    .dash-filter-bar { display: flex; align-items: center; justify-content: space-between; background: #1F3971; color: white; border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; font-size: 14px; font-weight: 600; }
-    .dash-filter-bar button { background: rgba(255,255,255,0.2); border: none; color: white; border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 600; cursor: pointer; }
-    .stat-num   { font-size: 32px; font-weight: 800; line-height: 1; }
-    .stat-label { font-size: 10px; color: #A2A092; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 5px; }
-    .c-red   { color: #c62828; }
-    .c-amber { color: #e65100; }
-    .c-green { color: #1F3971; }
-    .c-blue  { color: #1F3971; }
-    .c-teal  { color: #1F3971; }
-    .c-gray  { color: #A2A092; }
+    /* ── Status Tabs ── */
+    .status-tabs { display: flex; overflow-x: auto; border-bottom: 2px solid #eee; margin-bottom: 12px; -webkit-overflow-scrolling: touch; }
+    .status-tabs::-webkit-scrollbar { display: none; }
+    .status-tab { flex: none; padding: 10px 14px; font-size: 14px; font-weight: 700; color: #8A887E; background: none; border: none; border-bottom: 3px solid transparent; cursor: pointer; white-space: nowrap; margin-bottom: -2px; }
+    .status-tab.active { color: #1F3971; border-bottom-color: #1F3971; }
+    .dash-summary { font-size: 13px; color: #8A887E; padding: 0 2px 12px; }
 
     /* ── Section Headers ── */
     .sec-head { font-size: 14px; font-weight: 700; padding: 9px 14px; border-radius: 8px; margin: 18px 0 10px; }
@@ -107,6 +98,9 @@
     .po-item.reconcile{ border-left-color: #1F3971; }
     .po-item.complete { border-left-color: #D1D0CB; }
     .po-item.ordered  { border-left-color: #1F3971; }
+    .po-item.needs-review    { border-left-color: #e65100; }
+    .po-item.invoice-missing { border-left-color: #c62828; }
+    .po-item.canceled        { border-left-color: #A2A092; }
     .po-num  { font-size: 14px; font-weight: 700; color: #1F3971; font-family: monospace; }
     .po-main { font-size: 19px; font-weight: 700; margin: 5px 0 4px; }
     .po-sub  { font-size: 15px; color: #8A887E; }
@@ -1468,7 +1462,7 @@ var G = {
   pos:           [],
   config:        { statusOptions: [], vendorOptions: [] },
   filter:        'all',
-  dashFilter:    null,
+  dashTab:       'all',
   receivePO:     null,
   editRow:       null,
   role:          'admin',
@@ -1872,27 +1866,36 @@ function renderDashboard() {
     futureDel:[], futurePick:[],        // date set but > 7 days out
     overdueDel:[], overduePick:[],
     missingDel:[], missingPick:[],      // truly no date
-    reconcile:[], ordered:[], inProd:[], draft:[]
+    reconcile:[], ordered:[], inProd:[], draft:[],
+    complete:[], invoiceMissing:[], needsReview:[], canceled:[], other:[]
   };
 
-  var openCount = 0;
+  var openDateCount = 0; // Pending Delivery/Pending Pickup POs (date-bucketed below)
 
   G.pos.forEach(function(po) {
     var sl = po.status.toLowerCase();
-    var isPD     = sl === 'pending delivery';
-    var isPP     = sl === 'pending pickup';
-    var isRTR    = sl === 'ready to reconcile';
-    var isInProd = sl === 'being made' || sl === 'pending delivery to supplier';
-    var isOrd    = sl === 'ordered' || sl === 'currently picking up';
-    var isDraft  = sl === 'draft';
+    var isPD          = sl === 'pending delivery';
+    var isPP          = sl === 'pending pickup';
+    var isRTR         = sl === 'ready to reconcile';
+    var isInProd      = sl === 'being made' || sl === 'pending delivery to supplier';
+    var isOrd         = sl === 'ordered' || sl === 'currently picking up';
+    var isDraft       = sl === 'draft';
+    var isComplete    = sl === 'complete' || sl === 'delivered';
+    var isInvoiceMiss = sl === 'invoice missing';
+    var isNeedsReview = sl === 'needs review';
+    var isCanceled    = sl === 'canceled';
 
-    if (isRTR)    { buckets.reconcile.push(po); return; }
-    if (isInProd) { buckets.inProd.push(po);    return; }
-    if (isOrd)    { buckets.ordered.push(po);   return; }
-    if (isDraft)  { buckets.draft.push(po);     return; }
-    if (!isPD && !isPP) return;
+    if (isRTR)         { buckets.reconcile.push(po);      return; }
+    if (isInProd)      { buckets.inProd.push(po);         return; }
+    if (isOrd)         { buckets.ordered.push(po);        return; }
+    if (isDraft)       { buckets.draft.push(po);          return; }
+    if (isComplete)    { buckets.complete.push(po);       return; }
+    if (isInvoiceMiss) { buckets.invoiceMissing.push(po); return; }
+    if (isNeedsReview) { buckets.needsReview.push(po);    return; }
+    if (isCanceled)    { buckets.canceled.push(po);       return; }
+    if (!isPD && !isPP) { buckets.other.push(po); return; } // unmapped status — never drop silently
 
-    openCount++;
+    openDateCount++;
     var dd = po.deliveryDate ? parseMMDDYYYY(po.deliveryDate) : null;
 
     if (!dd) {
@@ -1913,169 +1916,147 @@ function renderDashboard() {
   var overdueTotal = buckets.overdueDel.length + buckets.overduePick.length;
   var missingTotal = buckets.missingDel.length + buckets.missingPick.length;
 
-  var h = '';
+  var draftCount     = buckets.draft.length;
+  var openTabCount   = openDateCount + buckets.ordered.length + buckets.inProd.length;
+  var completedCount = buckets.needsReview.length + buckets.invoiceMissing.length +
+                        buckets.reconcile.length + buckets.complete.length + buckets.other.length;
+  var canceledCount  = buckets.canceled.length;
 
-  var pendingDelCount  = buckets.todayDel.concat(buckets.upcomingDel, buckets.futureDel, buckets.overdueDel, buckets.missingDel).length;
-  var pendingPickCount = buckets.todayPick.concat(buckets.upcomingPick, buckets.futurePick, buckets.overduePick, buckets.missingPick).length;
+  G.dashCounts = { all: G.pos.length, draft: draftCount, open: openTabCount,
+                   completed: completedCount, canceled: canceledCount };
 
-  // Stats — 9 tiles, 3×3 grid
-  h += '<div class="stats-grid">';
-  h += stat(todayTotal,              'Today',          todayTotal        > 0 ? 'c-green' : 'c-gray',  'today');
-  h += stat(overdueTotal,            'Overdue',         overdueTotal      > 0 ? 'c-red'   : 'c-green', 'overdue');
-  h += stat(missingTotal,            'No Date',         missingTotal      > 0 ? 'c-amber' : 'c-green', 'nodate');
-  h += stat(pendingDelCount,         'Pending Delivery',pendingDelCount   > 0 ? 'c-blue'  : 'c-gray',  'pendingdel');
-  h += stat(pendingPickCount,        'Pending Pickup',  pendingPickCount  > 0 ? 'c-blue'  : 'c-gray',  'pendingpick');
-  h += stat(buckets.inProd.length,   'In Production',   buckets.inProd.length > 0 ? 'c-teal' : 'c-gray', 'inprod');
-  h += stat(buckets.draft.length,    'Draft',           buckets.draft.length  > 0 ? 'c-gray' : 'c-gray', 'draft');
-  h += stat(openCount,               'Open POs',        'c-gray', 'open');
-  h += stat(G.pos.length,            'Total POs',       'c-gray', 'total');
-  h += '</div>';
+  var t = G.dashTab || 'all';
+  var h = renderTabBar();
 
-  // Active filter bar
-  var filterLabels = { today:'Today', overdue:'Overdue', nodate:'No Date', pendingdel:'Pending Delivery', pendingpick:'Pending Pickup', inprod:'In Production', draft:'Draft', open:'Open POs', total:'All POs' };
-  if (G.dashFilter) {
-    h += '<div class="dash-filter-bar"><span>Showing: ' + filterLabels[G.dashFilter] + '</span>' +
-         '<button onclick="filterDash(G.dashFilter)">X Show All</button></div>';
-  }
-
-  var f = G.dashFilter;
-
-  // Pending Delivery filter — flat list sorted by date
-  if (f === 'pendingdel') {
-    var sortByDate = function(a,b){ return (parseMMDDYYYY(a.deliveryDate)||new Date(9e15)) - (parseMMDDYYYY(b.deliveryDate)||new Date(9e15)); };
-    var delSoon    = buckets.overdueDel.concat(buckets.todayDel, buckets.upcomingDel).sort(sortByDate);
-    var delFuture  = buckets.futureDel.slice().sort(sortByDate);
-    var delMissing = buckets.missingDel;
-    var delTotal   = delSoon.length + delFuture.length + delMissing.length;
-    h += secHead('Pending Delivery (' + delTotal + ')', 'sh-blue');
-    if (delSoon.length) {
-      h += '<div class="sec-head sh-green" style="font-size:12px;margin-top:8px">This Week / Overdue (' + delSoon.length + ')</div>';
-      delSoon.forEach(function(po){ h += poCard(po,'delivery'); });
-    }
-    if (delFuture.length) {
-      h += '<div class="sec-head sh-indigo" style="font-size:12px;margin-top:8px">Future (' + delFuture.length + ')</div>';
-      delFuture.forEach(function(po){ h += poCard(po,'delivery'); });
-    }
-    if (delMissing.length) {
-      h += '<div class="sec-head sh-amber" style="font-size:12px;margin-top:8px">No Date (' + delMissing.length + ')</div>';
-      delMissing.forEach(function(po){ h += poCard(po,'missing'); });
-    }
-  }
-
-  // Pending Pickup filter — split by this week / future / no date
-  if (f === 'pendingpick') {
-    var sortByDate2 = function(a,b){ return (parseMMDDYYYY(a.deliveryDate)||new Date(9e15)) - (parseMMDDYYYY(b.deliveryDate)||new Date(9e15)); };
-    var pickSoon    = buckets.overduePick.concat(buckets.todayPick, buckets.upcomingPick).sort(sortByDate2);
-    var pickFuture  = buckets.futurePick.slice().sort(sortByDate2);
-    var pickMissing = buckets.missingPick;
-    var pickTotal   = pickSoon.length + pickFuture.length + pickMissing.length;
-    h += secHead('Pending Pickup (' + pickTotal + ')', 'sh-blue');
-    if (pickSoon.length) {
-      h += '<div class="sec-head sh-green" style="font-size:12px;margin-top:8px">This Week / Overdue (' + pickSoon.length + ')</div>';
-      pickSoon.forEach(function(po){ h += poCard(po,'pickup'); });
-    }
-    if (pickFuture.length) {
-      h += '<div class="sec-head sh-indigo" style="font-size:12px;margin-top:8px">Future (' + pickFuture.length + ')</div>';
-      pickFuture.forEach(function(po){ h += poCard(po,'pickup'); });
-    }
-    if (pickMissing.length) {
-      h += '<div class="sec-head sh-amber" style="font-size:12px;margin-top:8px">No Date (' + pickMissing.length + ')</div>';
-      pickMissing.forEach(function(po){ h += poCard(po,'missing'); });
-    }
-  }
-
-  // Overdue
-  var overdueAll = buckets.overdueDel.concat(buckets.overduePick)
-                    .sort(function(a,b){ return parseMMDDYYYY(a.deliveryDate)-parseMMDDYYYY(b.deliveryDate); });
-  if (overdueAll.length && (!f || f==='overdue' || f==='open')) {
-    h += secHead('Overdue (' + overdueAll.length + ')', 'sh-red');
-    overdueAll.forEach(function(po){ h += poCard(po,'overdue'); });
-  }
-
-  // Today
-  if (todayTotal && (!f || f==='today' || f==='open')) {
-    h += secHead('Today (' + todayTotal + ')', 'sh-green');
-    buckets.todayDel.forEach(function(po){ h += poCard(po,'delivery'); });
-    buckets.todayPick.forEach(function(po){ h += poCard(po,'pickup'); });
-  }
-
-  // This week
-  var weekAll = buckets.upcomingDel.concat(buckets.upcomingPick)
-                  .sort(function(a,b){ return parseMMDDYYYY(a.deliveryDate)-parseMMDDYYYY(b.deliveryDate); });
-  if (weekAll.length && (!f || f==='open')) {
-    h += secHead('This Week (' + weekAll.length + ')', 'sh-blue');
-    weekAll.forEach(function(po){
-      h += poCard(po, po.status.toLowerCase()==='pending delivery' ? 'delivery' : 'pickup');
-    });
-  }
-
-  // Later (date set but > 7 days out)
-  var futureAll = buckets.futureDel.concat(buckets.futurePick)
-                    .sort(function(a,b){ return parseMMDDYYYY(a.deliveryDate)-parseMMDDYYYY(b.deliveryDate); });
-  if (futureAll.length && (!f || f==='open')) {
-    h += secHead('Later (' + futureAll.length + ')', 'sh-blue');
-    futureAll.forEach(function(po){
-      h += poCard(po, po.status.toLowerCase()==='pending delivery' ? 'delivery' : 'pickup');
-    });
-  }
-
-  // Ready to reconcile
-  if (buckets.reconcile.length && (!f)) {
-    h += secHead('Ready to Reconcile (' + buckets.reconcile.length + ')', 'sh-teal');
-    buckets.reconcile.forEach(function(po){ h += poCard(po,'reconcile'); });
-  }
-
-  // In Production
-  if (buckets.inProd.length && (!f || f==='inprod' || f==='open')) {
-    h += secHead('In Production (' + buckets.inProd.length + ')', 'sh-indigo');
-    buckets.inProd.forEach(function(po){ h += poCard(po,'ordered'); });
-  }
-
-  // Ordered / in progress
-  if (buckets.ordered.length && (!f || f==='open')) {
-    h += secHead('Ordered / In Progress (' + buckets.ordered.length + ')', 'sh-indigo');
-    buckets.ordered.forEach(function(po){ h += poCard(po,'ordered'); });
-  }
-
-  // Missing date
-  var missingAll = buckets.missingDel.concat(buckets.missingPick);
-  if (missingAll.length && (!f || f==='nodate' || f==='open')) {
-    h += secHead('Needs a Date (' + missingAll.length + ')', 'sh-amber');
-    missingAll.forEach(function(po){ h += poCard(po,'missing'); });
-  }
-
-  // Draft
-  if (buckets.draft.length && (!f || f==='draft')) {
+  // Drafts
+  if ((t === 'draft' || t === 'all') && buckets.draft.length) {
     h += secHead('Draft (' + buckets.draft.length + ')', 'sh-indigo');
     buckets.draft.forEach(function(po){ h += poCard(po,'complete'); });
   }
 
-  // Total — show all POs newest first
-  if (f === 'total') {
-    h += secHead('All POs (' + G.pos.length + ')', 'sh-indigo');
-    G.pos.slice().reverse().forEach(function(po){ h += poCard(po, po.status.toLowerCase().replace(/ /g,'-')); });
+  // Open — Overdue / Today / This Week / Later / In Production / Ordered / Missing Date
+  if (t === 'open' || t === 'all') {
+    if (t === 'open') {
+      h += '<div class="dash-summary">Today: ' + todayTotal + ' &middot; Overdue: ' + overdueTotal + ' &middot; No Date: ' + missingTotal + '</div>';
+    }
+
+    var overdueAll = buckets.overdueDel.concat(buckets.overduePick)
+                      .sort(function(a,b){ return parseMMDDYYYY(a.deliveryDate)-parseMMDDYYYY(b.deliveryDate); });
+    if (overdueAll.length) {
+      h += secHead('Overdue (' + overdueAll.length + ')', 'sh-red');
+      overdueAll.forEach(function(po){ h += poCard(po,'overdue'); });
+    }
+
+    if (todayTotal) {
+      h += secHead('Today (' + todayTotal + ')', 'sh-green');
+      buckets.todayDel.forEach(function(po){ h += poCard(po,'delivery'); });
+      buckets.todayPick.forEach(function(po){ h += poCard(po,'pickup'); });
+    }
+
+    var weekAll = buckets.upcomingDel.concat(buckets.upcomingPick)
+                    .sort(function(a,b){ return parseMMDDYYYY(a.deliveryDate)-parseMMDDYYYY(b.deliveryDate); });
+    if (weekAll.length) {
+      h += secHead('This Week (' + weekAll.length + ')', 'sh-blue');
+      weekAll.forEach(function(po){
+        h += poCard(po, po.status.toLowerCase()==='pending delivery' ? 'delivery' : 'pickup');
+      });
+    }
+
+    var futureAll = buckets.futureDel.concat(buckets.futurePick)
+                      .sort(function(a,b){ return parseMMDDYYYY(a.deliveryDate)-parseMMDDYYYY(b.deliveryDate); });
+    if (futureAll.length) {
+      h += secHead('Later (' + futureAll.length + ')', 'sh-blue');
+      futureAll.forEach(function(po){
+        h += poCard(po, po.status.toLowerCase()==='pending delivery' ? 'delivery' : 'pickup');
+      });
+    }
+
+    if (buckets.inProd.length) {
+      h += secHead('In Production (' + buckets.inProd.length + ')', 'sh-indigo');
+      buckets.inProd.forEach(function(po){ h += poCard(po,'ordered'); });
+    }
+
+    if (buckets.ordered.length) {
+      h += secHead('Ordered / In Progress (' + buckets.ordered.length + ')', 'sh-indigo');
+      buckets.ordered.forEach(function(po){ h += poCard(po,'ordered'); });
+    }
+
+    var missingAll = buckets.missingDel.concat(buckets.missingPick);
+    if (missingAll.length) {
+      h += secHead('Needs a Date (' + missingAll.length + ')', 'sh-amber');
+      missingAll.forEach(function(po){ h += poCard(po,'missing'); });
+    }
   }
 
-  if (!f && !overdueAll.length && !todayTotal && !weekAll.length && !futureAll.length &&
-      !buckets.reconcile.length && !missingAll.length && !buckets.ordered.length &&
-      !buckets.inProd.length && !buckets.draft.length) {
-    h += '<div class="empty">All clear — no open POs need attention.</div>';
+  // Completed — Needs Review / Invoice Missing / Ready to Reconcile / Complete / Other
+  if (t === 'completed' || t === 'all') {
+    if (buckets.needsReview.length) {
+      h += secHead('Needs Review (' + buckets.needsReview.length + ')', 'sh-amber');
+      buckets.needsReview.forEach(function(po){ h += poCard(po,'needs-review'); });
+    }
+    if (buckets.invoiceMissing.length) {
+      h += secHead('Invoice Missing (' + buckets.invoiceMissing.length + ')', 'sh-red');
+      buckets.invoiceMissing.forEach(function(po){ h += poCard(po,'invoice-missing'); });
+    }
+    if (buckets.reconcile.length) {
+      h += secHead('Ready to Reconcile (' + buckets.reconcile.length + ')', 'sh-teal');
+      buckets.reconcile.forEach(function(po){ h += poCard(po,'reconcile'); });
+    }
+    if (buckets.complete.length) {
+      h += secHead('Complete (' + buckets.complete.length + ')', 'sh-indigo');
+      buckets.complete.forEach(function(po){ h += poCard(po,'complete'); });
+    }
+    if (buckets.other.length) {
+      h += secHead('Other (' + buckets.other.length + ')', 'sh-indigo');
+      buckets.other.forEach(function(po){ h += poCard(po, po.status.toLowerCase().replace(/ /g,'-')); });
+    }
+  }
+
+  // Canceled
+  if ((t === 'canceled' || t === 'all') && buckets.canceled.length) {
+    h += secHead('Canceled (' + buckets.canceled.length + ')', 'sh-indigo');
+    buckets.canceled.slice().reverse().forEach(function(po){ h += poCard(po,'canceled'); });
+  }
+
+  var isEmptyTab =
+    (t === 'draft'     && !draftCount) ||
+    (t === 'open'       && !openTabCount) ||
+    (t === 'completed'  && !completedCount) ||
+    (t === 'canceled'   && !canceledCount) ||
+    (t === 'all'        && !G.pos.length);
+  if (isEmptyTab) {
+    h += '<div class="empty">No POs to show here.</div>';
   }
 
   document.getElementById('dash-content').innerHTML = h;
 }
 
-function stat(val, lbl, cls, key) {
-  var active = G.dashFilter === key ? ' active' : '';
-  return '<div class="stat-card'+active+'" onclick="filterDash(\''+key+'\')">' +
-    '<div class="stat-num '+cls+'">'+val+'</div>' +
-    '<div class="stat-label">'+lbl+'</div>' +
-  '</div>';
+function renderTabBar() {
+  var counts = G.dashCounts || {};
+  var tabs = [
+    { key:'all',       label:'All' },
+    { key:'draft',     label:'Drafts' },
+    { key:'open',      label:'Open' },
+    { key:'completed', label:'Completed' },
+    { key:'canceled',  label:'Canceled' }
+  ];
+  var t = G.dashTab || 'all';
+  var h = '<div class="status-tabs">';
+  tabs.forEach(function(tab) {
+    var active = (t === tab.key) ? ' active' : '';
+    var c = counts[tab.key] || 0;
+    h += '<button class="status-tab' + active + '" onclick="setDashTab(\'' + tab.key + '\')">' +
+         tab.label + (c ? ' (' + c + ')' : '') + '</button>';
+  });
+  h += '</div>';
+  return h;
 }
-function filterDash(key) {
-  G.dashFilter = (G.dashFilter === key) ? null : key;
+
+function setDashTab(tabKey) {
+  G.dashTab = tabKey;
   renderDashboard();
 }
+
 function secHead(t, cls) { return '<div class="sec-head '+cls+'">'+t+'</div>'; }
 function more(n) { return '<p style="text-align:center;color:#aaa;font-size:12px;padding:6px 0">+'+n+' more — use Search tab</p>'; }
 
@@ -2123,7 +2104,9 @@ function badgeCls(status) {
     'Ordered'                   : 'bd-indigo',
     'Being made'                : 'bd-amber',
     'Currently Picking Up'      : 'bd-purple',
-    'Draft'                     : 'bd-gray'
+    'Draft'                     : 'bd-gray',
+    'Delivered'                 : 'bd-teal',
+    'Canceled'                  : 'bd-gray'
   };
   return map[status] || 'bd-gray';
 }
