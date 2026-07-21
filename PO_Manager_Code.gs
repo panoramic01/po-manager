@@ -216,6 +216,7 @@ function createPO(data) {
     var nextRow  = sheet.getLastRow() + 1;
     var poNumber = year + "-" + paddedQtr + "-" + Utilities.formatString("%03d", nextRow);
     var today    = Utilities.formatDate(now, tz, "MM/dd/yyyy");
+    var status   = data.status || "Pending Pickup";
 
     sheet.getRange(nextRow, 1).setValue(poNumber);
     sheet.getRange(nextRow, 2).setValue(today);
@@ -223,12 +224,18 @@ function createPO(data) {
     sheet.getRange(nextRow, 4).setValue(data.jobRef        || "");
     sheet.getRange(nextRow, 5).setValue(data.vendor        || "");
     sheet.getRange(nextRow, 6).setValue(data.vendorInvoice || "");
-    sheet.getRange(nextRow, 7).setValue(data.status        || "Pending Pickup");
+    sheet.getRange(nextRow, 7).setValue(status);
     sheet.getRange(nextRow, 8).setValue(data.invoiceTotal  || "");
     sheet.getRange(nextRow, 12).setValue(data.notes        || "");
     sheet.getRange(nextRow, 13).setValue(getFirstName(data.orderedBy));
 
-    return { success: true, poNumber: poNumber };
+    // Pending Pickup POs are picked up the same day they're created, so
+    // default the pickup/delivery date to today rather than leaving it blank.
+    if (status === "Pending Pickup") {
+      sheet.getRange(nextRow, 9).setValue(today);
+    }
+
+    return { success: true, poNumber: poNumber, rowIndex: nextRow };
   } catch (e) {
     return { success: false, error: e.toString() };
   }

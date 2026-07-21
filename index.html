@@ -492,6 +492,17 @@
         <div style="font-size:48px;margin-bottom:12px;color:#1F3971;font-weight:800">✓</div>
         <div style="font-size:13px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:6px">PO Created</div>
         <div id="success-po-num" style="font-size:36px;font-weight:800;color:#1F3971;font-family:monospace;letter-spacing:1px;margin-bottom:20px"></div>
+        <div id="success-issued-actions" style="margin-bottom:20px">
+          <input type="file" id="success-issued-file" accept="image/*,.pdf" style="display:none" onchange="handleSuccessIssuedFile(this)">
+          <div id="success-issued-buttons" style="display:flex;flex-direction:column;gap:10px">
+            <button type="button" class="btn-camera" style="width:100%;justify-content:center" onclick="document.getElementById('success-issued-file').click()">
+              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+              Add Issued PO
+            </button>
+            <button type="button" class="btn btn-secondary" style="width:100%;padding:14px;font-size:15px;border-radius:12px" onclick="markPOMadeOverPhone()">PO Made Over Phone</button>
+          </div>
+          <p id="success-issued-status" class="photo-status" style="margin-top:8px"></p>
+        </div>
         <div style="display:flex;flex-direction:column;gap:10px">
           <button class="btn btn-primary" onclick="showCreateForm()">+ Create Another PO</button>
           <button class="btn btn-secondary" style="width:100%;padding:14px;font-size:15px;border-radius:12px"
@@ -1484,6 +1495,7 @@ var G = {
   delPickTab:    'today',
   receivePO:     null,
   editRow:       null,
+  lastCreatedPO: null,
   role:          'admin',
   userEmail:     '',
   perms:         { canDash:true, canCreate:true, canReceive:true, canSearch:true, canPricing:true, canEdit:true },
@@ -2234,7 +2246,12 @@ function submitCreate() {
       clearCreate();
       loadData();
       // Show success screen with PO number
+      G.lastCreatedPO = { poNum: res.poNumber, rowIndex: res.rowIndex };
       document.getElementById('success-po-num').textContent = res.poNumber;
+      document.getElementById('success-issued-buttons').style.display = 'flex';
+      document.getElementById('success-issued-status').textContent = '';
+      document.getElementById('success-issued-status').className   = 'photo-status';
+      document.getElementById('success-issued-file').value = '';
       document.getElementById('create-form-card').style.display    = 'none';
       document.getElementById('create-success-card').style.display = 'block';
     } else {
@@ -2832,6 +2849,93 @@ function handleIssuedFile(input) {
     }
   };
   reader.readAsDataURL(file);
+}
+
+/**
+ * Handles file upload for the "Add Issued PO" button on the PO-created
+ * success screen. Mirrors handleIssuedFile but targets the just-created
+ * PO (G.lastCreatedPO) instead of the Edit modal's fields.
+ */
+function handleSuccessIssuedFile(input) {
+  var file = input.files && input.files[0];
+  if (!file || !G.lastCreatedPO) return;
+
+  var statusEl = document.getElementById('success-issued-status');
+  statusEl.textContent = 'Uploading…';
+  statusEl.className   = 'photo-status uploading';
+
+  var poNum = G.lastCreatedPO.poNum || 'issued';
+  var ext   = file.name.split('.').pop() || 'bin';
+  var filename = 'IssuedPO-' + poNum + '-' + new Date().toISOString().slice(0,19).replace(/[T:]/g,'-') + '.' + ext;
+
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var dataUrl = e.target.result;
+
+    function uploadBase64(b64, mime) {
+      gasCall('savePhotoToDrive', { base64Data: b64, mimeType: mime, filename: filename }, function(res) {
+        if (res.success) {
+          saveIssuedPOForLastCreated(res.url, statusEl);
+        } else {
+          statusEl.textContent = 'Upload failed:' + res.error;
+          statusEl.className   = 'photo-status error';
+        }
+      }, function(err) {
+        statusEl.textContent = 'Upload error — check connection';
+        statusEl.className   = 'photo-status error';
+      });
+    }
+
+    // Images: compress via canvas first; everything else (PDF etc) upload raw
+    if (file.type.startsWith('image/')) {
+      var img = new Image();
+      img.onload = function() {
+        var MAX = 1600, QUALITY = 0.82;
+        var w = img.width, h = img.height;
+        if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
+        if (h > MAX) { w = Math.round(w * MAX / h); h = MAX; }
+        var canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        var compressed = canvas.toDataURL('image/jpeg', QUALITY);
+        uploadBase64(compressed.split(',')[1], 'image/jpeg');
+      };
+      img.src = dataUrl;
+    } else {
+      uploadBase64(dataUrl.split(',')[1], file.type || 'application/octet-stream');
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+/**
+ * "PO Made Over Phone" button on the success screen — records that text
+ * in the Issued PO column instead of a file link, consistent with how
+ * that column already falls back to plain text when there's no upload.
+ */
+function markPOMadeOverPhone() {
+  if (!G.lastCreatedPO) return;
+  var statusEl = document.getElementById('success-issued-status');
+  statusEl.textContent = 'Saving…';
+  statusEl.className   = 'photo-status uploading';
+  saveIssuedPOForLastCreated('PO Made Over Phone', statusEl);
+}
+
+function saveIssuedPOForLastCreated(value, statusEl) {
+  gasCall('updatePO', { rowIndex: G.lastCreatedPO.rowIndex, updates: { issuedPO: value } }, function(res) {
+    if (res.success) {
+      statusEl.textContent = 'Saved ✓';
+      statusEl.className   = 'photo-status done';
+      document.getElementById('success-issued-buttons').style.display = 'none';
+      loadData();
+    } else {
+      statusEl.textContent = 'Save failed:' + res.error;
+      statusEl.className   = 'photo-status error';
+    }
+  }, function() {
+    statusEl.textContent = 'Save error — check connection';
+    statusEl.className   = 'photo-status error';
+  });
 }
 
 function retakePhoto() {
