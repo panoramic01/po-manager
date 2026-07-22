@@ -463,9 +463,12 @@ function getBuilderNames() {
 
     var poSheet = ss.getSheetByName(SHEET_NAME);
     if (poSheet) {
+      // Rows 1-5 hold header/label rows (not data) on this sheet -- real PO
+      // rows start at row 6. Reading from row 2 previously picked up the
+      // "Contractor" column-label text itself as if it were a builder name.
       var poLastRow = poSheet.getLastRow();
-      if (poLastRow >= 2) {
-        poSheet.getRange(2, 3, poLastRow - 1, 1).getValues().forEach(function(row) { // col C = Builder
+      if (poLastRow >= 6) {
+        poSheet.getRange(6, 3, poLastRow - 5, 1).getValues().forEach(function(row) { // col C = Builder
           addName(row[0]);
         });
       }
