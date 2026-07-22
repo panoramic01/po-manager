@@ -1303,9 +1303,9 @@
               <option value="">— Select Company —</option>
             </select>
             <input type="text" class="form-control" id="np-builder-other"
-                   placeholder="Type company name…" style="display:none;margin-top:10px;text-transform:uppercase"
+                   placeholder="e.g. CRESCENT_RIDGE" style="display:none;margin-top:10px;text-transform:uppercase"
                    oninput="this.value=this.value.toUpperCase()">
-            <p style="font-size:12px;color:#888;margin:4px 0 0">Select the company, or choose Other to add a new one (ALL CAPS)</p>
+            <p style="font-size:12px;color:#888;margin:4px 0 0">Select the company, or choose Other to add a new one — e.g. CRESCENT_RIDGE, DRAPER_HOMES (ALL CAPS, underscores instead of spaces)</p>
           </div>
           <div class="form-group">
             <label class="form-label">Job Name *</label>
@@ -1333,14 +1333,6 @@
               Upload Home Plans
             </button>
             <p id="np-homeplans-status" class="photo-status" style="margin-top:8px"></p>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Long Lead-time for Materials?</label>
-            <select class="form-control" id="np-long-lead">
-              <option value="">Choose one…</option>
-              <option value="Yes">Yes</option>
-              <option value="No">No</option>
-            </select>
           </div>
           <div class="form-group">
             <label class="form-label">Senders Email &amp; Email Notes</label>
@@ -2466,7 +2458,6 @@ function submitNewProject() {
     googleMaps:      googleMaps,
     driveLink:       driveLink,
     estimateDueDate: estimateDue,
-    longLead:        val('np-long-lead'),
     senderNotes:     trim('np-sender-notes'),
     homePlansUrl:    G.newProjectHomePlansUrl || '',
     submittedBy:     (G.config && G.config.userName) || G.userEmail
@@ -2495,7 +2486,6 @@ function clearNewProject() {
   document.getElementById('np-builder').value = '';
   document.getElementById('np-builder-other').value = '';
   document.getElementById('np-builder-other').style.display = 'none';
-  document.getElementById('np-long-lead').value = '';
   document.getElementById('np-estimate-due').value = '';
   document.getElementById('np-homeplans-file').value = '';
   document.getElementById('np-homeplans-status').textContent = '';
