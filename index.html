@@ -1741,9 +1741,16 @@ function bootWithEmail(email) {
         applyRole(G.role);
         fillSelects();
         loadData();
-        // Refresh config silently in the background
+        // Refresh config silently in the background, and re-apply it live
+        // (not just to localStorage) so fields added since the cached copy
+        // was written -- e.g. a new dropdown's option list -- show up
+        // without requiring a second reload.
         gasCall('getConfig', { email: email }, function(fresh) {
-          if (fresh && fresh.userRole) localStorage.setItem('panoramic_ops_config', JSON.stringify(fresh));
+          if (fresh && fresh.userRole) {
+            localStorage.setItem('panoramic_ops_config', JSON.stringify(fresh));
+            G.config = fresh;
+            fillSelects();
+          }
         }, function(){});
         return;
       }
@@ -1851,27 +1858,25 @@ function fillSelects() {
   var vendorOpts  = (G.config.vendorOptions || []);
   var statusOpts  = (G.config.statusOptions || []);
   var builderOpts = (G.config.builderOptions || []);
-  ['c-vendor'].forEach(function(id) {
+
+  // Repopulates a <select>, keeping its first `keepFirst` static option(s)
+  // (e.g. a "— Select —" placeholder) and replacing everything after them.
+  // Safe to call more than once (e.g. once from cached config at boot, then
+  // again once the background-refreshed config arrives) without duplicating
+  // options.
+  function fillSelect(id, options, keepFirst) {
     var el = document.getElementById(id);
     if (!el) return;
-    vendorOpts.forEach(function(v) {
+    while (el.options.length > keepFirst) el.remove(el.options.length - 1);
+    options.forEach(function(v) {
       el.insertAdjacentHTML('beforeend','<option value="'+esc(v)+'">'+esc(v)+'</option>');
     });
-  });
-  ['c-status'].forEach(function(id) {
-    var el = document.getElementById(id);
-    if (!el) return;
-    statusOpts.forEach(function(s) {
-      el.insertAdjacentHTML('beforeend','<option value="'+esc(s)+'">'+esc(s)+'</option>');
-    });
-  });
-  ['np-builder'].forEach(function(id) {
-    var el = document.getElementById(id);
-    if (!el) return;
-    builderOpts.forEach(function(b) {
-      el.insertAdjacentHTML('beforeend','<option value="'+esc(b)+'">'+esc(b)+'</option>');
-    });
-  });
+  }
+
+  fillSelect('c-vendor',   vendorOpts,  1);
+  fillSelect('c-status',   statusOpts,  0);
+  fillSelect('np-builder', builderOpts, 1);
+
   var cs = document.getElementById('c-status');
   if (cs) cs.value = 'Pending Pickup';
 }
