@@ -1304,13 +1304,13 @@
             </select>
             <input type="text" class="form-control" id="np-builder-other"
                    placeholder="e.g. CRESCENT_RIDGE" style="display:none;margin-top:10px;text-transform:uppercase"
-                   oninput="this.value=this.value.toUpperCase()">
+                   oninput="this.value=this.value.toUpperCase().replace(/\s+/g,'_')">
             <p style="font-size:12px;color:#888;margin:4px 0 0">Select the company, or choose Other to add a new one — e.g. CRESCENT_RIDGE, DRAPER_HOMES (ALL CAPS, underscores instead of spaces)</p>
           </div>
           <div class="form-group">
             <label class="form-label">Job Name *</label>
-            <input type="text" class="form-control" id="np-job" placeholder="e.g. Wilson, Lot 56">
-            <p style="font-size:12px;color:#888;margin:4px 0 0">The assigned name of the project from the builder, or the last name of the homeowner / future homeowner.</p>
+            <input type="text" class="form-control" id="np-job" placeholder="e.g. WILSON_LOT_56" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase().replace(/\s+/g,'_')">
+            <p style="font-size:12px;color:#888;margin:4px 0 0">The assigned name of the project from the builder, or the last name of the homeowner / future homeowner — e.g. WILSON_LOT_56 (ALL CAPS, underscores instead of spaces)</p>
           </div>
           <div class="form-group">
             <label class="form-label">Address *</label>
