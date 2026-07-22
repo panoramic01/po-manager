@@ -416,13 +416,67 @@ function verifyGoogleLogin(idToken) {
 function getConfig(email) {
   var roleData = getRoleByEmail(email || '');
   return {
-    statusOptions: STATUS_OPTIONS,
-    vendorOptions: VENDOR_OPTIONS,
-    userRole:      roleData.role,
-    userEmail:     roleData.email,
-    userName:      roleData.name,
-    userPhone:     roleData.phone
+    statusOptions:  STATUS_OPTIONS,
+    vendorOptions:  VENDOR_OPTIONS,
+    builderOptions: getBuilderNames(),
+    userRole:       roleData.role,
+    userEmail:      roleData.email,
+    userName:       roleData.name,
+    userPhone:      roleData.phone
   };
+}
+
+/**
+ * Builds a de-duplicated (case-insensitive), alphabetically sorted list of
+ * builder/company names already in use, pulled from the "Projects" sheet
+ * (Contractor, col A) and the "PO Database" sheet (Builder, col C). Powers
+ * the New Project form's company dropdown so names stay consistent instead
+ * of drifting across free-text entries. Always ends with "Other" so a
+ * genuinely new company can still be typed in.
+ */
+function getBuilderNames() {
+  try {
+    var seen  = {}; // lowercase-trimmed name -> canonical display value
+    var names = [];
+
+    function addName(raw) {
+      var s = (raw || '').toString().trim();
+      if (!s) return;
+      var key = s.toLowerCase();
+      if (!seen[key]) {
+        seen[key] = true;
+        names.push(s);
+      }
+    }
+
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    var projectsSheet = ss.getSheetByName(PROJECTS_SHEET_NAME);
+    if (projectsSheet) {
+      var pLastRow = projectsSheet.getLastRow();
+      if (pLastRow >= 2) {
+        projectsSheet.getRange(2, 1, pLastRow - 1, 1).getValues().forEach(function(row) {
+          addName(row[0]);
+        });
+      }
+    }
+
+    var poSheet = ss.getSheetByName(SHEET_NAME);
+    if (poSheet) {
+      var poLastRow = poSheet.getLastRow();
+      if (poLastRow >= 2) {
+        poSheet.getRange(2, 3, poLastRow - 1, 1).getValues().forEach(function(row) { // col C = Builder
+          addName(row[0]);
+        });
+      }
+    }
+
+    names.sort(function(a, b) { return a.toLowerCase().localeCompare(b.toLowerCase()); });
+    names.push('Other');
+    return names;
+  } catch (e) {
+    return ['Other'];
+  }
 }
 
 /**
