@@ -1328,10 +1328,12 @@
           <div class="form-group">
             <label class="form-label">Home Plans</label>
             <input type="file" id="np-homeplans-file" accept="image/*,.pdf" style="display:none" onchange="handleHomePlansFile(this)">
-            <button type="button" class="btn-camera" id="np-homeplans-btn" style="width:100%;justify-content:center" disabled onclick="document.getElementById('np-homeplans-file').click()">
-              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
-              Upload Home Plans
-            </button>
+            <div id="np-homeplans-drop" onclick="onNewProjectHomePlansZoneClick()"
+              style="background:#fff;border-radius:10px;padding:24px 16px;text-align:center;border:2px dashed #c0c8e8;cursor:pointer;transition:background .15s,border-color .15s">
+              <svg width="28" height="28" fill="none" stroke="#8896c4" stroke-width="1.5" viewBox="0 0 24 24" style="margin:0 auto 8px;display:block"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+              <p style="font-size:13px;font-weight:600;color:#1F3971;margin:0 0 2px">Drop plans here or tap to select</p>
+              <p style="font-size:11px;color:#888;margin:0">Image or PDF</p>
+            </div>
             <p id="np-homeplans-status" class="photo-status" style="margin-top:8px"></p>
           </div>
           <div class="form-group">
@@ -2385,58 +2387,107 @@ function showCreateForm() {
 // ── New Project ──────────────────────────────────────────────────────────────
 function onNewProjectDriveLinkChange() {
   var hasLink = trim('np-drive-link').length > 0;
-  var btn  = document.getElementById('np-homeplans-btn');
   var hint = document.getElementById('np-drive-link-hint');
-  if (btn)  btn.disabled = !hasLink;
   if (hint) hint.style.display = hasLink ? 'none' : 'block';
 }
 
 function resetNewProjectDriveHint() {
   onNewProjectDriveLinkChange();
+  initNewProjectHomePlansDrop();
+}
+
+// Wires drag-and-drop onto the Home Plans zone once (idempotent via
+// _dropWired, same pattern as initStmtDrop). Click-to-upload is wired
+// separately via onNewProjectHomePlansZoneClick().
+function initNewProjectHomePlansDrop() {
+  var zone = document.getElementById('np-homeplans-drop');
+  if (!zone || zone._dropWired) return;
+  zone._dropWired = true;
+  zone.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    zone.style.background = '#eef2ff';
+    zone.style.borderColor = '#1F3971';
+  });
+  zone.addEventListener('dragleave', function() {
+    zone.style.background = '';
+    zone.style.borderColor = '';
+  });
+  zone.addEventListener('drop', function(e) {
+    e.preventDefault();
+    zone.style.background = '';
+    zone.style.borderColor = '';
+    var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (file) uploadHomePlansFile(file);
+  });
+}
+
+function onNewProjectHomePlansZoneClick() {
+  if (!trim('np-drive-link')) {
+    showToast('Fill in the Google Drive Project Link first');
+    return;
+  }
+  document.getElementById('np-homeplans-file').click();
 }
 
 function handleHomePlansFile(input) {
   var file = input.files && input.files[0];
   if (!file) return;
+  uploadHomePlansFile(file);
+}
 
+function uploadHomePlansFile(file) {
   var driveLink = trim('np-drive-link');
   var statusEl  = document.getElementById('np-homeplans-status');
   if (!driveLink) {
     statusEl.textContent = 'Fill in the Google Drive Project Link first';
     statusEl.className   = 'photo-status error';
-    input.value = '';
     return;
   }
 
   statusEl.textContent = 'Uploading…';
   statusEl.className   = 'photo-status uploading';
+  G.newProjectHomePlansUploading = true;
+  setBtnState('new-project-btn', 'Uploading plans…', true);
 
   readAndCompressFile(file, function(dataUrl, mimeType) {
     var ext = mimeType === 'image/jpeg' ? 'jpg' : (file.name.split('.').pop() || 'bin');
-    var filename = 'HomePlans-' + trim('np-job').replace(/[^a-zA-Z0-9]+/g,'-') + '-' + new Date().toISOString().slice(0,19).replace(/[T:]/g,'-') + '.' + ext;
+    // Stable (non-timestamped) filename -- lets saveFileToFolderById detect
+    // an existing upload for this job and skip creating a second copy.
+    var filename = 'HomePlans-' + trim('np-job').replace(/[^a-zA-Z0-9]+/g,'-') + '.' + ext;
     gasCall('saveFileToFolderById', {
       base64Data: dataUrl.split(',')[1], mimeType: mimeType, filename: filename,
       folderId: driveLink
     }, function(res) {
+      G.newProjectHomePlansUploading = false;
+      setBtnState('new-project-btn', 'Submit Project', false);
       if (res.success) {
         G.newProjectHomePlansUrl = res.url;
-        statusEl.textContent = 'Uploaded';
+        statusEl.textContent = res.duplicate ? 'Already in Drive — using existing file' : 'Uploaded';
         statusEl.className   = 'photo-status done';
       } else {
         statusEl.textContent = 'Upload failed:' + res.error;
         statusEl.className   = 'photo-status error';
       }
     }, function() {
+      G.newProjectHomePlansUploading = false;
+      setBtnState('new-project-btn', 'Submit Project', false);
       statusEl.textContent = 'Upload error — check connection';
       statusEl.className   = 'photo-status error';
     });
   }, function() {
+    G.newProjectHomePlansUploading = false;
+    setBtnState('new-project-btn', 'Submit Project', false);
     statusEl.textContent = 'Could not read file — try a different one';
     statusEl.className   = 'photo-status error';
   });
 }
 
 function submitNewProject() {
+  if (G.newProjectHomePlansUploading) {
+    showToast('Please wait for Home Plans to finish uploading');
+    return;
+  }
+
   var builder     = getVendorValue('np-builder', 'np-builder-other');
   var jobName     = trim('np-job');
   var address     = trim('np-address');
@@ -2491,6 +2542,7 @@ function clearNewProject() {
   document.getElementById('np-homeplans-status').textContent = '';
   document.getElementById('np-homeplans-status').className   = 'photo-status';
   G.newProjectHomePlansUrl = '';
+  G.newProjectHomePlansUploading = false;
   onNewProjectDriveLinkChange();
 }
 

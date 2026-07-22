@@ -754,12 +754,11 @@ var PO_PHOTOS_FOLDER_ID = "1SYFetk5XolUv9oIpJjBPhGDj-0SBqRJI";
 // Name, C Drive folder URL/ID). Used so uploads land in the job's own
 // folder instead of the flat PO_PHOTOS_FOLDER_ID whenever a match exists.
 //
-// The New Project form (createProjectAndTask) appends rows here with the
-// full schema: A Contractor, B Job Name, C Drive folder ID, D Asana Task
-// GID, E Address, F Google Maps Link, G Estimate Due Date, H Long Lead-time
-// for Materials (Yes/No/blank), I Senders Email & Notes, J Home Plans File
-// URL, K Submitted By, L Date Created. getProjectFolderId only ever reads
-// A-C, so columns D+ are safe to extend without touching that function.
+// The New Project form (createProjectAndTask) appends rows here with just
+// A Contractor, B Job Name, C Drive folder ID, D Asana Task GID -- the
+// remaining form fields (address, maps link, due date, etc.) only go into
+// the Asana task's notes, not this sheet. getProjectFolderId only ever
+// reads A-C.
 var PROJECTS_SHEET_NAME = "Projects";
 
 /**
@@ -864,9 +863,19 @@ function saveFileToFolderById(base64Data, mimeType, filename, folderIdOrLink) {
     }
 
     var folder = DriveApp.getFolderById(folderId);
-    var bytes  = Utilities.base64Decode(base64Data);
-    var blob   = Utilities.newBlob(bytes, mimeType, filename);
-    var file   = folder.createFile(blob);
+
+    // If a file with this exact name already exists in the target folder,
+    // reuse it instead of uploading a second copy. Callers pass a stable
+    // (non-timestamped) filename for this reason.
+    var existing = folder.getFilesByName(filename);
+    if (existing.hasNext()) {
+      var existingFile = existing.next();
+      return { success: true, url: existingFile.getUrl(), folderId: folderId, duplicate: true };
+    }
+
+    var bytes = Utilities.base64Decode(base64Data);
+    var blob  = Utilities.newBlob(bytes, mimeType, filename);
+    var file  = folder.createFile(blob);
 
     try {
       if (file.getSharingAccess() !== DriveApp.Access.ANYONE_WITH_LINK) {
@@ -876,7 +885,7 @@ function saveFileToFolderById(base64Data, mimeType, filename, folderIdOrLink) {
       file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
     }
 
-    return { success: true, url: file.getUrl(), folderId: folderId };
+    return { success: true, url: file.getUrl(), folderId: folderId, duplicate: false };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -1558,7 +1567,8 @@ function createProjectAndTask(payload) {
     var created = asanaRequest('post', '/tasks', {
       projects: [ASANA_EXT_SCHED],
       name:     taskName,
-      notes:    notes
+      notes:    notes,
+      due_on:   estimateDueDate // input type="date" already gives YYYY-MM-DD, what Asana expects
     });
     if (created.errors) return { success: false, error: created.errors[0].message };
 
@@ -1577,14 +1587,6 @@ function createProjectAndTask(payload) {
       sheet.getRange(nextRow, 2).setValue(jobName);
       sheet.getRange(nextRow, 3).setValue(folderId);
       sheet.getRange(nextRow, 4).setValue(asanaTaskGid);
-      sheet.getRange(nextRow, 5).setValue(address);
-      sheet.getRange(nextRow, 6).setValue(googleMaps);
-      sheet.getRange(nextRow, 7).setValue(estimateDueDate);
-      sheet.getRange(nextRow, 8).setValue(longLead);
-      sheet.getRange(nextRow, 9).setValue(senderNotes);
-      sheet.getRange(nextRow, 10).setValue(homePlansUrl);
-      sheet.getRange(nextRow, 11).setValue(submittedBy);
-      sheet.getRange(nextRow, 12).setValue(today);
     } catch (sheetErr) {
       return {
         success: false,
