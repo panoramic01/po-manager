@@ -80,7 +80,9 @@ function doPost(e) {
     else if (action === 'createPO')          result = createPO(payload);
     else if (action === 'updatePO')          result = updatePO(payload.rowIndex, payload.updates);
     else if (action === 'findPOByNumber')    result = findPOByNumber(payload.poNum);
-    else if (action === 'savePhotoToDrive')  result = savePhotoToDrive(payload.base64Data, payload.mimeType, payload.filename);
+    else if (action === 'savePhotoToDrive')  result = savePhotoToDrive(payload.base64Data, payload.mimeType, payload.filename, payload.builder, payload.jobRef);
+    else if (action === 'createProject')       result = createProjectAndTask(payload);
+    else if (action === 'saveFileToFolderById') result = saveFileToFolderById(payload.base64Data, payload.mimeType, payload.filename, payload.folderId);
     else if (action === 'getPricingData')    result = getPricingData();
     else if (action === 'updatePricing')     result = updatePricing(payload.rowIndex, payload.vendorPrices);
     else if (action === 'getContacts')         result = getContacts();
@@ -690,21 +692,146 @@ function str(val) {
  */
 var PO_PHOTOS_FOLDER_ID = "1SYFetk5XolUv9oIpJjBPhGDj-0SBqRJI";
 
-function savePhotoToDrive(base64Data, mimeType, filename) {
+// "Projects" sheet in the PO Database maps each Contractor + Job Name pair
+// to the Shared Drive folder for that job (columns: A Contractor, B Job
+// Name, C Drive folder URL/ID). Used so uploads land in the job's own
+// folder instead of the flat PO_PHOTOS_FOLDER_ID whenever a match exists.
+//
+// The New Project form (createProjectAndTask) appends rows here with the
+// full schema: A Contractor, B Job Name, C Drive folder ID, D Asana Task
+// GID, E Address, F Google Maps Link, G Estimate Due Date, H Long Lead-time
+// for Materials (Yes/No/blank), I Senders Email & Notes, J Home Plans File
+// URL, K Submitted By, L Date Created. getProjectFolderId only ever reads
+// A-C, so columns D+ are safe to extend without touching that function.
+var PROJECTS_SHEET_NAME = "Projects";
+
+/**
+ * Looks up the Drive folder ID for a given Contractor + Job Name pair in
+ * the "Projects" sheet. Returns null (not throw) on any failure to look
+ * up or on no match, so callers can fall back to the default folder.
+ */
+function getProjectFolderId(builder, jobRef) {
   try {
-    var folder = DriveApp.getFolderById(PO_PHOTOS_FOLDER_ID);
+    var wantBuilder = (builder || "").toString().trim().toLowerCase();
+    var wantJob     = (jobRef  || "").toString().trim().toLowerCase();
+    if (!wantBuilder || !wantJob) return null;
+
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PROJECTS_SHEET_NAME);
+    if (!sheet) return null;
+
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return null;
+
+    var data = sheet.getRange(2, 1, lastRow - 1, 3).getValues(); // A:Contractor, B:Job Name, C:Drive ID
+    for (var i = 0; i < data.length; i++) {
+      var rowBuilder = (data[i][0] || "").toString().trim().toLowerCase();
+      var rowJob     = (data[i][1] || "").toString().trim().toLowerCase();
+      if (rowBuilder === wantBuilder && rowJob === wantJob) {
+        return extractDriveFolderId(data[i][2]);
+      }
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Pulls a folder ID out of a Drive folder URL (or passes through a bare ID).
+ */
+function extractDriveFolderId(driveUrlOrId) {
+  var s = (driveUrlOrId || "").toString().trim();
+  if (!s) return null;
+  var m = s.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  if (m) return m[1];
+  if (/^[a-zA-Z0-9_-]{10,}$/.test(s)) return s;
+  return null;
+}
+
+function savePhotoToDrive(base64Data, mimeType, filename, builder, jobRef) {
+  try {
+    var projectFolderId  = getProjectFolderId(builder, jobRef);
+    var usingProjectFolder = false;
+    var folder = null;
+
+    if (projectFolderId) {
+      try {
+        folder = DriveApp.getFolderById(projectFolderId);
+        usingProjectFolder = true;
+      } catch (folderErr) {
+        folder = null; // bad/inaccessible ID in the Projects sheet -- fall back below
+      }
+    }
+    if (!folder) {
+      folder = DriveApp.getFolderById(PO_PHOTOS_FOLDER_ID);
+    }
 
     var bytes = Utilities.base64Decode(base64Data);
     var blob  = Utilities.newBlob(bytes, mimeType, filename);
     var file  = folder.createFile(blob);
 
-    // Anyone with the link can view (needed so the link is useful in the sheet)
-    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    if (!usingProjectFolder) {
+      // New files inherit ANYONE_WITH_LINK from the folder (set once via
+      // oneTimeSetFolderSharing) so no extra Drive permissions API call is
+      // needed in the common case. Only fix up sharing if inheritance did
+      // not actually apply, instead of paying for setSharing() on every
+      // upload. Project folders live on a shared drive, where access is
+      // governed by drive membership -- no setSharing() call needed there.
+      try {
+        if (file.getSharingAccess() !== DriveApp.Access.ANYONE_WITH_LINK) {
+          file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+        }
+      } catch (sharingErr) {
+        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      }
+    }
 
     return { success: true, url: file.getUrl() };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
+}
+
+/**
+ * Uploads a base64-encoded file directly into a Drive folder resolved from
+ * a folder ID or a pasted Drive folder link (via extractDriveFolderId).
+ * Unlike savePhotoToDrive, this does not depend on a Contractor+Job Name
+ * match already existing in the "Projects" sheet -- used by the New Project
+ * form's Home Plans upload, which happens before that sheet row exists.
+ */
+function saveFileToFolderById(base64Data, mimeType, filename, folderIdOrLink) {
+  try {
+    var folderId = extractDriveFolderId(folderIdOrLink);
+    if (!folderId) {
+      return { success: false, error: 'Could not read a folder ID from that Drive link.' };
+    }
+
+    var folder = DriveApp.getFolderById(folderId);
+    var bytes  = Utilities.base64Decode(base64Data);
+    var blob   = Utilities.newBlob(bytes, mimeType, filename);
+    var file   = folder.createFile(blob);
+
+    try {
+      if (file.getSharingAccess() !== DriveApp.Access.ANYONE_WITH_LINK) {
+        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      }
+    } catch (sharingErr) {
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    }
+
+    return { success: true, url: file.getUrl(), folderId: folderId };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+// One-time setup helper: run this once from the Apps Script editor's Run
+// menu after creating/re-pointing PO_PHOTOS_FOLDER_ID, so new files created
+// in the folder inherit link-sharing and savePhotoToDrive can skip the
+// per-file setSharing() call above. Safe to re-run; safe to leave in place.
+function oneTimeSetFolderSharing() {
+  DriveApp.getFolderById(PO_PHOTOS_FOLDER_ID)
+    .setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
 }
 
 function authorizeDrive() {
@@ -1322,6 +1449,105 @@ function submitQualityCheck(payload) {
   } catch(e) { return { error: e.toString() }; }
 }
 
+/**
+ * New Project intake: creates an Asana task in ASANA_EXT_SCHED (moved into
+ * the "Estimate Requested" section), then appends a row to the "Projects"
+ * sheet linking Contractor + Job Name to the Drive folder ID and the new
+ * Asana task GID. Mirrors the external "New Exteriors Project" Asana form.
+ *
+ * The Asana task is created before the sheet row is written. If the sheet
+ * write then fails, the Asana task still exists -- return its link/GID in
+ * the error response so the task isn't silently orphaned.
+ */
+function createProjectAndTask(payload) {
+  try {
+    var builder        = (payload.builder || '').toString().trim();
+    var jobName         = (payload.jobName || '').toString().trim();
+    var address         = (payload.address || '').toString().trim();
+    var googleMaps      = (payload.googleMaps || '').toString().trim();
+    var driveLink       = (payload.driveLink || '').toString().trim();
+    var estimateDueDate = (payload.estimateDueDate || '').toString().trim();
+    var longLead        = (payload.longLead || '').toString().trim();
+    var senderNotes      = (payload.senderNotes || '').toString().trim();
+    var homePlansUrl     = (payload.homePlansUrl || '').toString().trim();
+    var submittedBy      = (payload.submittedBy || '').toString().trim();
+
+    if (!builder || !jobName || !address || !googleMaps || !driveLink || !estimateDueDate) {
+      return { success: false, error: 'Builder Name, Job Name, Address, Google Maps, Google Drive Project Link, and Estimate Due Date are required.' };
+    }
+
+    var folderId = extractDriveFolderId(driveLink);
+    if (!folderId) {
+      return { success: false, error: 'Could not read a folder ID from the Google Drive Project Link.' };
+    }
+
+    var tz    = Session.getScriptTimeZone();
+    var today = Utilities.formatDate(new Date(), tz, 'MM/dd/yyyy');
+    var taskName = builder + ', ' + jobName + ', ' + address;
+    var notes = [
+      'Builder Name: '   + builder,
+      'Job Name: '       + jobName,
+      'Address: '        + address,
+      'Google Maps: '    + googleMaps,
+      'Google Drive: '   + driveLink,
+      'Home Plans: '     + (homePlansUrl || 'None uploaded'),
+      'Long Lead-time for Materials: ' + (longLead || 'N/A'),
+      "Senders Email & Notes: " + (senderNotes || 'N/A'),
+      'Estimate Due Date: ' + estimateDueDate,
+      'Submitted by: '   + (submittedBy || 'N/A'),
+      'Submitted: '      + today
+    ].join('\n');
+
+    var created = asanaRequest('post', '/tasks', {
+      projects: [ASANA_EXT_SCHED],
+      name:     taskName,
+      notes:    notes
+    });
+    if (created.errors) return { success: false, error: created.errors[0].message };
+
+    var asanaTaskGid = created.data.gid;
+
+    var sectionGid = getSectionGidByName(ASANA_EXT_SCHED, 'Estimate Requested');
+    if (sectionGid) {
+      asanaRequest('post', '/sections/' + sectionGid + '/addTask', { task: asanaTaskGid });
+    }
+
+    try {
+      var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PROJECTS_SHEET_NAME);
+      if (!sheet) throw new Error("Sheet '" + PROJECTS_SHEET_NAME + "' not found.");
+      var nextRow = sheet.getLastRow() + 1;
+      sheet.getRange(nextRow, 1).setValue(builder);
+      sheet.getRange(nextRow, 2).setValue(jobName);
+      sheet.getRange(nextRow, 3).setValue(folderId);
+      sheet.getRange(nextRow, 4).setValue(asanaTaskGid);
+      sheet.getRange(nextRow, 5).setValue(address);
+      sheet.getRange(nextRow, 6).setValue(googleMaps);
+      sheet.getRange(nextRow, 7).setValue(estimateDueDate);
+      sheet.getRange(nextRow, 8).setValue(longLead);
+      sheet.getRange(nextRow, 9).setValue(senderNotes);
+      sheet.getRange(nextRow, 10).setValue(homePlansUrl);
+      sheet.getRange(nextRow, 11).setValue(submittedBy);
+      sheet.getRange(nextRow, 12).setValue(today);
+    } catch (sheetErr) {
+      return {
+        success: false,
+        error: 'Asana task was created but the Projects sheet row failed to save: ' + sheetErr.toString(),
+        asanaTaskGid: asanaTaskGid,
+        asanaTaskUrl: 'https://app.asana.com/0/' + ASANA_EXT_SCHED + '/' + asanaTaskGid
+      };
+    }
+
+    return {
+      success: true,
+      driveFolderId: folderId,
+      asanaTaskGid: asanaTaskGid,
+      asanaTaskUrl: 'https://app.asana.com/0/' + ASANA_EXT_SCHED + '/' + asanaTaskGid
+    };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
 // -- PTO / HR Functions ───────────────────────────────────────────────────────
 // HR sheet columns: A=Name, B=Email, C=Phone, D=Role, E=Password, F=Allotted, G=Used
 
@@ -1539,17 +1765,25 @@ function updatePTOUsed(email, daysToAdd) {
 }
 
 /**
- * Looks up a section GID by name in the PTO project.
+ * Looks up a section GID by name in the given Asana project. Returns null
+ * (not throw) on any failure or no match.
  */
-function getPTOSectionGid(sectionName) {
+function getSectionGidByName(projectGid, sectionName) {
   try {
-    var result = asanaRequest('get', '/projects/' + ASANA_PTO_PROJECT + '/sections?opt_fields=gid,name');
+    var result = asanaRequest('get', '/projects/' + projectGid + '/sections?opt_fields=gid,name');
     if (result.errors || !result.data) return null;
     for (var i = 0; i < result.data.length; i++) {
       if (result.data[i].name === sectionName) return result.data[i].gid;
     }
     return null;
   } catch(e) { return null; }
+}
+
+/**
+ * Looks up a section GID by name in the PTO project.
+ */
+function getPTOSectionGid(sectionName) {
+  return getSectionGidByName(ASANA_PTO_PROJECT, sectionName);
 }
 
 // -- Time Tracking ------------------------------------------------------------

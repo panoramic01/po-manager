@@ -665,6 +665,11 @@
           <span style="font-size:13px;font-weight:600;color:#1F3971">Payroll</span>
         </div>
 
+        <div id="other-card-new-project" onclick="showOtherPanel('new-project')" style="background:#fff;border-radius:12px;padding:22px 12px;text-align:center;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.08);display:flex;flex-direction:column;align-items:center;gap:10px">
+          <svg width="32" height="32" fill="none" stroke="#1F3971" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+          <span style="font-size:13px;font-weight:600;color:#1F3971">New Project</span>
+        </div>
+
       </div>
     </div>
 
@@ -1281,6 +1286,84 @@
       </div>
     </div>
 
+    <!-- New Project sub-panel -->
+    <div id="other-panel-new-project" style="display:none">
+      <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #f0f0f0;background:#fff;position:sticky;top:0;z-index:1">
+        <button onclick="showOtherHome()" style="background:none;border:none;font-size:14px;font-weight:600;color:#1F3971;cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
+        <span style="font-size:16px;font-weight:700;color:#1F3971">New Project</span>
+      </div>
+
+      <div style="padding:16px;padding-bottom:80px">
+        <div class="card" id="new-project-form-card">
+          <div class="card-title" style="display:none">New Project</div>
+
+          <div class="form-group">
+            <label class="form-label">Builder Name *</label>
+            <input type="text" class="form-control" id="np-builder" placeholder="e.g. CRAFTSMEN" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">
+            <p style="font-size:12px;color:#888;margin:4px 0 0">ALL CAPS</p>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Job Name *</label>
+            <input type="text" class="form-control" id="np-job" placeholder="e.g. Wilson, Lot 56">
+            <p style="font-size:12px;color:#888;margin:4px 0 0">The assigned name of the project from the builder, or the last name of the homeowner / future homeowner.</p>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Address *</label>
+            <input type="text" class="form-control" id="np-address" placeholder="Street address">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Google Maps *</label>
+            <input type="url" class="form-control" id="np-maps-link" placeholder="Paste Google Maps link…">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Google Drive Project Link *</label>
+            <input type="url" class="form-control" id="np-drive-link" placeholder="Paste the project's Drive folder link…" oninput="onNewProjectDriveLinkChange()">
+            <p id="np-drive-link-hint" style="font-size:12px;color:#888;margin:4px 0 0">Fill this in before uploading Home Plans below.</p>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Home Plans</label>
+            <input type="file" id="np-homeplans-file" accept="image/*,.pdf" style="display:none" onchange="handleHomePlansFile(this)">
+            <button type="button" class="btn-camera" id="np-homeplans-btn" style="width:100%;justify-content:center" disabled onclick="document.getElementById('np-homeplans-file').click()">
+              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+              Upload Home Plans
+            </button>
+            <p id="np-homeplans-status" class="photo-status" style="margin-top:8px"></p>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Long Lead-time for Materials?</label>
+            <select class="form-control" id="np-long-lead">
+              <option value="">Choose one…</option>
+              <option value="Yes">Yes</option>
+              <option value="No">No</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Senders Email &amp; Email Notes</label>
+            <textarea class="form-control" id="np-sender-notes" placeholder="Optional"></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Estimate Due Date *</label>
+            <input type="date" class="form-control" id="np-estimate-due">
+          </div>
+          <button class="btn btn-primary" id="new-project-btn" onclick="submitNewProject()">Submit Project</button>
+        </div>
+
+        <!-- Success screen (shown after project is created) -->
+        <div id="new-project-success-card" style="display:none">
+          <div class="card" style="text-align:center;padding:32px 20px">
+            <div style="font-size:48px;margin-bottom:12px;color:#1F3971;font-weight:800">✓</div>
+            <div style="font-size:13px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:6px">Project Created</div>
+            <div id="new-project-success-name" style="font-size:20px;font-weight:800;color:#1F3971;margin-bottom:20px"></div>
+            <div id="new-project-success-links" style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px"></div>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <button class="btn btn-primary" onclick="showNewProjectPanelForm()">+ Create Another Project</button>
+              <button class="btn btn-secondary" style="width:100%;padding:14px;font-size:15px;border-radius:12px" onclick="showOtherHome()">← Back to Other Tools</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
 </main>
 
 
@@ -1521,6 +1604,15 @@ function fmtMoney(n) { return (+(n) || 0).toLocaleString('en-US', { minimumFract
 
 // ── GAS endpoint (fetch() replaces google.script.run) ────────────────────────
 var GAS_URL = 'https://script.google.com/macros/s/AKfycbwvX4xv5kDofWEldpSRJP8O2yeVVgMcYVQsgtKmuFyKBZWTj0vfhFIIZAJp2UQob_XJ-Q/exec';
+
+// Shared image-compression tuning for photo/PO uploads — one place to tune
+// instead of duplicated copies in each upload handler.
+var UPLOAD_IMG_MAX_DIM = 1280;
+var UPLOAD_IMG_QUALITY = 0.75;
+
+// Flip on in the browser console to see upload timing (no redeploy needed):
+//   localStorage.setItem('debugUploadTiming', '1')
+var DEBUG_UPLOAD_TIMING = (localStorage.getItem('debugUploadTiming') === '1');
 
 // ── Google Sign-In ───────────────────────────────────────────────────────────
 var GOOGLE_CLIENT_ID  = '740908602873-3k73e1sscs32ohhbtoc4ha8hdpvp05t9.apps.googleusercontent.com';
@@ -1865,6 +1957,7 @@ function applyRole(role) {
   sd('other-card-emp-mgr',      role === 'admin');
   sd('other-card-pto-overview',  role === 'admin');
   sd('other-card-payroll',       role === 'admin');
+  sd('other-card-new-project',   p.canCreate);
   sd('receive-po-card', p.canReceivePO);
 
   // Show role badge in header
@@ -2225,14 +2318,15 @@ function badge(status) {
 
 // ── Create PO ─────────────────────────────────────────────────────────────────
 function submitCreate() {
-  var job    = trim('c-job');
-  var vendor = getVendorValue('c-vendor', 'c-vendor-other');
+  var job     = trim('c-job');
+  var builder = trim('c-builder');
+  var vendor  = getVendorValue('c-vendor', 'c-vendor-other');
   if (!job || !vendor) { showToast('Job Reference and Vendor are required'); return; }
 
   setBtnState('create-btn', 'Creating…', true);
 
   gasCall('createPO', {
-    builder:       trim('c-builder'),
+    builder:       builder,
     jobRef:        job,
     vendor:        vendor,
     vendorInvoice: trim('c-invoice'),
@@ -2246,7 +2340,7 @@ function submitCreate() {
       clearCreate();
       loadData();
       // Show success screen with PO number
-      G.lastCreatedPO = { poNum: res.poNumber, rowIndex: res.rowIndex };
+      G.lastCreatedPO = { poNum: res.poNumber, rowIndex: res.rowIndex, builder: builder, jobRef: job };
       document.getElementById('success-po-num').textContent = res.poNumber;
       document.getElementById('success-issued-buttons').style.display = 'flex';
       document.getElementById('success-issued-status').textContent = '';
@@ -2276,6 +2370,122 @@ function clearCreate() {
 function showCreateForm() {
   document.getElementById('create-form-card').style.display    = 'block';
   document.getElementById('create-success-card').style.display = 'none';
+}
+
+// ── New Project ──────────────────────────────────────────────────────────────
+function onNewProjectDriveLinkChange() {
+  var hasLink = trim('np-drive-link').length > 0;
+  var btn  = document.getElementById('np-homeplans-btn');
+  var hint = document.getElementById('np-drive-link-hint');
+  if (btn)  btn.disabled = !hasLink;
+  if (hint) hint.style.display = hasLink ? 'none' : 'block';
+}
+
+function resetNewProjectDriveHint() {
+  onNewProjectDriveLinkChange();
+}
+
+function handleHomePlansFile(input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+
+  var driveLink = trim('np-drive-link');
+  var statusEl  = document.getElementById('np-homeplans-status');
+  if (!driveLink) {
+    statusEl.textContent = 'Fill in the Google Drive Project Link first';
+    statusEl.className   = 'photo-status error';
+    input.value = '';
+    return;
+  }
+
+  statusEl.textContent = 'Uploading…';
+  statusEl.className   = 'photo-status uploading';
+
+  readAndCompressFile(file, function(dataUrl, mimeType) {
+    var ext = mimeType === 'image/jpeg' ? 'jpg' : (file.name.split('.').pop() || 'bin');
+    var filename = 'HomePlans-' + trim('np-job').replace(/[^a-zA-Z0-9]+/g,'-') + '-' + new Date().toISOString().slice(0,19).replace(/[T:]/g,'-') + '.' + ext;
+    gasCall('saveFileToFolderById', {
+      base64Data: dataUrl.split(',')[1], mimeType: mimeType, filename: filename,
+      folderId: driveLink
+    }, function(res) {
+      if (res.success) {
+        G.newProjectHomePlansUrl = res.url;
+        statusEl.textContent = 'Uploaded';
+        statusEl.className   = 'photo-status done';
+      } else {
+        statusEl.textContent = 'Upload failed:' + res.error;
+        statusEl.className   = 'photo-status error';
+      }
+    }, function() {
+      statusEl.textContent = 'Upload error — check connection';
+      statusEl.className   = 'photo-status error';
+    });
+  }, function() {
+    statusEl.textContent = 'Could not read file — try a different one';
+    statusEl.className   = 'photo-status error';
+  });
+}
+
+function submitNewProject() {
+  var builder     = trim('np-builder');
+  var jobName     = trim('np-job');
+  var address     = trim('np-address');
+  var googleMaps  = trim('np-maps-link');
+  var driveLink   = trim('np-drive-link');
+  var estimateDue = trim('np-estimate-due');
+
+  if (!builder || !jobName || !address || !googleMaps || !driveLink || !estimateDue) {
+    showToast('Builder Name, Job Name, Address, Google Maps, Google Drive Project Link, and Estimate Due Date are required');
+    return;
+  }
+
+  setBtnState('new-project-btn', 'Submitting…', true);
+
+  gasCall('createProject', {
+    builder:         builder,
+    jobName:         jobName,
+    address:         address,
+    googleMaps:      googleMaps,
+    driveLink:       driveLink,
+    estimateDueDate: estimateDue,
+    longLead:        val('np-long-lead'),
+    senderNotes:     trim('np-sender-notes'),
+    homePlansUrl:    G.newProjectHomePlansUrl || '',
+    submittedBy:     (G.config && G.config.userName) || G.userEmail
+  }, function(res) {
+    setBtnState('new-project-btn', 'Submit Project', false);
+    if (res.success) {
+      var links = document.getElementById('new-project-success-links');
+      links.innerHTML =
+        '<a href="' + esc(res.asanaTaskUrl) + '" target="_blank" class="btn btn-secondary" style="width:100%;padding:14px;font-size:15px;border-radius:12px;text-decoration:none">View Asana Task</a>' +
+        '<a href="https://drive.google.com/drive/folders/' + esc(res.driveFolderId) + '" target="_blank" class="btn btn-secondary" style="width:100%;padding:14px;font-size:15px;border-radius:12px;text-decoration:none">View Drive Folder</a>';
+      document.getElementById('new-project-success-name').textContent = builder + ' — ' + jobName;
+      clearNewProject();
+      document.getElementById('new-project-form-card').style.display    = 'none';
+      document.getElementById('new-project-success-card').style.display = 'block';
+    } else {
+      showToast('Error:' + res.error);
+    }
+  }, function() {
+    setBtnState('new-project-btn', 'Submit Project', false);
+    showToast('Error:Error creating project');
+  });
+}
+
+function clearNewProject() {
+  ['np-builder','np-job','np-address','np-maps-link','np-drive-link','np-sender-notes'].forEach(function(id){ document.getElementById(id).value=''; });
+  document.getElementById('np-long-lead').value = '';
+  document.getElementById('np-estimate-due').value = '';
+  document.getElementById('np-homeplans-file').value = '';
+  document.getElementById('np-homeplans-status').textContent = '';
+  document.getElementById('np-homeplans-status').className   = 'photo-status';
+  G.newProjectHomePlansUrl = '';
+  onNewProjectDriveLinkChange();
+}
+
+function showNewProjectPanelForm() {
+  document.getElementById('new-project-form-card').style.display    = 'block';
+  document.getElementById('new-project-success-card').style.display = 'none';
 }
 
 // ── Receive PO ────────────────────────────────────────────────────────────────
@@ -2691,6 +2901,37 @@ function setReceiveBtnUploadState() {
     btn.textContent = '✓ Update PO';
   }
 }
+/**
+ * Reads a File and, if it's an image, resizes/compresses it via canvas to a
+ * JPEG data URL using UPLOAD_IMG_MAX_DIM / UPLOAD_IMG_QUALITY. Non-image
+ * files (PDFs etc) pass through unchanged. onDone(dataUrl, mimeType) on
+ * success; onError(err) on read/decode failure. Caller owns any UI state
+ * and timeouts around this call.
+ */
+function readAndCompressFile(file, onDone, onError) {
+  var reader = new FileReader();
+  reader.onerror = function() { onError(new Error('read-failed')); };
+  reader.onload = function(e) {
+    var dataUrl = e.target.result;
+    if (!file.type || file.type.indexOf('image/') !== 0) {
+      onDone(dataUrl, file.type || 'application/octet-stream');
+      return;
+    }
+    var img = new Image();
+    img.onerror = function() { onError(new Error('decode-failed')); };
+    img.onload = function() {
+      var w = img.width, h = img.height;
+      if (w > UPLOAD_IMG_MAX_DIM) { h = Math.round(h * UPLOAD_IMG_MAX_DIM / w); w = UPLOAD_IMG_MAX_DIM; }
+      if (h > UPLOAD_IMG_MAX_DIM) { w = Math.round(w * UPLOAD_IMG_MAX_DIM / h); h = UPLOAD_IMG_MAX_DIM; }
+      var canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      onDone(canvas.toDataURL('image/jpeg', UPLOAD_IMG_QUALITY), 'image/jpeg');
+    };
+    img.src = dataUrl;
+  };
+  reader.readAsDataURL(file);
+}
 function handlePhotoSlot(input) {
   var file = input.files && input.files[0];
   if (!file) return;
@@ -2712,84 +2953,73 @@ function handlePhotoSlot(input) {
       slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">Timed out — tap to retry</span></div>';
     }
   }, 45000);
-  var reader = new FileReader();
-  reader.onerror = function() {
-    clearTimeout(_uploadTimeout);
+  // Timeout if read/canvas decode hangs (e.g. HEIC format on some devices)
+  var _imgTimeout = setTimeout(function() {
     G.uploadsInProgress = Math.max(0, G.uploadsInProgress - 1);
     setReceiveBtnUploadState();
     slot.className = 'photo-slot';
     slot.onclick = function() { openPhotoSlot(idx); };
-    slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">Could not read file — try a different photo</span></div>';
-  };
-  reader.onload = function(e) {
+    slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">Format not supported — take a screenshot of the photo and upload that</span></div>';
+  }, 15000);
+  if (DEBUG_UPLOAD_TIMING) console.time('photoSlot' + idx + ':compress');
+  readAndCompressFile(file, function(dataUrl, mimeType) {
+    if (DEBUG_UPLOAD_TIMING) console.timeEnd('photoSlot' + idx + ':compress');
     clearTimeout(_uploadTimeout);
-    var img = new Image();
-    // Timeout if canvas decode hangs (e.g. HEIC format on some devices)
-    var _imgTimeout = setTimeout(function() {
-      G.uploadsInProgress = Math.max(0, G.uploadsInProgress - 1);
-      setReceiveBtnUploadState();
-      slot.className = 'photo-slot';
-      slot.onclick = function() { openPhotoSlot(idx); };
-      slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">Format not supported — take a screenshot of the photo and upload that</span></div>';
-    }, 15000);
-    img.onerror = function() {
-      clearTimeout(_imgTimeout);
-      G.uploadsInProgress = Math.max(0, G.uploadsInProgress - 1);
-      setReceiveBtnUploadState();
-      slot.className = 'photo-slot';
-      slot.onclick = function() { openPhotoSlot(idx); };
-      slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">Format not supported — take a screenshot of the photo and upload that</span></div>';
-    };
-    img.onload = function() {
-      clearTimeout(_imgTimeout);
-      var MAX_W = 1600, MAX_H = 1600, QUALITY = 0.82;
-      var w = img.width, h = img.height;
-      if (w > MAX_W) { h = Math.round(h * MAX_W / w); w = MAX_W; }
-      if (h > MAX_H) { w = Math.round(w * MAX_H / h); h = MAX_H; }
-      var canvas = document.createElement('canvas');
-      canvas.width = w; canvas.height = h;
-      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-      var dataUrl = canvas.toDataURL('image/jpeg', QUALITY);
-      var base64  = dataUrl.split(',')[1];
-      var filename = 'PO-' + (G.receivePO ? G.receivePO.poNum : 'received') + '-' + (idx+1) + '-' + new Date().toISOString().slice(0,10) + '.jpg';
-      slot.className = 'photo-slot ps-filled ps-uploading';
-      slot.innerHTML = '<img src="' + dataUrl + '" alt="photo"><div class="ps-status uploading">Uploading…</div>';
-      // Timeout if Drive upload hangs >90s
-      var _driveTimeout = setTimeout(function() {
-        if (slot.className.indexOf('ps-uploading') !== -1) {
-          G.uploadsInProgress = Math.max(0, G.uploadsInProgress - 1);
-          setReceiveBtnUploadState();
-          slot.className = 'photo-slot';
-          slot.onclick = function() { openPhotoSlot(idx); };
-          slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">Timed out — tap to retry</span></div>';
-        }
-      }, 90000);
-      gasCall('savePhotoToDrive', { base64Data: base64, mimeType: 'image/jpeg', filename: filename }, function(res) {
-        clearTimeout(_driveTimeout);
-        G.uploadsInProgress = Math.max(0, G.uploadsInProgress - 1);
-        setReceiveBtnUploadState();
-        if (res.success) {
-          G.photoUrls[idx] = res.url;
-          slot.className = 'photo-slot ps-filled';
-          slot.onclick = null;
-          slot.innerHTML = '<img src="' + dataUrl + '" alt="photo"><button class="ps-remove" onclick="removePhotoSlot(' + idx + ');event.stopPropagation()">×</button><div class="ps-status done">✓</div>';
-        } else {
-          slot.className = 'photo-slot';
-          slot.onclick = function() { openPhotoSlot(idx); };
-          slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">Failed — retry</span></div>';
-        }
-      }, function() {
-        clearTimeout(_driveTimeout);
+    clearTimeout(_imgTimeout);
+    var base64  = dataUrl.split(',')[1];
+    var filename = 'PO-' + (G.receivePO ? G.receivePO.poNum : 'received') + '-' + (idx+1) + '-' + new Date().toISOString().slice(0,10) + '.jpg';
+    slot.className = 'photo-slot ps-filled ps-uploading';
+    slot.innerHTML = '<img src="' + dataUrl + '" alt="photo"><div class="ps-status uploading">Uploading…</div>';
+    // Timeout if Drive upload hangs >90s
+    var _driveTimeout = setTimeout(function() {
+      if (slot.className.indexOf('ps-uploading') !== -1) {
         G.uploadsInProgress = Math.max(0, G.uploadsInProgress - 1);
         setReceiveBtnUploadState();
         slot.className = 'photo-slot';
         slot.onclick = function() { openPhotoSlot(idx); };
-        slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">Error — retry</span></div>';
-      });
-    };
-    img.src = e.target.result;
-  };
-  reader.readAsDataURL(file);
+        slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">Timed out — tap to retry</span></div>';
+      }
+    }, 90000);
+    if (DEBUG_UPLOAD_TIMING) console.time('photoSlot' + idx + ':upload');
+    gasCall('savePhotoToDrive', {
+      base64Data: base64, mimeType: mimeType, filename: filename,
+      builder: G.receivePO ? G.receivePO.builder : '',
+      jobRef:  G.receivePO ? G.receivePO.jobRef  : ''
+    }, function(res) {
+      if (DEBUG_UPLOAD_TIMING) console.timeEnd('photoSlot' + idx + ':upload');
+      clearTimeout(_driveTimeout);
+      G.uploadsInProgress = Math.max(0, G.uploadsInProgress - 1);
+      setReceiveBtnUploadState();
+      if (res.success) {
+        G.photoUrls[idx] = res.url;
+        slot.className = 'photo-slot ps-filled';
+        slot.onclick = null;
+        slot.innerHTML = '<img src="' + dataUrl + '" alt="photo"><button class="ps-remove" onclick="removePhotoSlot(' + idx + ');event.stopPropagation()">×</button><div class="ps-status done">✓</div>';
+      } else {
+        slot.className = 'photo-slot';
+        slot.onclick = function() { openPhotoSlot(idx); };
+        slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">Failed — retry</span></div>';
+      }
+    }, function() {
+      clearTimeout(_driveTimeout);
+      G.uploadsInProgress = Math.max(0, G.uploadsInProgress - 1);
+      setReceiveBtnUploadState();
+      slot.className = 'photo-slot';
+      slot.onclick = function() { openPhotoSlot(idx); };
+      slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">Error — retry</span></div>';
+    });
+  }, function(err) {
+    clearTimeout(_uploadTimeout);
+    clearTimeout(_imgTimeout);
+    G.uploadsInProgress = Math.max(0, G.uploadsInProgress - 1);
+    setReceiveBtnUploadState();
+    slot.className = 'photo-slot';
+    slot.onclick = function() { openPhotoSlot(idx); };
+    var msg = (err && err.message === 'decode-failed')
+      ? 'Format not supported — take a screenshot of the photo and upload that'
+      : 'Could not read file — try a different photo';
+    slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">' + msg + '</span></div>';
+  });
 }
 
 /**
@@ -2802,53 +3032,42 @@ function handleIssuedFile(input) {
   if (!file) return;
 
   var statusEl = document.getElementById('e-issued-status');
-  statusEl.textContent = 'Uploading…';
+  statusEl.textContent = file.size > 3 * 1024 * 1024
+    ? 'Uploading large file (' + (file.size / 1024 / 1024).toFixed(1) + ' MB) — this may take a bit…'
+    : 'Uploading…';
   statusEl.className   = 'photo-status uploading';
 
-  var poNum = document.getElementById('edit-modal-title').textContent || 'issued';
-  var ext   = file.name.split('.').pop() || 'bin';
-  var filename = 'IssuedPO-' + poNum + '-' + new Date().toISOString().slice(0,19).replace(/[T:]/g,'-') + '.' + ext;
+  var poNum   = document.getElementById('edit-modal-title').textContent || 'issued';
+  var builder = trim('e-builder');
+  var jobRef  = trim('e-job');
 
-  var reader = new FileReader();
-  reader.onload = function(e) {
-    var dataUrl = e.target.result;
-
-    function uploadBase64(b64, mime) {
-      gasCall('savePhotoToDrive', { base64Data: b64, mimeType: mime, filename: filename }, function(res) {
-        if (res.success) {
-          document.getElementById('e-issued').value = res.url;
-          statusEl.textContent = 'Uploaded — link filled in above';
-          statusEl.className   = 'photo-status done';
-        } else {
-          statusEl.textContent = 'Upload failed:' + res.error;
-          statusEl.className   = 'photo-status error';
-        }
-      }, function(err) {
-        statusEl.textContent = 'Upload error — check connection';
+  if (DEBUG_UPLOAD_TIMING) console.time('issuedFile:compress');
+  readAndCompressFile(file, function(dataUrl, mimeType) {
+    if (DEBUG_UPLOAD_TIMING) console.timeEnd('issuedFile:compress');
+    var ext = mimeType === 'image/jpeg' ? 'jpg' : (file.name.split('.').pop() || 'bin');
+    var filename = 'IssuedPO-' + poNum + '-' + new Date().toISOString().slice(0,19).replace(/[T:]/g,'-') + '.' + ext;
+    if (DEBUG_UPLOAD_TIMING) console.time('issuedFile:upload');
+    gasCall('savePhotoToDrive', {
+      base64Data: dataUrl.split(',')[1], mimeType: mimeType, filename: filename,
+      builder: builder, jobRef: jobRef
+    }, function(res) {
+      if (DEBUG_UPLOAD_TIMING) console.timeEnd('issuedFile:upload');
+      if (res.success) {
+        document.getElementById('e-issued').value = res.url;
+        statusEl.textContent = 'Uploaded — link filled in above';
+        statusEl.className   = 'photo-status done';
+      } else {
+        statusEl.textContent = 'Upload failed:' + res.error;
         statusEl.className   = 'photo-status error';
-      });
-    }
-
-    // Images: compress via canvas first; everything else (PDF etc) upload raw
-    if (file.type.startsWith('image/')) {
-      var img = new Image();
-      img.onload = function() {
-        var MAX = 1600, QUALITY = 0.82;
-        var w = img.width, h = img.height;
-        if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
-        if (h > MAX) { w = Math.round(w * MAX / h); h = MAX; }
-        var canvas = document.createElement('canvas');
-        canvas.width = w; canvas.height = h;
-        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        var compressed = canvas.toDataURL('image/jpeg', QUALITY);
-        uploadBase64(compressed.split(',')[1], 'image/jpeg');
-      };
-      img.src = dataUrl;
-    } else {
-      uploadBase64(dataUrl.split(',')[1], file.type || 'application/octet-stream');
-    }
-  };
-  reader.readAsDataURL(file);
+      }
+    }, function(err) {
+      statusEl.textContent = 'Upload error — check connection';
+      statusEl.className   = 'photo-status error';
+    });
+  }, function(err) {
+    statusEl.textContent = 'Could not read file — try a different one';
+    statusEl.className   = 'photo-status error';
+  });
 }
 
 /**
@@ -2861,51 +3080,38 @@ function handleSuccessIssuedFile(input) {
   if (!file || !G.lastCreatedPO) return;
 
   var statusEl = document.getElementById('success-issued-status');
-  statusEl.textContent = 'Uploading…';
+  statusEl.textContent = file.size > 3 * 1024 * 1024
+    ? 'Uploading large file (' + (file.size / 1024 / 1024).toFixed(1) + ' MB) — this may take a bit…'
+    : 'Uploading…';
   statusEl.className   = 'photo-status uploading';
 
   var poNum = G.lastCreatedPO.poNum || 'issued';
-  var ext   = file.name.split('.').pop() || 'bin';
-  var filename = 'IssuedPO-' + poNum + '-' + new Date().toISOString().slice(0,19).replace(/[T:]/g,'-') + '.' + ext;
 
-  var reader = new FileReader();
-  reader.onload = function(e) {
-    var dataUrl = e.target.result;
-
-    function uploadBase64(b64, mime) {
-      gasCall('savePhotoToDrive', { base64Data: b64, mimeType: mime, filename: filename }, function(res) {
-        if (res.success) {
-          saveIssuedPOForLastCreated(res.url, statusEl);
-        } else {
-          statusEl.textContent = 'Upload failed:' + res.error;
-          statusEl.className   = 'photo-status error';
-        }
-      }, function(err) {
-        statusEl.textContent = 'Upload error — check connection';
+  if (DEBUG_UPLOAD_TIMING) console.time('successIssuedFile:compress');
+  readAndCompressFile(file, function(dataUrl, mimeType) {
+    if (DEBUG_UPLOAD_TIMING) console.timeEnd('successIssuedFile:compress');
+    var ext = mimeType === 'image/jpeg' ? 'jpg' : (file.name.split('.').pop() || 'bin');
+    var filename = 'IssuedPO-' + poNum + '-' + new Date().toISOString().slice(0,19).replace(/[T:]/g,'-') + '.' + ext;
+    if (DEBUG_UPLOAD_TIMING) console.time('successIssuedFile:upload');
+    gasCall('savePhotoToDrive', {
+      base64Data: dataUrl.split(',')[1], mimeType: mimeType, filename: filename,
+      builder: G.lastCreatedPO.builder || '', jobRef: G.lastCreatedPO.jobRef || ''
+    }, function(res) {
+      if (DEBUG_UPLOAD_TIMING) console.timeEnd('successIssuedFile:upload');
+      if (res.success) {
+        saveIssuedPOForLastCreated(res.url, statusEl);
+      } else {
+        statusEl.textContent = 'Upload failed:' + res.error;
         statusEl.className   = 'photo-status error';
-      });
-    }
-
-    // Images: compress via canvas first; everything else (PDF etc) upload raw
-    if (file.type.startsWith('image/')) {
-      var img = new Image();
-      img.onload = function() {
-        var MAX = 1600, QUALITY = 0.82;
-        var w = img.width, h = img.height;
-        if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
-        if (h > MAX) { w = Math.round(w * MAX / h); h = MAX; }
-        var canvas = document.createElement('canvas');
-        canvas.width = w; canvas.height = h;
-        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        var compressed = canvas.toDataURL('image/jpeg', QUALITY);
-        uploadBase64(compressed.split(',')[1], 'image/jpeg');
-      };
-      img.src = dataUrl;
-    } else {
-      uploadBase64(dataUrl.split(',')[1], file.type || 'application/octet-stream');
-    }
-  };
-  reader.readAsDataURL(file);
+      }
+    }, function(err) {
+      statusEl.textContent = 'Upload error — check connection';
+      statusEl.className   = 'photo-status error';
+    });
+  }, function(err) {
+    statusEl.textContent = 'Could not read file — try a different one';
+    statusEl.className   = 'photo-status error';
+  });
 }
 
 /**
@@ -3482,7 +3688,7 @@ function submitContactEdit() {
 function showOtherPanel(name) {
   if (!_navPop) history.pushState({ view: 'other-panel', panel: name }, '');
   document.getElementById('other-home').style.display = 'none';
-  ['pricing', 'contacts', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll'].forEach(function(p) {
+  ['pricing', 'contacts', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
     if (el) el.style.display = p === name ? '' : 'none';
   });
@@ -3499,12 +3705,13 @@ function showOtherPanel(name) {
   if (name === 'emp-mgr') loadEmpMgr();
   if (name === 'pto-overview') loadPTOOverview();
   if (name === 'payroll') loadPayroll();
+  if (name === 'new-project') resetNewProjectDriveHint();
 }
 
 function showOtherHome() {
   if (!_navPop) history.pushState({ view: 'tab', tab: 'other' }, '');
   document.getElementById('other-home').style.display = '';
-  ['pricing', 'contacts', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll'].forEach(function(p) {
+  ['pricing', 'contacts', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
     if (el) el.style.display = 'none';
   });
