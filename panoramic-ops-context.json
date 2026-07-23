@@ -5,7 +5,8 @@
   "email": "aidansalisbury213@gmail.com",
 
   "urls": {
-    "app": "https://panoramic01.github.io/po-manager/",
+    "app": "https://ops.panoramicbuildingllc.com/",
+    "app_legacy": "https://panoramic01.github.io/po-manager/",
     "repo": "https://github.com/panoramic01/po-manager",
     "gas_deployment": "https://script.google.com/macros/s/AKfycbwvX4xv5kDofWEldpSRJP8O2yeVVgMcYVQsgtKmuFyKBZWTj0vfhFIIZAJp2UQob_XJ-Q/exec"
   },
@@ -19,7 +20,7 @@
   },
 
   "current_state": {
-    "sw_cache_version": "po-manager-v111",
+    "sw_cache_version": "po-manager-v141",
     "nav_tabs": ["dashboard", "receive", "other", "account"],
     "nav_tab_ids": ["tab-dashboard", "tab-create", "tab-receive", "tab-other", "tab-account"]
   },
@@ -44,7 +45,7 @@
   "stack": {
     "frontend": "Single-file PWA — vanilla JS + inline CSS in index.html",
     "backend": "Google Apps Script web app, REST-style doPost() routing",
-    "hosting": "GitHub Pages",
+    "hosting": "GitHub Pages, custom domain ops.panoramicbuildingllc.com (CNAME file at repo root)",
     "auth": "Email + password verified against HR Google Sheet",
     "data": "Google Sheets (PO Database, HR, Time Tracking)",
     "integrations": ["Asana (PTO requests, tasks)", "Google Drive (photo uploads)"],
@@ -144,7 +145,9 @@
 
   "features_planned": [
     "Office Notes tab (notes sheet + optional Asana subtask with per-note flag)",
-    "Announcements (admin posts once-per-version message, localStorage dismissal)"
+    "Announcements (admin posts once-per-version message, localStorage dismissal)",
+    "Jobs Registry: new 'Jobs' tab in PO Database (Job Name, GC, Asana GID, QuickBooks ID, Status) as single source of truth linking a job across systems. 'Add Job' admin panel links an existing Asana task via search (option A - link only, does not create the Asana task). QuickBooks ID stays blank until QuickBooks OAuth integration is built. New PO switches from free-text job entry to a searchable dropdown against this registry once populated. Future option: create QuickBooks project + Asana task + registry link all in one action.",
+    "Site Walk Checklists: OSHA/Safety, Cleanup, and Quality walk checklists for job sites. Likely reuses/extends the Quality Check pattern (job picker, per-category checklist, pass/flag, submit to Asana) rather than built from scratch. Needs scoping: separate panel per walk type vs one flow with a walk-type selector; real checklist content still needs to be supplied before building."
   ],
 
   "known_bugs_fixed": [

@@ -4832,7 +4832,7 @@ function mrGenerateExcel() {
   var endDate    = (document.getElementById('mr-end')||{}).value    || '';
 
   function doGenerate(XLSX) {
-    fetch('/po-manager/report-template.xlsx')
+    fetch('/report-template.xlsx')
       .then(function(r){ return r.arrayBuffer(); })
       .then(function(buf) {
         var wb = XLSX.read(buf, { type:'array', cellFormula:true, cellStyles:true });

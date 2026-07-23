@@ -12,7 +12,7 @@ You are helping Aidan Salisbury build and maintain the **Panoramic Ops PWA** —
 |---|---|
 | Frontend | Single-file PWA — `index.html` (~5,600 lines, vanilla JS + inline CSS) |
 | Backend | Google Apps Script (GAS) — `PO_Manager_Code.gs` |
-| Hosting | GitHub Pages — `panoramic01.github.io/po-manager/` |
+| Hosting | GitHub Pages — `ops.panoramicbuildingllc.com` (custom domain via `CNAME` file; legacy URL `panoramic01.github.io/po-manager/` still works) |
 | GAS URL | `https://script.google.com/macros/s/AKfycbwvX4xv5kDofWEldpSRJP8O2yeVVgMcYVQsgtKmuFyKBZWTj0vfhFIIZAJp2UQob_XJ-Q/exec` |
 | Data | Google Sheets (HR, PO Database, Time Tracking) |
 | Auth | Email + password checked against HR sheet via GAS |
@@ -147,6 +147,8 @@ PO management, photo upload to Drive (5 per PO), quality checklist (Asana), job 
 
 - **Office Notes** — saves to Notes sheet by default; optional per-note Asana subtask (under date-based parent task in a chosen project); flag per note to also save to Notes sheet
 - **Announcements** — admin posts a once-per-version message; employees dismiss via localStorage
+- **Jobs Registry** — new "Jobs" tab in the PO Database spreadsheet (Job Name, GC, Asana GID, QuickBooks ID, Status) as the single source of truth linking a job across systems. "Add Job" admin panel lets office link an existing Asana task via search (option A — link only, doesn't create the Asana task). QuickBooks ID stays blank until QuickBooks OAuth integration exists. New PO eventually switches from free-text job entry to a searchable dropdown against this registry, once it has enough real jobs in it. Future option to revisit: create QuickBooks project + Asana task + registry link all in one action instead of linking only to pre-existing ones.
+- **Site Walk Checklists** — OSHA/Safety, Cleanup, and Quality walk checklists for job sites. Likely reuses/extends the Quality Check pattern (job picker, per-category checklist, pass/flag, submit to Asana) rather than being built from scratch. Needs scoping: separate panel per walk type vs. one flow with a walk-type selector; real checklist content (like Quality Check trades) still needs to be supplied before building.
 
 ---
 
