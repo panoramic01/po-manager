@@ -386,14 +386,15 @@
         <button class="search-clear" id="s-clear" onclick="clearSearch('s-input','s-clear'); runSearch()">✕</button>
       </div>
     </div>
-    <!-- Deliveries & Jobsite Pickups summary card -->
+    <!-- Deliveries & Pickups summary card -->
     <div class="card" id="dash-delpick-card">
       <div class="row-between" style="margin-bottom:2px">
-        <div class="card-title" style="margin-bottom:0">Deliveries &amp; Jobsite Pickups</div>
+        <div class="card-title" style="margin-bottom:0">Deliveries &amp; Pickups</div>
         <button class="btn btn-sm btn-secondary" onclick="viewAllOrders()">View All</button>
       </div>
       <div class="status-tabs" style="margin:10px 0 0">
-        <button class="status-tab active" id="dp-tab-today" onclick="setDelPickTab('today')">Today</button>
+        <button class="status-tab active" id="dp-tab-today-del" onclick="setDelPickTab('today-del')">Today &ndash; Deliveries</button>
+        <button class="status-tab" id="dp-tab-today-pick" onclick="setDelPickTab('today-pick')">Today &ndash; Pickups</button>
         <button class="status-tab" id="dp-tab-upcoming" onclick="setDelPickTab('upcoming')">Upcoming</button>
       </div>
       <div id="dash-delpick-content"></div>
@@ -1574,7 +1575,7 @@ var G = {
   config:        { statusOptions: [], vendorOptions: [] },
   filter:        'all',
   dashTab:       'all',
-  delPickTab:    'today',
+  delPickTab:    'today-del',
   receivePO:     null,
   editRow:       null,
   lastCreatedPO: null,
@@ -2198,10 +2199,11 @@ function renderDashboard() {
   renderRecentOrdersCard();
 }
 
-// ── Deliveries & Jobsite Pickups summary card ────────────────────────────────
+// ── Deliveries & Pickups summary card ────────────────────────────────────────
 function setDelPickTab(tabKey) {
   G.delPickTab = tabKey;
-  document.getElementById('dp-tab-today').classList.toggle('active', tabKey === 'today');
+  document.getElementById('dp-tab-today-del').classList.toggle('active', tabKey === 'today-del');
+  document.getElementById('dp-tab-today-pick').classList.toggle('active', tabKey === 'today-pick');
   document.getElementById('dp-tab-upcoming').classList.toggle('active', tabKey === 'upcoming');
   renderDelPickCard();
 }
@@ -2210,12 +2212,15 @@ function renderDelPickCard() {
   var el = document.getElementById('dash-delpick-content');
   if (!el || !G.dashBuckets) return;
   var b = G.dashBuckets;
-  var tab = G.delPickTab || 'today';
+  var tab = G.delPickTab || 'today-del';
   var list, emptyMsg;
 
-  if (tab === 'today') {
-    list = b.todayDel.concat(b.todayPick);
-    emptyMsg = 'You have no deliveries or pickups today';
+  if (tab === 'today-del') {
+    list = b.todayDel;
+    emptyMsg = 'You have no deliveries today';
+  } else if (tab === 'today-pick') {
+    list = b.todayPick;
+    emptyMsg = 'You have no pickups today';
   } else {
     list = b.upcomingDel.concat(b.upcomingPick, b.futureDel, b.futurePick)
       .sort(function(a,c){ return parseMMDDYYYY(a.deliveryDate)-parseMMDDYYYY(c.deliveryDate); });
