@@ -450,12 +450,12 @@
       <div class="card-title" style="display:none">New Purchase Order</div>
 
       <div class="form-group">
-        <label class="form-label">Builder</label>
-        <input type="text" class="form-control" id="c-builder" placeholder="e.g. Craftsmen, Timberbrook">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Job Reference *</label>
-        <input type="text" class="form-control" id="c-job" placeholder="e.g. Wilson, Lot 56, Summer Clean">
+        <label class="form-label">Builder &amp; Job *</label>
+        <input type="text" class="form-control" id="c-job-combo" list="c-job-datalist"
+               placeholder="e.g. CRESCENT_RIDGE-WEGNER"
+               oninput="this.value=this.value.toUpperCase().replace(/\s+/g,'_')">
+        <datalist id="c-job-datalist"></datalist>
+        <p style="font-size:12px;color:#888;margin:4px 0 0">Pick an existing job, or type a new one as BUILDER_NAME-JOB_NAME</p>
       </div>
       <div class="form-group">
         <label class="form-label">Vendor *</label>
@@ -1873,6 +1873,23 @@ function fillSelects() {
 
   var cs = document.getElementById('c-status');
   if (cs) cs.value = 'Pending Pickup';
+
+  // Builder+Job combo datalist for New PO. G.jobComboMap lets submitCreate()
+  // recover the exact (builder, job) pair for a known combo without having
+  // to guess where to split the "BUILDER_NAME-JOB_NAME" string (either
+  // segment can legitimately contain its own hyphen, e.g. "ALT-M").
+  var jobOpts = (G.config.jobOptions || []);
+  var jobDatalist = document.getElementById('c-job-datalist');
+  if (jobDatalist) {
+    jobDatalist.innerHTML = '';
+    G.jobComboMap = {};
+    jobOpts.forEach(function(o) {
+      var combo = o.builder + '-' + o.job;
+      if (G.jobComboMap[combo]) return;
+      G.jobComboMap[combo] = { builder: o.builder, job: o.job };
+      jobDatalist.insertAdjacentHTML('beforeend', '<option value="'+esc(combo)+'">');
+    });
+  }
 }
 
 function loadData() {
@@ -2334,10 +2351,25 @@ function badge(status) {
 
 // ── Create PO ─────────────────────────────────────────────────────────────────
 function submitCreate() {
-  var job     = trim('c-job');
-  var builder = trim('c-builder');
-  var vendor  = getVendorValue('c-vendor', 'c-vendor-other');
-  if (!job || !vendor) { showToast('Job Reference and Vendor are required'); return; }
+  var combo  = trim('c-job-combo');
+  var vendor = getVendorValue('c-vendor', 'c-vendor-other');
+  if (!combo || !vendor) { showToast('Builder & Job and Vendor are required'); return; }
+
+  var match = G.jobComboMap && G.jobComboMap[combo];
+  var builder, job;
+  if (match) {
+    builder = match.builder;
+    job     = match.job;
+  } else {
+    // New combo, not in the list -- best-effort split on the first hyphen.
+    var dashIdx = combo.indexOf('-');
+    if (dashIdx === -1) {
+      showToast('Enter as BUILDER_NAME-JOB_NAME, or pick one from the list');
+      return;
+    }
+    builder = combo.slice(0, dashIdx);
+    job     = combo.slice(dashIdx + 1);
+  }
 
   setBtnState('create-btn', 'Creating…', true);
 
@@ -2374,7 +2406,7 @@ function submitCreate() {
 }
 
 function clearCreate() {
-  ['c-builder','c-job','c-invoice','c-total','c-notes'].forEach(function(id){ document.getElementById(id).value=''; });
+  ['c-job-combo','c-invoice','c-total','c-notes'].forEach(function(id){ document.getElementById(id).value=''; });
   document.getElementById('c-vendor').value = '';
   document.getElementById('c-vendor-other').value = '';
   document.getElementById('c-vendor-other').style.display = 'none';

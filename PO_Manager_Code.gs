@@ -419,11 +419,82 @@ function getConfig(email) {
     statusOptions:  STATUS_OPTIONS,
     vendorOptions:  VENDOR_OPTIONS,
     builderOptions: getBuilderNames(),
+    jobOptions:     getRecentJobs(),
     userRole:       roleData.role,
     userEmail:      roleData.email,
     userName:       roleData.name,
     userPhone:      roleData.phone
   };
+}
+
+/**
+ * Builds the searchable Builder+Job list that powers the New Purchase
+ * Order form's combined lookup field. Order matters -- it's the suggestion
+ * order in the datalist:
+ *   1. Every "Projects" sheet row (most-recently-added row first) -- these
+ *      are jobs that may not have a PO yet, so they're the most likely
+ *      thing someone is about to create a first PO for.
+ *   2. Distinct Builder+Job pairs from "PO Database", most recent Date
+ *      Issued first, capped at MAX_PO_ENTRIES so the payload stays small.
+ * De-duplicated case-insensitively; a pair already covered by a Projects
+ * row is not repeated from PO Database.
+ */
+function getRecentJobs() {
+  try {
+    var MAX_PO_ENTRIES = 300;
+    var seen  = {};
+    var result = [];
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    var projectsSheet = ss.getSheetByName(PROJECTS_SHEET_NAME);
+    if (projectsSheet) {
+      var pLastRow = projectsSheet.getLastRow();
+      if (pLastRow >= 2) {
+        var pData = projectsSheet.getRange(2, 1, pLastRow - 1, 2).getValues(); // A:Contractor, B:Job Name
+        for (var i = pData.length - 1; i >= 0; i--) {
+          var b = (pData[i][0] || '').toString().trim();
+          var j = (pData[i][1] || '').toString().trim();
+          if (!b || !j) continue;
+          var pKey = b.toLowerCase() + '|' + j.toLowerCase();
+          if (seen[pKey]) continue;
+          seen[pKey] = true;
+          result.push({ builder: b, job: j });
+        }
+      }
+    }
+
+    var poSheet = ss.getSheetByName(SHEET_NAME);
+    if (poSheet) {
+      var poLastRow = poSheet.getLastRow();
+      if (poLastRow >= 6) {
+        var poData = poSheet.getRange(6, 2, poLastRow - 5, 3).getValues(); // B:Date, C:Builder, D:JobRef
+        var latestByKey = {};
+        for (var k = 0; k < poData.length; k++) {
+          var builder = (poData[k][1] || '').toString().trim();
+          var jobRef  = (poData[k][2] || '').toString().trim();
+          if (!builder || !jobRef) continue;
+          var dKey = builder.toLowerCase() + '|' + jobRef.toLowerCase();
+          if (seen[dKey]) continue; // already covered by a Projects row
+          var dateVal = poData[k][0];
+          var ts = (dateVal instanceof Date) ? dateVal.getTime() : 0;
+          if (!latestByKey[dKey] || ts > latestByKey[dKey].ts) {
+            latestByKey[dKey] = { builder: builder, job: jobRef, ts: ts };
+          }
+        }
+        var poEntries = [];
+        for (var key in latestByKey) poEntries.push(latestByKey[key]);
+        poEntries.sort(function(a, b2) { return b2.ts - a.ts; });
+
+        for (var m = 0; m < poEntries.length && m < MAX_PO_ENTRIES; m++) {
+          result.push({ builder: poEntries[m].builder, job: poEntries[m].job });
+        }
+      }
+    }
+
+    return result;
+  } catch (e) {
+    return [];
+  }
 }
 
 /**
