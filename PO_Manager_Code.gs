@@ -80,7 +80,7 @@ function doPost(e) {
     else if (action === 'createPO')          result = createPO(payload);
     else if (action === 'updatePO')          result = updatePO(payload.rowIndex, payload.updates);
     else if (action === 'findPOByNumber')    result = findPOByNumber(payload.poNum);
-    else if (action === 'savePhotoToDrive')  result = savePhotoToDrive(payload.base64Data, payload.mimeType, payload.filename, payload.builder, payload.jobRef);
+    else if (action === 'savePhotoToDrive')  result = savePhotoToDrive(payload.base64Data, payload.mimeType, payload.filename, payload.builder, payload.jobRef, payload.docType, payload.poNum);
     else if (action === 'createProject')       result = createProjectAndTask(payload);
     else if (action === 'saveFileToFolderById') result = saveFileToFolderById(payload.base64Data, payload.mimeType, payload.filename, payload.folderId);
     else if (action === 'getPricingData')    result = getPricingData();
@@ -141,13 +141,14 @@ function getSheetData() {
   if (lastRow < 2) return [];
 
   var numRows = lastRow - 1;
-  var data     = sheet.getRange(2, 1, numRows, 13).getValues();
+  var data     = sheet.getRange(2, 1, numRows, 14).getValues();
   var tz       = Session.getScriptTimeZone();
   var pos      = [];
 
   // getRichTextValues lets us read hyperlinks that getValues() strips out.
-  // Column A (index 1) holds the invoice hyperlink on the PO number cell.
-  // Column J (index 10) holds the issued-PO link.
+  // Column A (index 1) holds a legacy manually-pasted invoice hyperlink on
+  // the PO number cell -- only used as a fallback when column N (Invoice
+  // File) is empty. Column J (index 10) holds the issued-PO link.
   var colARich = sheet.getRange(2, 1,  numRows, 1).getRichTextValues();
   var colJRich = sheet.getRange(2, 10, numRows, 1).getRichTextValues();
 
@@ -159,13 +160,15 @@ function getSheetData() {
     var deliveryDate = formatDateCell(row[8], tz);
 
     // Extract hyperlink URLs from rich-text cells
-    var invoiceLink  = "";
-    var issuedPOLink = "";
-    try { invoiceLink  = colARich[i][0].getLinkUrl() || ""; } catch(e) {}
-    try { issuedPOLink = colJRich[i][0].getLinkUrl() || ""; } catch(e) {}
+    var legacyInvoiceLink = "";
+    var issuedPOLink      = "";
+    try { legacyInvoiceLink = colARich[i][0].getLinkUrl() || ""; } catch(e) {}
+    try { issuedPOLink      = colJRich[i][0].getLinkUrl() || ""; } catch(e) {}
 
     // Column J may also just contain a plain-text URL
     if (!issuedPOLink) issuedPOLink = str(row[9]);
+
+    var invoiceFile = str(row[13]);
 
     pos.push({
       rowIndex:     i + 2,
@@ -180,7 +183,8 @@ function getSheetData() {
       deliveryDate: deliveryDate,
       issuedPO:     str(row[9]),
       issuedPOLink: issuedPOLink,
-      invoiceLink:  invoiceLink,
+      invoiceFile:  invoiceFile,
+      invoiceLink:  invoiceFile || legacyInvoiceLink,
       receivedNote: str(row[10]),
       notes:        str(row[11]),
       orderedBy:    str(row[12])
@@ -262,6 +266,7 @@ function updatePO(rowIndex, updates) {
     if (updates.receivedNote  !== undefined) sheet.getRange(rowIndex, 11).setValue(updates.receivedNote);
     if (updates.notes         !== undefined) sheet.getRange(rowIndex, 12).setValue(updates.notes);
     if (updates.orderedBy     !== undefined) sheet.getRange(rowIndex, 13).setValue(updates.orderedBy);
+    if (updates.invoiceFile   !== undefined) sheet.getRange(rowIndex, 14).setValue(updates.invoiceFile);
 
     return { success: true };
   } catch (e) {
@@ -287,11 +292,12 @@ function findPOByNumber(poNum) {
       // Found - load just this single row
       var rowIndex = i + 2;
       var tz  = Session.getScriptTimeZone();
-      var row = sheet.getRange(rowIndex, 1, 1, 13).getValues()[0];
-      var invoiceLink = '', issuedPOLink = '';
-      try { invoiceLink  = sheet.getRange(rowIndex, 1,  1, 1).getRichTextValues()[0][0].getLinkUrl() || ''; } catch(e2) {}
-      try { issuedPOLink = sheet.getRange(rowIndex, 10, 1, 1).getRichTextValues()[0][0].getLinkUrl() || ''; } catch(e2) {}
+      var row = sheet.getRange(rowIndex, 1, 1, 14).getValues()[0];
+      var legacyInvoiceLink = '', issuedPOLink = '';
+      try { legacyInvoiceLink = sheet.getRange(rowIndex, 1,  1, 1).getRichTextValues()[0][0].getLinkUrl() || ''; } catch(e2) {}
+      try { issuedPOLink      = sheet.getRange(rowIndex, 10, 1, 1).getRichTextValues()[0][0].getLinkUrl() || ''; } catch(e2) {}
       if (!issuedPOLink) issuedPOLink = str(row[9]);
+      var invoiceFile = str(row[13]);
       return {
         rowIndex:      rowIndex,
         poNum:         (row[0] || '').toString().trim(),
@@ -305,7 +311,8 @@ function findPOByNumber(poNum) {
         deliveryDate:  formatDateCell(row[8], tz),
         issuedPO:      str(row[9]),
         issuedPOLink:  issuedPOLink,
-        invoiceLink:   invoiceLink,
+        invoiceFile:   invoiceFile,
+        invoiceLink:   invoiceFile || legacyInvoiceLink,
         receivedNote:  str(row[10]),
         notes:         str(row[11]),
         orderedBy:     str(row[12])
@@ -810,20 +817,74 @@ function str(val) {
 // ─── Photo Upload ─────────────────────────────────────────────────────────────
 
 /**
- * Receives a base64-encoded image from the web app, saves it to the
- * "PO Received Photos" folder in Drive and returns the shareable URL.
+ * Receives a base64-encoded file from the web app, saves it into the
+ * appropriate typed subfolder under "Purchasing" (or under the matching
+ * job's own Drive folder -- see resolveBaseFolder) and returns the
+ * shareable URL.
  *
- * ⚠️  SETUP: Create a folder called "PO Received Photos" in your Google Drive,
- * then paste its ID below (the long string from the folder's URL).
- *
- * Called client-side via google.script.run.savePhotoToDrive(...)
+ * Called client-side via gasCall('savePhotoToDrive', ...)
  */
-var PO_PHOTOS_FOLDER_ID = "1SYFetk5XolUv9oIpJjBPhGDj-0SBqRJI";
+
+/**
+ * Returns the child folder of `parentFolder` named `name`, creating it
+ * if it doesn't already exist.
+ */
+function getOrCreateChildFolder(parentFolder, name) {
+  var existing = parentFolder.getFoldersByName(name);
+  if (existing.hasNext()) return existing.next();
+  return parentFolder.createFolder(name);
+}
+
+/**
+ * The top-level "Purchasing" folder at Drive root, auto-created on first
+ * use. This is the default destination for uploads whose Builder+Job
+ * doesn't match a row in the "Projects" sheet.
+ */
+function getPurchasingRootFolder() {
+  return getOrCreateChildFolder(DriveApp.getRootFolder(), "Purchasing");
+}
+
+/**
+ * Resolves the base folder an upload's typed subfolders should live under:
+ * the matching job's own Drive folder (Projects sheet lookup) if one
+ * exists, else the global "Purchasing" folder. isProjectFolder tells the
+ * caller whether to skip the ANYONE_WITH_LINK sharing fixup (project
+ * folders live on a Shared Drive, governed by drive membership instead).
+ */
+function resolveBaseFolder(builder, jobRef) {
+  var projectFolderId = getProjectFolderId(builder, jobRef);
+  if (projectFolderId) {
+    try {
+      return { folder: DriveApp.getFolderById(projectFolderId), isProjectFolder: true };
+    } catch (folderErr) {
+      // bad/inaccessible ID in the Projects sheet -- fall back below
+    }
+  }
+  return { folder: getPurchasingRootFolder(), isProjectFolder: false };
+}
+
+/**
+ * Given a base folder (from resolveBaseFolder) and a document type,
+ * returns/creates the folder the file should actually be written to:
+ *   'issuedPO'      -> <base>/Issued POs
+ *   'invoice'       -> <base>/Invoices
+ *   'receivedPhoto' -> <base>/Received Photos/<poNum>
+ * Unrecognized/missing docType falls back to the base folder itself.
+ */
+function getTypedUploadFolder(baseFolder, docType, poNum) {
+  if (docType === 'issuedPO') return getOrCreateChildFolder(baseFolder, 'Issued POs');
+  if (docType === 'invoice')  return getOrCreateChildFolder(baseFolder, 'Invoices');
+  if (docType === 'receivedPhoto') {
+    var photosFolder = getOrCreateChildFolder(baseFolder, 'Received Photos');
+    return poNum ? getOrCreateChildFolder(photosFolder, poNum) : photosFolder;
+  }
+  return baseFolder;
+}
 
 // "Projects" sheet in the PO Database maps each Contractor + Job Name pair
 // to the Shared Drive folder for that job (columns: A Contractor, B Job
 // Name, C Drive folder URL/ID). Used so uploads land in the job's own
-// folder instead of the flat PO_PHOTOS_FOLDER_ID whenever a match exists.
+// folder instead of the global "Purchasing" folder whenever a match exists.
 //
 // The New Project form (createProjectAndTask) appends rows here with just
 // A Contractor, B Job Name, C Drive folder ID, D Asana Task GID -- the
@@ -875,29 +936,16 @@ function extractDriveFolderId(driveUrlOrId) {
   return null;
 }
 
-function savePhotoToDrive(base64Data, mimeType, filename, builder, jobRef) {
+function savePhotoToDrive(base64Data, mimeType, filename, builder, jobRef, docType, poNum) {
   try {
-    var projectFolderId  = getProjectFolderId(builder, jobRef);
-    var usingProjectFolder = false;
-    var folder = null;
-
-    if (projectFolderId) {
-      try {
-        folder = DriveApp.getFolderById(projectFolderId);
-        usingProjectFolder = true;
-      } catch (folderErr) {
-        folder = null; // bad/inaccessible ID in the Projects sheet -- fall back below
-      }
-    }
-    if (!folder) {
-      folder = DriveApp.getFolderById(PO_PHOTOS_FOLDER_ID);
-    }
+    var base   = resolveBaseFolder(builder, jobRef);
+    var folder = getTypedUploadFolder(base.folder, docType, poNum);
 
     var bytes = Utilities.base64Decode(base64Data);
     var blob  = Utilities.newBlob(bytes, mimeType, filename);
     var file  = folder.createFile(blob);
 
-    if (!usingProjectFolder) {
+    if (!base.isProjectFolder) {
       // New files inherit ANYONE_WITH_LINK from the folder (set once via
       // oneTimeSetFolderSharing) so no extra Drive permissions API call is
       // needed in the common case. Only fix up sharing if inheritance did
@@ -963,11 +1011,12 @@ function saveFileToFolderById(base64Data, mimeType, filename, folderIdOrLink) {
 }
 
 // One-time setup helper: run this once from the Apps Script editor's Run
-// menu after creating/re-pointing PO_PHOTOS_FOLDER_ID, so new files created
-// in the folder inherit link-sharing and savePhotoToDrive can skip the
-// per-file setSharing() call above. Safe to re-run; safe to leave in place.
+// menu so new files created under the "Purchasing" folder (and its Issued
+// POs / Invoices / Received Photos subfolders) inherit link-sharing and
+// savePhotoToDrive can skip the per-file setSharing() call above. Safe to
+// re-run; safe to leave in place.
 function oneTimeSetFolderSharing() {
-  DriveApp.getFolderById(PO_PHOTOS_FOLDER_ID)
+  getPurchasingRootFolder()
     .setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
 }
 

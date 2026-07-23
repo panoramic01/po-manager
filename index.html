@@ -2229,9 +2229,7 @@ function renderDelPickCard() {
     return;
   }
 
-  el.innerHTML = list.map(function(po){
-    return poCard(po, po.status.toLowerCase()==='pending delivery' ? 'delivery' : 'pickup');
-  }).join('');
+  el.innerHTML = list.map(recentOrderRow).join('');
 }
 
 // ── Recent Orders summary card ───────────────────────────────────────────────
@@ -2787,6 +2785,18 @@ function openEdit(poNum) {
       '<p id="e-issued-status" class="photo-status" style="margin-top:8px"></p>' +
     '</div>';
 
+  var invoiceField = G.perms.canViewInvoice ?
+    '<div class="form-group">' +
+      '<label class="form-label">' + (po.invoiceLink ? 'Update Invoice File' : 'Add Invoice File') + '</label>' +
+      '<input type="url" class="form-control" id="e-invoicefile" value="'+esc(po.invoiceLink)+'" placeholder="Paste link, or upload file below…" style="margin-bottom:10px">' +
+      '<input type="file" id="e-invoicefile-file" accept="image/*,.pdf" style="display:none" onchange="handleInvoiceFile(this)">' +
+      '<button type="button" class="btn-camera" style="width:100%;justify-content:center" onclick="document.getElementById(\'e-invoicefile-file\').click()">' +
+        '<svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>' +
+        ' Upload from Phone' +
+      '</button>' +
+      '<p id="e-invoicefile-status" class="photo-status" style="margin-top:8px"></p>' +
+    '</div>' : '';
+
   document.getElementById('edit-modal-body').innerHTML =
     '<div class="doc-links">' + invoiceBtn + issuedBtn + '</div>' +
     fg('Builder',         '<input type="text"   class="form-control" id="e-builder"  value="'+esc(po.builder)+'">') +
@@ -2806,6 +2816,7 @@ function openEdit(poNum) {
     (G.perms.canViewInvoice ? fg('Invoice Total ($)','<input type="number" class="form-control" id="e-total" value="'+esc(po.invoiceTotal)+'" step="0.01" min="0">') : '') +
     fg('Delivery / Pickup Date','<input type="date" class="form-control" id="e-date" value="'+esc(toInputDate(po.deliveryDate))+'">') +
     issuedField +
+    invoiceField +
     buildPhotoSection(po.receivedNote) +
     fg('Notes',           '<textarea class="form-control" id="e-notes" rows="3">'+esc(po.notes)+'</textarea>') +
     '<div class="modal-actions">' +
@@ -2856,6 +2867,7 @@ function submitEdit() {
       invoiceTotal:  G.perms.canViewInvoice ? val('e-total') : undefined,
       deliveryDate:  fromInputDate(trim('e-date')),
       issuedPO:      trim('e-issued'),
+      invoiceFile:   G.perms.canViewInvoice ? trim('e-invoicefile') : undefined,
       notes:         trim('e-notes')
     }
   }, function(res) {
@@ -3083,7 +3095,9 @@ function handlePhotoSlot(input) {
     gasCall('savePhotoToDrive', {
       base64Data: base64, mimeType: mimeType, filename: filename,
       builder: G.receivePO ? G.receivePO.builder : '',
-      jobRef:  G.receivePO ? G.receivePO.jobRef  : ''
+      jobRef:  G.receivePO ? G.receivePO.jobRef  : '',
+      docType: 'receivedPhoto',
+      poNum:   G.receivePO ? G.receivePO.poNum : ''
     }, function(res) {
       if (DEBUG_UPLOAD_TIMING) console.timeEnd('photoSlot' + idx + ':upload');
       clearTimeout(_driveTimeout);
@@ -3148,11 +3162,55 @@ function handleIssuedFile(input) {
     if (DEBUG_UPLOAD_TIMING) console.time('issuedFile:upload');
     gasCall('savePhotoToDrive', {
       base64Data: dataUrl.split(',')[1], mimeType: mimeType, filename: filename,
-      builder: builder, jobRef: jobRef
+      builder: builder, jobRef: jobRef, docType: 'issuedPO'
     }, function(res) {
       if (DEBUG_UPLOAD_TIMING) console.timeEnd('issuedFile:upload');
       if (res.success) {
         document.getElementById('e-issued').value = res.url;
+        statusEl.textContent = 'Uploaded — link filled in above';
+        statusEl.className   = 'photo-status done';
+      } else {
+        statusEl.textContent = 'Upload failed:' + res.error;
+        statusEl.className   = 'photo-status error';
+      }
+    }, function(err) {
+      statusEl.textContent = 'Upload error — check connection';
+      statusEl.className   = 'photo-status error';
+    });
+  }, function(err) {
+    statusEl.textContent = 'Could not read file — try a different one';
+    statusEl.className   = 'photo-status error';
+  });
+}
+
+/**
+ * Handles file upload for the Invoice File field in the Edit modal.
+ * Mirrors handleIssuedFile but writes into #e-invoicefile and uploads
+ * into the Invoices folder (docType: 'invoice').
+ */
+function handleInvoiceFile(input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+
+  var statusEl = document.getElementById('e-invoicefile-status');
+  statusEl.textContent = file.size > 3 * 1024 * 1024
+    ? 'Uploading large file (' + (file.size / 1024 / 1024).toFixed(1) + ' MB) — this may take a bit…'
+    : 'Uploading…';
+  statusEl.className   = 'photo-status uploading';
+
+  var poNum   = document.getElementById('edit-modal-title').textContent || 'invoice';
+  var builder = trim('e-builder');
+  var jobRef  = trim('e-job');
+
+  readAndCompressFile(file, function(dataUrl, mimeType) {
+    var ext = mimeType === 'image/jpeg' ? 'jpg' : (file.name.split('.').pop() || 'bin');
+    var filename = 'Invoice-' + poNum + '-' + new Date().toISOString().slice(0,19).replace(/[T:]/g,'-') + '.' + ext;
+    gasCall('savePhotoToDrive', {
+      base64Data: dataUrl.split(',')[1], mimeType: mimeType, filename: filename,
+      builder: builder, jobRef: jobRef, docType: 'invoice'
+    }, function(res) {
+      if (res.success) {
+        document.getElementById('e-invoicefile').value = res.url;
         statusEl.textContent = 'Uploaded — link filled in above';
         statusEl.className   = 'photo-status done';
       } else {
@@ -3194,7 +3252,8 @@ function handleSuccessIssuedFile(input) {
     if (DEBUG_UPLOAD_TIMING) console.time('successIssuedFile:upload');
     gasCall('savePhotoToDrive', {
       base64Data: dataUrl.split(',')[1], mimeType: mimeType, filename: filename,
-      builder: G.lastCreatedPO.builder || '', jobRef: G.lastCreatedPO.jobRef || ''
+      builder: G.lastCreatedPO.builder || '', jobRef: G.lastCreatedPO.jobRef || '',
+      docType: 'issuedPO'
     }, function(res) {
       if (DEBUG_UPLOAD_TIMING) console.timeEnd('successIssuedFile:upload');
       if (res.success) {
