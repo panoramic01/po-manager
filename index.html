@@ -1994,6 +1994,10 @@ function showTabDirect(name, btn) {
   document.querySelectorAll('.nav-btn').forEach(function(b){ b.classList.remove('active'); });
   document.getElementById('tab-'+name).classList.add('active');
   if (btn) btn.classList.add('active');
+  // Leaving Other without going through its own Back button (e.g. jumping
+  // straight to another tab via the bottom nav) would otherwise leave
+  // whatever sub-panel was open visibly stuck on screen -- see resetOtherPanels().
+  if (name !== 'other') resetOtherPanels();
   // pricing/contacts now loaded via showOtherPanel()
   if (!_navPop) history.pushState({ view: 'tab', tab: name }, '');
   if (name === 'account') loadAccount();
@@ -3771,13 +3775,22 @@ function showOtherPanel(name) {
   if (name === 'new-project') resetNewProjectDriveHint();
 }
 
-function showOtherHome() {
-  if (!_navPop) history.pushState({ view: 'tab', tab: 'other' }, '');
+// Several other-panel-* elements aren't actually nested inside #tab-other in
+// the DOM (a pre-existing markup quirk), so the .tab/.tab.active CSS rule
+// that hides inactive top-level tabs doesn't hide them -- they need their
+// display reset explicitly any time we leave the Other tab, not just when
+// returning to its home grid.
+function resetOtherPanels() {
   document.getElementById('other-home').style.display = '';
   ['pricing', 'contacts', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
     if (el) el.style.display = 'none';
   });
+}
+
+function showOtherHome() {
+  if (!_navPop) history.pushState({ view: 'tab', tab: 'other' }, '');
+  resetOtherPanels();
 }
 
 
