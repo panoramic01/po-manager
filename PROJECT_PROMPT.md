@@ -141,14 +141,14 @@ Values: `admin`, `office`, `site_manager`, `runner`, `accountant`
 
 ## Features Already Built
 
-PO management, photo upload to Drive (5 per PO), quality checklist (Asana), job cleanup, SOP viewer, pricing lookup, contacts, reconciliation, job cost, missing invoices, vendor spend chart, material report, PTO requests (Asana-backed), time clock (clock in/out, hours this period), account tab (profile edit, time clock, PTO summary), employee manager (admin), PTO overview (admin), payroll summary (admin), back-button navigation (History API), service worker caching.
+PO management, photo upload to Drive (5 per PO), exterior quality check (Prewalk/Daily/Closeout Walk checklists, Pass/Flag/N/A per item, submitter auto-attributed from signed-in account, stored purely as Asana subtasks — no separate sheet), job cleanup, SOP viewer, pricing lookup, contacts, reconciliation, job cost, missing invoices, vendor spend chart, material report, PTO requests (Asana-backed), time clock (clock in/out, hours this period), account tab (profile edit, time clock, PTO summary), employee manager (admin), PTO overview (admin), payroll summary (admin), back-button navigation (History API), service worker caching.
 
 ## Features Planned
 
 - **Office Notes** — saves to Notes sheet by default; optional per-note Asana subtask (under date-based parent task in a chosen project); flag per note to also save to Notes sheet
 - **Announcements** — admin posts a once-per-version message; employees dismiss via localStorage
 - **Jobs Registry** — new "Jobs" tab in the PO Database spreadsheet (Job Name, GC, Asana GID, QuickBooks ID, Status) as the single source of truth linking a job across systems. "Add Job" admin panel lets office link an existing Asana task via search (option A — link only, doesn't create the Asana task). QuickBooks ID stays blank until QuickBooks OAuth integration exists. New PO eventually switches from free-text job entry to a searchable dropdown against this registry, once it has enough real jobs in it. Future option to revisit: create QuickBooks project + Asana task + registry link all in one action instead of linking only to pre-existing ones.
-- **Site Walk Checklists** — OSHA/Safety, Cleanup, and Quality walk checklists for job sites. Likely reuses/extends the Quality Check pattern (job picker, per-category checklist, pass/flag, submit to Asana) rather than being built from scratch. Needs scoping: separate panel per walk type vs. one flow with a walk-type selector; real checklist content (like Quality Check trades) still needs to be supplied before building.
+- **Site Walk Checklists (remaining)** — OSHA/Safety and Cleanup walk checklists for job sites. Quality's three walk types (Prewalk/Daily/Closeout) are now built using a walk-type selector + shared trade sections; OSHA/Safety and Cleanup still need their real checklist content supplied before building, but can reuse the same pattern (job picker, walk-type selector, per-category checklist, Pass/Flag/N/A, submit to Asana).
 
 ---
 

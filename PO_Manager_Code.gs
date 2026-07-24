@@ -1214,17 +1214,6 @@ function getMissingInvoices() {
 // F=Start Date. Existing A-D columns (Contractor, Job Name, Drive folder,
 // Asana GID) are untouched -- getProjectFolderId/getRecentJobs only ever
 // read fixed-width ranges, so appending E/F is safe.
-var QUALITY_CHECKS_SHEET_NAME = "Quality Checks";
-
-function getOrCreateQualityChecksSheet_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(QUALITY_CHECKS_SHEET_NAME);
-  if (!sheet) {
-    sheet = ss.insertSheet(QUALITY_CHECKS_SHEET_NAME);
-    sheet.appendRow(['Timestamp', 'Job Name', 'Trade(s)', 'Submitted By', 'Pass Count', 'Flag Count', 'Job GID']);
-  }
-  return sheet;
-}
 
 function ensureProjectsHeaders_() {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PROJECTS_SHEET_NAME);
@@ -1261,10 +1250,10 @@ function parseAsanaJobName_(rawTaskName) {
  * is looked up by exact Asana Task GID match (column D) when the job has
  * been linked via the New Project intake flow; otherwise meta falls back
  * to a parsed short name with no editable Status/Start Date (nowhere to
- * save them). Cost/invoice/quality matching all use the resolved short
- * job name; quality-walk rows additionally match by exact Job GID first
- * (submitQualityCheck logs it), falling back to fuzzy substring matching
- * only for any row that was logged without one.
+ * save them). Cost/invoice matching uses the resolved short job name;
+ * quality-walk history is read live from Asana (getQualityWalkHistory_) --
+ * submitQualityCheck writes each check as a subtask of the job's Asana
+ * task, so there's nothing to look up by name at all.
  */
 function getJobDashboard(payload) {
   try {
@@ -1312,36 +1301,7 @@ function getJobDashboard(payload) {
       });
     }
 
-    var quality = { count: 0, recent: [] };
-    var qcSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(QUALITY_CHECKS_SHEET_NAME);
-    if (qcSheet) {
-      var qLastRow = qcSheet.getLastRow();
-      if (qLastRow >= 2) {
-        var qData = qcSheet.getRange(2, 1, qLastRow - 1, 7).getValues();
-        var matches = [];
-        for (var q = 0; q < qData.length; q++) {
-          var qGid = (qData[q][6] || '').toString().trim();
-          if (qGid) {
-            if (qGid !== jobGid) continue;
-          } else {
-            var qJob = (qData[q][1] || '').toString().trim().toLowerCase();
-            if (!qJob) continue;
-            if (qJob.indexOf(shortJobNameLower) === -1 && shortJobNameLower.indexOf(qJob) === -1) continue;
-          }
-          matches.push({
-            timestamp: qData[q][0] instanceof Date ? Utilities.formatDate(qData[q][0], Session.getScriptTimeZone(), 'MM/dd/yy') : '',
-            ts:        qData[q][0] instanceof Date ? qData[q][0].getTime() : 0,
-            trades:    qData[q][2],
-            submitter: qData[q][3],
-            passCount: qData[q][4],
-            flagCount: qData[q][5]
-          });
-        }
-        matches.sort(function(a, b) { return b.ts - a.ts; });
-        quality.count = matches.length;
-        quality.recent = matches.slice(0, 8);
-      }
-    }
+    var quality = getQualityWalkHistory_(jobGid);
 
     return { success: true, meta: meta, cost: cost, missingCount: missingRows.length, missingRows: missingRows, quality: quality };
   } catch (e) { return { error: e.toString() }; }
@@ -1772,42 +1732,87 @@ function getAsanaJobs() {
   } catch(e) { return { error: e.toString() }; }
 }
 
+/**
+ * Reads quality-walk history straight from Asana -- submitQualityCheck logs
+ * each check as a subtask of the job's Asana task (name "Quality Check
+ * [<Walk Type>] - <date>", notes starting with "Walk Type:"/"Submitted
+ * by:"/"Trade(s):" then one "[PASS]"/"[FLAG]"/"[N/A]" line per item), so
+ * there's no separate sheet to keep in sync. Subtasks predating the walk
+ * -type change just come back with walkType: ''.
+ */
+function getQualityWalkHistory_(jobGid) {
+  var result = { count: 0, recent: [] };
+  try {
+    var subtasks = [];
+    var offset = null;
+    var maxPages = 5;
+    for (var page = 0; page < maxPages; page++) {
+      var url = '/tasks/' + jobGid + '/subtasks?opt_fields=name,notes,created_at&limit=100' +
+        (offset ? '&offset=' + encodeURIComponent(offset) : '');
+      var resp = asanaRequest('get', url);
+      if (resp.errors) break;
+      subtasks = subtasks.concat(resp.data || []);
+      if (resp.next_page && resp.next_page.offset) offset = resp.next_page.offset;
+      else break;
+    }
+
+    var matches = subtasks.filter(function(t) {
+      return (t.name || '').indexOf('Quality Check') === 0;
+    }).map(function(t) {
+      var notes     = t.notes || '';
+      var walkType  = (notes.match(/Walk Type:\s*(.+)/)     || [])[1] || '';
+      var submitter = (notes.match(/Submitted by:\s*(.+)/)  || [])[1] || '';
+      var trades    = (notes.match(/Trade\(s\):\s*(.+)/)    || [])[1] || '';
+      var passCount = (notes.match(/\[PASS\]/g) || []).length;
+      var flagCount = (notes.match(/\[FLAG\]/g) || []).length;
+      var naCount   = (notes.match(/\[N\/A\]/g) || []).length;
+      var created   = t.created_at ? new Date(t.created_at) : null;
+      return {
+        timestamp: created ? Utilities.formatDate(created, Session.getScriptTimeZone(), 'MM/dd/yy') : '',
+        ts:        created ? created.getTime() : 0,
+        walkType:  walkType,
+        trades:    trades,
+        submitter: submitter,
+        passCount: passCount,
+        flagCount: flagCount,
+        naCount:   naCount
+      };
+    });
+
+    matches.sort(function(a, b) { return b.ts - a.ts; });
+    result.count = matches.length;
+    result.recent = matches.slice(0, 8);
+  } catch (e) {
+    // swallow -- a Quality Walks read failure shouldn't break the rest of the Job Dashboard
+  }
+  return result;
+}
+
 function submitQualityCheck(payload) {
   try {
-    var jobGid    = payload.jobGid;
-    var jobName   = payload.jobName;
-    var sections  = payload.sections;
-    var submitter = payload.submitter || 'Field';
-    var tz        = Session.getScriptTimeZone();
-    var date      = Utilities.formatDate(new Date(), tz, 'MM/dd/yyyy');
+    var jobGid        = payload.jobGid;
+    var jobName       = payload.jobName;
+    var sections      = payload.sections;
+    var submitter     = payload.submitter || 'Field';
+    var walkTypeLabel = payload.walkTypeLabel || 'Quality Check';
+    var tradesStr     = (payload.trades || []).join(', ') || 'General';
+    var tz            = Session.getScriptTimeZone();
+    var date          = Utilities.formatDate(new Date(), tz, 'MM/dd/yyyy');
 
-    var lines = ['Quality Check - ' + date, 'Submitted by: ' + submitter, ''];
+    var lines = ['Walk Type: ' + walkTypeLabel, 'Submitted by: ' + submitter, 'Trade(s): ' + tradesStr, ''];
     var flagged = [];
     sections.forEach(function(s) {
-      var icon = s.status === 'pass' ? 'PASS' : 'FLAG';
+      var icon = s.status === 'flag' ? 'FLAG' : (s.status === 'na' ? 'N/A' : 'PASS');
       lines.push('[' + icon + '] ' + s.name + (s.notes ? ' - ' + s.notes : ''));
-      if (s.status !== 'pass') flagged.push(s);
+      if (s.status === 'flag') flagged.push(s);
     });
 
     var sub = asanaRequest('post', '/tasks/' + jobGid + '/subtasks', {
-      name:      'Quality Check - ' + date,
+      name:      'Quality Check [' + walkTypeLabel + '] - ' + date,
       notes:     lines.join('\n'),
       completed: true
     });
     if (sub.errors) return { error: sub.errors[0].message };
-
-    // Additive: log this check to the "Quality Checks" sheet so job
-    // dashboards can show walk history. Never let a logging failure break
-    // the Asana submission above -- that flow must behave exactly as before.
-    try {
-      var passCount = 0, flagCountForLog = 0;
-      sections.forEach(function(s) { if (s.status === 'pass') passCount++; else flagCountForLog++; });
-      var qcLogSheet = getOrCreateQualityChecksSheet_();
-      var tradesStr = (payload.trades || []).join(', ') || 'General';
-      qcLogSheet.appendRow([new Date(), jobName, tradesStr, submitter, passCount, flagCountForLog, jobGid]);
-    } catch (logErr) {
-      // swallow -- logging must never fail the Quality Check submission
-    }
 
     if (flagged.length > 0) {
       var offLines = ['Quality check flagged items for: ' + jobName + ' (' + date + ')', ''];

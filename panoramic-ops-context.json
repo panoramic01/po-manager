@@ -126,7 +126,7 @@
   "features_built": [
     "PO management (create, receive, edit, search, filter)",
     "Photo upload to Google Drive (up to 5 per PO)",
-    "Quality Checklist (Asana-linked)",
+    "Quality Check: Prewalk/Daily/Closeout Walk checklists (walk-type selector, 10 shared trade sections, Pass/Flag/N/A per item, submitter auto-filled from signed-in account, stored as Asana subtasks only)",
     "Job Cleanup checklist",
     "SOP viewer",
     "Pricing lookup",
@@ -144,7 +144,7 @@
     "Payroll Summary (admin: hours per employee, email summary)",
     "Back button / swipe navigation (History API)",
     "Service worker with offline caching",
-    "Job Dashboard (Other tab, admin only): repurposed the old Job Cost Summary panel. Job picker now sourced from a 'Jobs Registry' -- the 'Projects' sheet extended with Status (col E) and Start Date (col F), editable inline. Shows Job Info card (status badge, days live, Drive/Asana quick links), Quality Walks card (count + recent list, reusing the existing Quality Check feature unchanged -- submitQualityCheck now additionally logs each check to a new 'Quality Checks' sheet so history is queryable; matched to a job by case-insensitive substring since Quality Check's job picker uses Asana task names, not bare Job Names), and Job Cost Summary card (spend only, reuses getJobCostSummary, plus a missing-invoice count badge). New GAS routes: getJobsRegistry, getJobDashboard, updateJobMeta."
+    "Job Dashboard (Other tab, admin only): repurposed the old Job Cost Summary panel. Job picker now sourced from a 'Jobs Registry' -- the 'Projects' sheet extended with Status (col E) and Start Date (col F), editable inline. Shows Job Info card (status badge, days live, Drive/Asana quick links), Quality Walks card (count + recent list with a walk-type badge, read live from the job's Asana subtasks via getQualityWalkHistory_ -- no separate sheet, since submitQualityCheck already writes everything Asana needs into the subtask name/notes), and Job Cost Summary card (spend only, reuses getJobCostSummary, plus a missing-invoice count badge). New GAS routes: getJobsRegistry, getJobDashboard, updateJobMeta."
   ],
 
   "features_planned": [

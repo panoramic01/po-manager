@@ -1436,6 +1436,10 @@
   </div>
   <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;background:#f5f5f7">
     <div id="qc-step1">
+      <div class="form-group">
+        <label class="form-label">Which walk is this?</label>
+        <div class="chip-row" id="qc-walktype-chips" style="flex-wrap:wrap;overflow-x:visible"></div>
+      </div>
       <div class="form-group" style="position:relative">
         <label class="form-label">Job</label>
         <input type="text" class="form-control" id="qc-job-input" placeholder="Search jobs…"
@@ -1446,12 +1450,11 @@
         <div id="qc-job-dropdown" style="display:none;position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #ddd;border-radius:8px;margin-top:4px;max-height:220px;overflow-y:auto;z-index:20;box-shadow:0 4px 12px rgba(0,0,0,0.12)"></div>
       </div>
       <div class="form-group">
-        <label class="form-label">Your Name</label>
-        <input type="text" class="form-control" id="qc-submitter" placeholder="Enter your name">
-      </div>
-      <div class="form-group">
         <label class="form-label">Which trades apply to this check?</label>
         <div class="chip-row" id="qc-trade-chips" style="flex-wrap:wrap;overflow-x:visible"></div>
+      </div>
+      <div class="form-group" style="font-size:13px;color:#666">
+        Submitting as <b id="qc-submitter-display" style="color:#222"></b>
       </div>
     </div>
 
@@ -4106,19 +4109,24 @@ function renderQualityWalksCard(quality, days) {
   var summary = 'Quality Walks: <b>' + quality.count + '</b>'
     + (days !== null ? ' over ' + days + ' day' + (days === 1 ? '' : 's') + ' live' : '');
   var listHtml = quality.recent.map(function(q) {
+    var badge = q.walkType
+      ? '<span style="display:inline-block;padding:2px 7px;border-radius:10px;background:#eef1f8;color:#1F3971;font-size:10px;font-weight:700;text-transform:uppercase;margin-right:6px">' + esc(q.walkType) + '</span>'
+      : '';
+    var counts = q.passCount + ' pass'
+      + (q.flagCount ? ' · ' + q.flagCount + ' flag' : '')
+      + (q.naCount ? ' · ' + q.naCount + ' n/a' : '');
     return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f5f5f5;gap:8px">'
       + '<div style="flex:1;min-width:0">'
-      + '<div style="font-size:13px;font-weight:600;color:#222">' + esc(q.trades || 'General') + '</div>'
+      + '<div style="font-size:13px;font-weight:600;color:#222">' + badge + esc(q.trades || 'General') + '</div>'
       + '<div style="font-size:11px;color:#888">' + esc(q.timestamp) + (q.submitter ? ' · ' + esc(q.submitter) : '') + '</div>'
       + '</div>'
-      + '<div style="text-align:right;flex-shrink:0;font-size:12px;color:#666">' + q.passCount + ' pass' + (q.flagCount ? ' · ' + q.flagCount + ' flag' : '') + '</div>'
+      + '<div style="text-align:right;flex-shrink:0;font-size:12px;color:#666">' + counts + '</div>'
       + '</div>';
   }).join('');
   document.getElementById('jc-quality-card').innerHTML =
     '<div style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:12px">'
     + '<div style="font-size:14px;color:#333;margin-bottom:10px">' + summary + '</div>'
     + (listHtml || '<div class="empty">No quality walks logged yet.</div>')
-    + '<div style="font-size:11px;color:#aaa;margin-top:8px">Matched by job name — may miss walks logged under a differently worded name.</div>'
     + '</div>';
 }
 
@@ -5670,61 +5678,347 @@ function mrSaveEstHistory() {
 
 // ── Quality Check ─────────────────────────────────────────────────────────────
 
-// General items always apply, regardless of which trades are selected.
-// Trade sections only show up if that trade is selected on step 1.
-// NOTE: placeholder items for now - Aidan will supply the real checklist per trade later.
-var QC_SECTIONS = [
-  {
-    id: 'general',
-    name: 'General',
-    trade: null,
-    alwaysInclude: true,
-    items: ['Correct materials delivered', 'No damaged product installed', 'Quantities match the PO', 'Area cleaned up', 'No damage to surrounding surfaces', 'Scaffolding / equipment removed']
-  },
-  {
-    id: 'masonry',
-    name: 'Masonry',
-    trade: 'Masonry',
-    items: ['Mortar joints consistent', 'Masonry plumb and level', 'Weep holes clear', 'No visible cracking or staining']
-  },
-  {
-    id: 'siding',
-    name: 'Siding',
-    trade: 'Siding',
-    items: ['Panels aligned and level', 'Fastening pattern correct', 'Seams and laps proper', 'Caulking / sealant applied']
-  },
-  {
-    id: 'gutters',
-    name: 'Gutters',
-    trade: 'Gutters',
-    items: ['Gutters pitched correctly for drainage', 'Downspouts secured', 'End caps sealed', 'Hangers spaced properly']
-  },
-  {
-    id: 'vinyl',
-    name: 'Vinyl',
-    trade: 'Vinyl',
-    items: ['Panels locked and level', 'Expansion gap maintained', 'J-channel and trim secure', 'No visible warping']
-  },
-  {
-    id: 'stucco',
-    name: 'Stucco',
-    trade: 'Stucco',
-    items: ['Finish coat consistent texture', 'Control joints placed correctly', 'No cracking visible', 'Proper cure time observed']
-  }
+// Three walk types (Prewalk / Daily / Closeout Walk), each with its own set of
+// always-shown sections plus the 10 shared trade sections below, which only
+// show up if that trade is selected on step 1.
+var QC_WALK_TYPES = [
+  { id: 'prewalk',  label: 'Prewalk' },
+  { id: 'daily',    label: 'Daily' },
+  { id: 'closeout', label: 'Closeout Walk' }
 ];
 
-var QC_TRADES = ['Masonry', 'Siding', 'Gutters', 'Vinyl', 'Stucco'];
+var QC_TRADES = ['Vinyl', 'Lap Siding', 'Board and Batten', 'Stucco', 'Brick', 'Stone',
+                  'Soffit and Fascia', 'Windows and Doors', 'Gutters and Downspouts', 'Paint and Finishes'];
+
+var QC_SECTIONS_BY_WALK = {
+
+  prewalk: [
+    { id: 'site_substrate', name: 'Site & Substrate Readiness', trade: null, alwaysInclude: true, items: [
+      'Rough framing verified square, plumb, and level; no bows or high/low spots in the wall plane',
+      "Weather-resistant barrier (WRB)/house wrap installed correctly: proper laps, no gaps, taped per spec",
+      'Window and door rough openings confirmed square, level, and flashed by others before material install begins',
+      'Concrete foundation lines checked for level and square; ledge heights match plan',
+      'Correct material (style, color, dye lot/batch) delivered and staged on site; matches PO and spec',
+      'Key exterior material placement layout confirmed (starter lines, control joints, water table, reveal lines) before crews start cutting — this is priority #1'
+    ]},
+    { id: 'flashing', name: 'Flashing & Weatherproofing', trade: null, alwaysInclude: true, items: [
+      'Roof-to-wall intersections identified and kick-out flashing planned at every point a sloped roof meets a wall plane',
+      'Step flashing sequence reviewed at roof-wall junctions before siding starts',
+      'Head/transition flashing sequence planned at points where two different cladding materials meet',
+      'Window and door flashing sequence (pan, sill, jamb, head) reviewed with crew before units are set',
+      'Ice-and-water shield integration at roof-wall junctions confirmed with roofing trade'
+    ]},
+    { id: 'sealants', name: 'Sealants & Caulking', trade: null, alwaysInclude: true, items: [
+      "Sealant type confirmed correct for each substrate pairing (polyurethane, silicone, paintable acrylic per manufacturer spec)",
+      'Sealant color(s) confirmed to match adjacent materials',
+      "Locations requiring backer rod identified (gaps exceeding sealant manufacturer's tolerance)",
+      'Weep paths and drainage gaps identified that must NOT be sealed shut'
+    ]},
+    { id: 'lookahead', name: 'Look-Ahead / Upcoming Challenges', trade: null, alwaysInclude: true, items: [
+      'Flag any rough framing errors found (out of square, out of plane, missing blocking) for GC correction before install',
+      'Flag any concrete errors found (ledge height, step-downs, slab pitch) for GC correction before install',
+      'Review window and door layout against elevations for conflicts before trim or flashing begins',
+      'Note any other upcoming challenges the crew should plan around (access, weather, sequencing with other trades)',
+      'Look for missing components (windows, doors, vents, 4-wall protrusions)',
+      'Confirm wire and pipe stub out locations in soffit and walls'
+    ]},
+    { id: 'vinyl', name: 'Vinyl', trade: 'Vinyl', items: [
+      'Sheathing/WRB inspected and sound behind vinyl areas',
+      'Furring/strapping (if used) checked for straightness',
+      'J-channel and starter strip layout planned around windows, corners, and penetrations',
+      'Confirm color/style matches spec and is consistent across the full order'
+    ]},
+    { id: 'lapsiding', name: 'Lap Siding', trade: 'Lap Siding', items: [
+      'Sheathing/WRB inspected, no damage or gaps',
+      'Level starting line struck for the first course',
+      'Confirm color/style/batch matches spec and is consistent across the full order',
+      'Confirm layout pattern'
+    ]},
+    { id: 'boardbatten', name: 'Board and Batten', trade: 'Board and Batten', items: [
+      'Substrate sound and batten spacing layout marked out',
+      'Panel union locations identified for z-flashing or caulk plan',
+      'Confirm color/style/batch matches spec'
+    ]},
+    { id: 'stucco', name: 'Stucco', trade: 'Stucco', items: [
+      'Substrate (sheathing, paper, lath) inspected before scratch coat',
+      'Weep screed set correctly and level at the base of the wall',
+      'Control joint layout confirmed per plan',
+      'Confirm color/finish sample approved and matches spec'
+    ]},
+    { id: 'brick', name: 'Brick', trade: 'Brick', items: [
+      'Foundation ledge height and level checked before brick starts',
+      'Weep hole locations planned per code/spec',
+      'Tie spacing and type confirmed with framer',
+      'Confirm brick color/blend is consistent across pallets, not mixed runs'
+    ]},
+    { id: 'stone', name: 'Stone', trade: 'Stone', items: [
+      'Substrate prepped and flashing at the base confirmed before veneer starts',
+      'Coursing/layout of stone planned, especially at corners and returns',
+      'Confirm stone color/blend is consistent, same quarry run/batch',
+      'Confirm use of sills and locations'
+    ]},
+    { id: 'soffitfascia', name: 'Soffit and Fascia', trade: 'Soffit and Fascia', items: [
+      'Fascia board/sub-fascia checked for straightness',
+      'Vent layout planned for a consistent, uniform pattern',
+      'Confirm color/finish matches spec',
+      'Confirm birdbox design specs'
+    ]},
+    { id: 'windowsdoors', name: 'Windows and Doors', trade: 'Windows and Doors', items: [
+      'Rough openings confirmed square and level',
+      'Flashing sequence reviewed with crew before install',
+      'Confirm correct window/door units staged (size, style, color) match plan'
+    ]},
+    { id: 'guttersdownspouts', name: 'Gutters and Downspouts', trade: 'Gutters and Downspouts', items: [
+      'Fascia confirmed straight and pitched correctly for drainage',
+      'Downspout locations planned away from foundation, walkways, and entries',
+      'Confirm gutter color/style matches spec'
+    ]},
+    { id: 'paintfinishes', name: 'Paint and Finishes', trade: 'Paint and Finishes', items: [
+      'Surfaces to be painted confirmed clean, dry, and properly prepped',
+      'Color/sheen confirmed correct per spec before starting'
+    ]}
+  ],
+
+  daily: [
+    { id: 'general_daily', name: 'General Daily Quality Checks', trade: null, alwaysInclude: true, items: [
+      "Key exterior material placement correct for today's work (starter lines, reveals, control joints) — priority #1 check",
+      'Materials installed today are square and level',
+      'Fastener schedule followed: correct spacing, type, and depth (not over- or under-driven)',
+      'Material color/batch consistent with rest of elevation, no mixed dye lots',
+      'No beauty issues introduced today (dings, bends, blemishes, damage)',
+      "Upcoming challenges noted: any rough framing, concrete, or window layout issues discovered today that affect tomorrow's work"
+    ]},
+    { id: 'flashing', name: 'Flashing & Weatherproofing', trade: null, alwaysInclude: true, items: [
+      'Kick-out flashing installed at every roof-to-wall intersection encountered today',
+      'Step flashing continuous and properly lapped (shingle-style, water sheds outward/downhill)',
+      'Head/transition flashing installed at all points where different cladding materials meet today',
+      'Window and door flashing (pan, sill, jamb, head) installed in correct sequence before trim covers it',
+      'No flashing gaps or reverse laps that would direct water behind the cladding'
+    ]},
+    { id: 'sealants', name: 'Sealants & Caulking', trade: null, alwaysInclude: true, items: [
+      'Correct sealant type used for each substrate pairing installed today',
+      'Backer rod installed where gaps exceed sealant tolerance',
+      'Joints tooled smooth, no gaps, pinholes, or excess squeeze-out',
+      'Color match confirmed against adjacent material',
+      'Weep paths and drainage gaps left open, not accidentally sealed shut'
+    ]},
+    { id: 'vinyl', name: 'Vinyl', trade: 'Vinyl', items: [
+      'Panels square, level, and properly locked into place (not fastened tight)',
+      'No buckling, warping, or gaps forming between panels',
+      'Expansion gaps correct at windows, doors, corners, and other penetrations',
+      'J-channel, trim, and corner posts fastened securely',
+      'Fastener spacing and depth correct, not overdriven',
+      'Color/batch consistent with adjoining panels'
+    ]},
+    { id: 'lapsiding', name: 'Lap Siding', trade: 'Lap Siding', items: [
+      'Courses level and properly aligned',
+      'Overlap consistent per manufacturer spec',
+      'Expansion gap of 1/8" verified and consistent course to course',
+      'Fasteners not overdriven; spacing per schedule',
+      'Joints and edges sealed at time of install',
+      'No cracks, splits, or warping in panels installed today',
+      'Color/batch consistent'
+    ]},
+    { id: 'boardbatten', name: 'Board and Batten', trade: 'Board and Batten', items: [
+      'Battens evenly spaced and securely fastened',
+      'Panel unions have z-flashing or caulk installed where required',
+      'No warping, cracks, or gaps in boards installed today',
+      'Seams sealed as installed',
+      'Color/batch consistent, uniform appearance'
+    ]},
+    { id: 'stucco', name: 'Stucco', trade: 'Stucco', items: [
+      "Application even and smooth, correct coat thickness for today's pass",
+      'Paper backing trimmed at the base as work progresses',
+      'Edges, joints, and transitions to other materials smooth, straight, and sealed',
+      'Weep screed remains clear and unobstructed',
+      'No cracking, bubbling, or discoloration in fresh material',
+      "Color consistent across today's mix/lift",
+      'No stray mortar splatter on walls or floor'
+    ]},
+    { id: 'brick', name: 'Brick', trade: 'Brick', items: [
+      'Mortar joints consistent thickness and properly tooled',
+      'Coursing level, alignment and spacing even',
+      'Weep holes placed correctly for drainage',
+      'Lintels and ties installed and secured correctly as work progresses',
+      'No chipped, cracked, or discolored brick used',
+      'Brick color/blend consistent, no mixed pallets',
+      'No stray mortar splatter on walls or floor'
+    ]},
+    { id: 'stone', name: 'Stone', trade: 'Stone', items: [
+      'Veneer level, evenly placed, and aligned',
+      'Grout lines consistent and sealed',
+      'Secure adhesion to substrate, no loose or shifting stones',
+      'No dings or chips in stone face',
+      'Color/blend consistent, same rock, not mixed',
+      'No stray mortar splatter on walls or floor'
+    ]},
+    { id: 'soffitfascia', name: 'Soffit and Fascia', trade: 'Soffit and Fascia', items: [
+      'Soffit panels aligned and securely fastened',
+      'Vent pattern consistent and uniform as installed',
+      'Fascia boards straight, no bows, securely installed',
+      'Transitions to roofline sealed as work progresses',
+      'No dents, bends, or paint blemishes in installed material'
+    ]},
+    { id: 'windowsdoors', name: 'Windows and Doors', trade: 'Windows and Doors', items: [
+      'Flashing and caulking installed watertight as each unit is set',
+      'Trim securely installed with no gaps',
+      'Fastener schedule followed around trim and nailing flanges',
+      'No scratches, dents, or damage to units at time of install'
+    ]},
+    { id: 'guttersdownspouts', name: 'Gutters and Downspouts', trade: 'Gutters and Downspouts', items: [
+      'Gutters securely attached with correct pitch for drainage',
+      'Downspouts securely attached and routed away from foundation',
+      'Hanger/fastener spacing correct',
+      'No dents or damage to installed sections'
+    ]},
+    { id: 'paintfinishes', name: 'Paint and Finishes', trade: 'Paint and Finishes', items: [
+      'Color and texture uniform across surfaces completed today',
+      'No drips, streaks, or missed areas',
+      'Touch-ups needed logged in notes'
+    ]}
+  ],
+
+  closeout: [
+    { id: 'completeness', name: 'Project Completeness & Cleanliness', trade: null, alwaysInclude: true, items: [
+      'Verify all work in scope has been completed (all trades, finishing details, corbels/shutters, etc.)',
+      'Confirm key exterior material placement is correct across all elevations (final check)',
+      'Clean project site of rubbish, waste material, litter, and other foreign substances',
+      'Remove tools, construction equipment, machinery, and surplus material from the jobsite',
+      'Sweep paved areas broom clean; remove petrochemical spills, stains, and other foreign deposits from flatwork',
+      'Run a magnetic sweeper across the yard, driveway, and walkways to pick up all loose nails, screws, and metal debris',
+      'Clean exposed exterior finishes (siding, stucco, stone, trim) to a dirt-free condition, free of stains, films, and construction residue — without disturbing natural weathering',
+      'Remove paint overspray, mortar droppings, and other residue from windows, gutters, siding, and other finished surfaces',
+      'Clean glass in windows and doors; remove glazing compounds and construction residue without scratching surfaces',
+      'Remove temporary labels, stickers, or protective film not meant to remain',
+      'Remove debris and dust from limited-access areas (roof penetrations, attic vents, weep holes, and similar spaces)',
+      'Dispose of all construction waste in compliance with local and environmental regulations'
+    ]},
+    { id: 'image_capture', name: 'Complete Final Image Capture', trade: null, alwaysInclude: true, items: [
+      'Capture 360 video',
+      'Capture HQ still images of all 4 sides',
+      'Capture HQ still images of any defects or potential areas of concern',
+      'Confirm all installations match Exterior Key'
+    ]},
+    { id: 'flashing', name: 'Flashing & Weatherproofing', trade: null, alwaysInclude: true, items: [
+      'Verify kick-out flashing is present and correctly directing water at every roof-to-wall intersection',
+      'Verify step flashing is continuous with no gaps along all roof-wall junctions',
+      'Verify head/transition flashing is present at every point two different materials meet',
+      'Verify window and door flashing is complete and watertight (no shortcuts visible from the exterior)',
+      'Confirm no flashing was covered, removed, or damaged by later trades'
+    ]},
+    { id: 'sealants', name: 'Sealants & Caulking', trade: null, alwaysInclude: true, items: [
+      'Verify correct sealant type was used at each substrate pairing',
+      'Inspect all sealant joints for gaps, pinholes, or cracking',
+      'Verify sealant color match is consistent across all elevations',
+      'Confirm weep paths and drainage gaps were not sealed shut',
+      "Confirm sealant has fully cured per manufacturer's timeline before final walk"
+    ]},
+    { id: 'vinyl', name: 'Vinyl', trade: 'Vinyl', items: [
+      'Check for buckling, warping, or gaps in the vinyl',
+      'Verify all panels are properly locked into place',
+      'Inspect trim and corner pieces for secure installation',
+      'Confirm proper expansion gaps around windows, doors, and other openings',
+      'Verify fastener spacing and depth are correct (no over- or under-driving)',
+      'Confirm color/batch is uniform across all elevations, no mixed dye lots'
+    ]},
+    { id: 'lapsiding', name: 'Lap Siding', trade: 'Lap Siding', items: [
+      'Ensure panels are level and properly aligned',
+      'Verify overlapping is consistent and per manufacturer guidelines',
+      'Verify expansion gaps of 1/8"; check consistency and uniformity of expansion gaps',
+      'Inspect for secure fastening without overdriving nails',
+      'Check for visible damage such as cracks, splits, or warping',
+      'Ensure proper sealing at joints and edges',
+      'Confirm color/batch is uniform across all elevations'
+    ]},
+    { id: 'boardbatten', name: 'Board and Batten', trade: 'Board and Batten', items: [
+      'Confirm battens are evenly spaced and securely fastened',
+      'Check boards for warping, cracks, or gaps',
+      'Inspect all seams for proper sealing',
+      'Verify uniformity in appearance and alignment',
+      'Inspect panel unions for z-flashing or caulk',
+      'Verify fastener spacing and depth are correct',
+      'Confirm color/batch is uniform, no mixed material'
+    ]},
+    { id: 'stucco', name: 'Stucco', trade: 'Stucco', items: [
+      'Verify even and smooth application of stucco',
+      'Check for cracks, bubbling, or discoloration',
+      'Confirm proper curing and drying time',
+      'Verify that all the paper backing has been trimmed at the base of all stucco areas',
+      'Inspect edges, joints, and transitions to other materials for smoothness, straightness, and sealing',
+      'Confirm color is consistent across all elevations'
+    ]},
+    { id: 'brick', name: 'Brick', trade: 'Brick', items: [
+      'Inspect mortar joints for consistent thickness and proper tooling',
+      'Check bricks for chips, cracks, or discoloration',
+      'Verify alignment and even spacing of bricks',
+      'Ensure proper weep hole placement for drainage',
+      'Confirm that brick lintel and ties are correctly installed and secured',
+      'Confirm brick color/blend is consistent, no mixed pallets'
+    ]},
+    { id: 'stone', name: 'Stone', trade: 'Stone', items: [
+      'Inspect stone veneer for even placement, levelness, and alignment',
+      'Check for consistent grout lines and proper sealing',
+      'Verify secure adhesion to the substrate; confirm no loose or shifting stones',
+      'Check for dings, chips, or damage in the stone face',
+      'Confirm stone color/blend is consistent, no mixed rock'
+    ]},
+    { id: 'soffitfascia', name: 'Soffit and Fascia', trade: 'Soffit and Fascia', items: [
+      'Inspect soffit panels for alignment and secure fastening',
+      'Verify eaves have vented soffit installed; verify pattern of vents is consistent and uniform',
+      'Check fascia boards for straightness and secure installation',
+      'Verify paint or finish is uniform and free of chips or scratches',
+      'Inspect all transitions to the roofline to ensure they are properly sealed',
+      'Check for bends, dents, or dings in fascia'
+    ]},
+    { id: 'windowsdoors', name: 'Windows and Doors', trade: 'Windows and Doors', items: [
+      'Inspect flashing and caulking around windows and doors for watertight seals',
+      'Verify trim pieces are securely installed and free of gaps',
+      'Ensure no visible scratches, dents, or other damage',
+      'Verify fastener schedule was followed around trim and flanges'
+    ]},
+    { id: 'guttersdownspouts', name: 'Gutters and Downspouts', trade: 'Gutters and Downspouts', items: [
+      'Confirm gutters are securely attached',
+      'Inspect downspouts for secure attachment and extension away from the foundation',
+      'Check for dents, dings, or damage to gutters and downspouts'
+    ]},
+    { id: 'paintfinishes', name: 'Paint and Finishes', trade: 'Paint and Finishes', items: [
+      'Inspect all painted or finished surfaces for uniformity in color and texture',
+      'Check for drips, streaks, or missed areas',
+      'Check for blemishes or touch-up areas needing attention'
+    ]}
+  ]
+};
 
 var G_asanaJobs = null;
 var G_qcSelectedTrades = [];
+var G_qcWalkType = null;
+var G_qcItemStatus = {};
 
 function qcResetForm() {
   G_qcSelectedTrades = [];
+  G_qcWalkType = null;
+  G_qcItemStatus = {};
   var ji = document.getElementById('qc-job-input');   if (ji) ji.value = '';
   var jg = document.getElementById('qc-job-gid');     if (jg) jg.value = '';
-  var su = document.getElementById('qc-submitter');   if (su) su.value = '';
+  var sd = document.getElementById('qc-submitter-display');
+  if (sd) sd.textContent = (G.config && G.config.userName) || G.userEmail || '';
+  buildWalkTypeChips();
   buildTradeChips();
   qcGoToStep1();
+}
+
+function buildWalkTypeChips() {
+  var el = document.getElementById('qc-walktype-chips');
+  if (!el) return;
+  el.innerHTML = QC_WALK_TYPES.map(function(w) {
+    return '<button type="button" class="chip" data-walktype="' + esc(w.id) + '" onclick="qcSelectWalkType(\'' + esc(w.id) + '\', this)">' + esc(w.label) + '</button>';
+  }).join('');
+}
+
+function qcSelectWalkType(walkType, btn) {
+  G_qcWalkType = walkType;
+  var siblings = document.querySelectorAll('#qc-walktype-chips [data-walktype]');
+  siblings.forEach(function(b) { b.classList.toggle('active', b === btn); });
 }
 
 function buildTradeChips() {
@@ -5750,9 +6044,8 @@ function qcGoToStep1() {
 
 function qcGoToStep2() {
   var jobGid  = (document.getElementById('qc-job-gid') || {}).value || '';
-  var submitter = (document.getElementById('qc-submitter').value || '').trim();
-  if (!jobGid)    { alert('Please select a job.'); return; }
-  if (!submitter) { alert('Please enter your name.'); return; }
+  if (!G_qcWalkType) { alert('Please select which walk this is.'); return; }
+  if (!jobGid)        { alert('Please select a job.'); return; }
 
   renderQcSections();
   document.getElementById('qc-step1').style.display = 'none';
@@ -5821,15 +6114,22 @@ function qcSelectJob(gid, name) {
   if (drop)  drop.style.display = 'none';
 }
 
+function qcCurrentSections() {
+  var all = QC_SECTIONS_BY_WALK[G_qcWalkType] || [];
+  return all.filter(function(sec) {
+    return sec.alwaysInclude || G_qcSelectedTrades.indexOf(sec.trade) !== -1;
+  });
+}
+
 function renderQcSections() {
   var el = document.getElementById('qc-sections');
   if (!el) return;
-  var sections = QC_SECTIONS.filter(function(sec) {
-    return sec.alwaysInclude || G_qcSelectedTrades.indexOf(sec.trade) !== -1;
-  });
+  G_qcItemStatus = {};
+  var sections = qcCurrentSections();
   el.innerHTML = sections.map(function(sec) {
     var items = sec.items.map(function(item, idx) {
       var itemId = sec.id + '_' + idx;
+      G_qcItemStatus[itemId] = 'pass';
       return '<div style="padding:10px 0;border-bottom:1px solid #f5f5f5">' +
         '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">' +
           '<span style="font-size:13px;color:#333;flex:1">' + item + '</span>' +
@@ -5838,6 +6138,8 @@ function renderQcSections() {
               'style="padding:5px 12px;border-radius:20px;border:1.5px solid #ddd;background:#fff;font-size:12px;font-weight:600;cursor:pointer;color:#888">Pass</button>' +
             '<button onclick="qcToggle(this,\'flag\')" data-item="' + itemId + '" data-val="flag" ' +
               'style="padding:5px 12px;border-radius:20px;border:1.5px solid #ddd;background:#fff;font-size:12px;font-weight:600;cursor:pointer;color:#888">Flag</button>' +
+            '<button onclick="qcToggle(this,\'na\')" data-item="' + itemId + '" data-val="na" ' +
+              'style="padding:5px 12px;border-radius:20px;border:1.5px solid #ddd;background:#fff;font-size:12px;font-weight:600;cursor:pointer;color:#888">N/A</button>' +
           '</div>' +
         '</div>' +
         '<div id="qc-notes-' + itemId + '" style="display:none;margin-top:8px">' +
@@ -5854,14 +6156,22 @@ function renderQcSections() {
   }).join('');
 }
 
+var QC_TOGGLE_STYLES = {
+  pass: { background: '#e6f4ea', borderColor: '#34a853', color: '#1e7e34' },
+  flag: { background: '#fef3cd', borderColor: '#f59e0b', color: '#b45309' },
+  na:   { background: '#eee',    borderColor: '#999',    color: '#555' }
+};
+
 function qcToggle(btn, val) {
   var itemId = btn.getAttribute('data-item');
+  G_qcItemStatus[itemId] = val;
   var siblings = document.querySelectorAll('[data-item="' + itemId + '"]');
   siblings.forEach(function(b) {
     var isActive = b.getAttribute('data-val') === val;
-    b.style.background    = isActive ? (val === 'pass' ? '#e6f4ea' : '#fef3cd') : '#fff';
-    b.style.borderColor   = isActive ? (val === 'pass' ? '#34a853' : '#f59e0b') : '#ddd';
-    b.style.color         = isActive ? (val === 'pass' ? '#1e7e34' : '#b45309') : '#888';
+    var style = QC_TOGGLE_STYLES[val];
+    b.style.background  = isActive ? style.background  : '#fff';
+    b.style.borderColor = isActive ? style.borderColor : '#ddd';
+    b.style.color       = isActive ? style.color       : '#888';
   });
   var notesDiv = document.getElementById('qc-notes-' + itemId);
   if (notesDiv) notesDiv.style.display = val === 'flag' ? '' : 'none';
@@ -5870,25 +6180,18 @@ function qcToggle(btn, val) {
 function submitQualityCheck() {
   var jobGid  = (document.getElementById('qc-job-gid')  || {}).value || '';
   var jobName = (document.getElementById('qc-job-input') || {}).value || '';
-  var submitter = (document.getElementById('qc-submitter').value || '').trim();
+  var submitter = (G.config && G.config.userName) || G.userEmail || 'Field';
+  var walkTypeLabel = (QC_WALK_TYPES.filter(function(w) { return w.id === G_qcWalkType; })[0] || {}).label || '';
 
-  if (!jobGid)    { alert('Please select a job.'); return; }
-  if (!submitter) { alert('Please enter your name.'); return; }
+  if (!G_qcWalkType) { alert('Please select which walk this is.'); return; }
+  if (!jobGid)        { alert('Please select a job.'); return; }
 
-  // Collect section results (only from sections actually shown - i.e. General + selected trades)
+  // Collect section results (only from sections actually shown - i.e. always-shown + selected trades)
   var sections = [];
-  QC_SECTIONS.filter(function(sec) {
-    return sec.alwaysInclude || G_qcSelectedTrades.indexOf(sec.trade) !== -1;
-  }).forEach(function(sec) {
+  qcCurrentSections().forEach(function(sec) {
     sec.items.forEach(function(item, idx) {
       var itemId  = sec.id + '_' + idx;
-      var btns    = document.querySelectorAll('[data-item="' + itemId + '"]');
-      var status  = 'pass';
-      btns.forEach(function(b) {
-        if (b.style.background !== 'rgb(255, 255, 255)' && b.style.background !== '' && b.style.background !== '#fff') {
-          status = b.getAttribute('data-val');
-        }
-      });
+      var status  = G_qcItemStatus[itemId] || 'pass';
       var notesEl = document.getElementById('qc-notesval-' + itemId);
       sections.push({ name: item, status: status, notes: notesEl ? notesEl.value.trim() : '' });
     });
@@ -5898,7 +6201,8 @@ function submitQualityCheck() {
   btn.disabled = true; btn.textContent = 'Submitting...';
 
   gasCall('submitQualityCheck',
-    { jobGid: jobGid, jobName: jobName, submitter: submitter, trades: G_qcSelectedTrades.slice(), sections: sections },
+    { jobGid: jobGid, jobName: jobName, submitter: submitter, walkType: G_qcWalkType, walkTypeLabel: walkTypeLabel,
+      trades: G_qcSelectedTrades.slice(), sections: sections },
     function(r) {
       btn.disabled = false; btn.textContent = 'Submit Quality Check';
       var res = document.getElementById('qc-result');
