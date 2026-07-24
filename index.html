@@ -450,12 +450,13 @@
     <div class="card" id="create-form-card">
       <div class="card-title" style="display:none">New Purchase Order</div>
 
-      <div class="form-group">
+      <div class="form-group" style="position:relative">
         <label class="form-label">Builder &amp; Job *</label>
-        <input type="text" class="form-control" id="c-job-combo" list="c-job-datalist"
+        <input type="text" class="form-control" id="c-job-combo" autocomplete="off"
                placeholder="e.g. CRESCENT_RIDGE-WEGNER"
-               oninput="this.value=this.value.toUpperCase().replace(/\s+/g,'_')">
-        <datalist id="c-job-datalist"></datalist>
+               oninput="this.value=this.value.toUpperCase().replace(/\s+/g,'_'); cJobFilter(this.value)"
+               onfocus="cJobFilter(this.value)">
+        <div id="c-job-dropdown" style="display:none;position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #ddd;border-radius:8px;margin-top:4px;max-height:220px;overflow-y:auto;z-index:20;box-shadow:0 4px 12px rgba(0,0,0,0.12)"></div>
         <p style="font-size:12px;color:#888;margin:4px 0 0">Pick an existing job, or type a new one as BUILDER_NAME-JOB_NAME</p>
       </div>
       <div class="form-group">
@@ -765,10 +766,16 @@
     </div>
       <div style="padding:16px;max-width:680px;margin:0 auto">
         <div style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:12px">
-          <p style="font-size:13px;color:#666;margin:0 0 14px">Select a job to see its status, quality walks, and cost summary.</p>
-          <div style="display:flex;gap:8px;margin-bottom:4px">
-            <input id="jc-input" list="jc-jobs-list" placeholder="Type or pick a job…" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none;flex:1">
-            <datalist id="jc-jobs-list"></datalist>
+          <p style="font-size:13px;color:#666;margin:0 0 14px">Select a job (from Asana) to see its status, quality walks, and cost summary.</p>
+          <div style="display:flex;gap:8px;margin-bottom:4px;align-items:flex-start">
+            <div style="position:relative;flex:1">
+              <input id="jc-job-input" placeholder="Search jobs…" autocomplete="off"
+                     oninput="jcJobFilter(this.value); document.getElementById('jc-job-gid').value='';"
+                     onfocus="jcJobFilter(this.value)"
+                     style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box">
+              <input type="hidden" id="jc-job-gid" value="">
+              <div id="jc-job-dropdown" style="display:none;position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #ddd;border-radius:8px;margin-top:4px;max-height:220px;overflow-y:auto;z-index:20;box-shadow:0 4px 12px rgba(0,0,0,0.12)"></div>
+            </div>
             <button onclick="loadJobDashboard()" style="background:#1F3971;color:#fff;border:none;border-radius:8px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap">Load</button>
           </div>
         </div>
@@ -1879,22 +1886,47 @@ function fillSelects() {
   var cs = document.getElementById('c-status');
   if (cs) cs.value = 'Pending Pickup';
 
-  // Builder+Job combo datalist for New PO. G.jobComboMap lets submitCreate()
-  // recover the exact (builder, job) pair for a known combo without having
-  // to guess where to split the "BUILDER_NAME-JOB_NAME" string (either
-  // segment can legitimately contain its own hyphen, e.g. "ALT-M").
+  // Builder+Job combo for New PO. G.jobComboMap lets submitCreate() recover
+  // the exact (builder, job) pair for a known combo without having to guess
+  // where to split the "BUILDER_NAME-JOB_NAME" string (either segment can
+  // legitimately contain its own hyphen, e.g. "ALT-M"). Picker UI is a
+  // custom dropdown (cJobFilter/cSelectJobCombo) reading this map directly,
+  // not a native <input list> datalist -- datalist's browser-positioned
+  // suggestion box renders unreliably on mobile (can land behind/above the
+  // on-screen keyboard).
   var jobOpts = (G.config.jobOptions || []);
-  var jobDatalist = document.getElementById('c-job-datalist');
-  if (jobDatalist) {
-    jobDatalist.innerHTML = '';
-    G.jobComboMap = {};
-    jobOpts.forEach(function(o) {
-      var combo = o.builder + '-' + o.job;
-      if (G.jobComboMap[combo]) return;
-      G.jobComboMap[combo] = { builder: o.builder, job: o.job };
-      jobDatalist.insertAdjacentHTML('beforeend', '<option value="'+esc(combo)+'">');
-    });
-  }
+  G.jobComboMap = {};
+  jobOpts.forEach(function(o) {
+    var combo = o.builder + '-' + o.job;
+    if (G.jobComboMap[combo]) return;
+    G.jobComboMap[combo] = { builder: o.builder, job: o.job };
+  });
+}
+
+function cJobFilter(q) {
+  var drop = document.getElementById('c-job-dropdown');
+  if (!drop || !G.jobComboMap) return;
+  q = (q || '').trim();
+  var combos = Object.keys(G.jobComboMap);
+  var filtered = q ? combos.filter(function(c){ return c.indexOf(q) !== -1; }) : combos;
+  drop.innerHTML = '';
+  if (!filtered.length) { drop.style.display = 'none'; return; }
+  filtered.slice(0, 60).forEach(function(c) {
+    var d = document.createElement('div');
+    d.textContent = c;
+    d.style.cssText = 'padding:11px 14px;font-size:14px;color:#222;cursor:pointer;border-bottom:1px solid #f5f5f5';
+    d.addEventListener('mousedown', function(e) { e.preventDefault(); cSelectJobCombo(c); });
+    d.addEventListener('touchend',  function(e) { e.preventDefault(); cSelectJobCombo(c); });
+    drop.appendChild(d);
+  });
+  drop.style.display = '';
+}
+
+function cSelectJobCombo(combo) {
+  var inp  = document.getElementById('c-job-combo');
+  var drop = document.getElementById('c-job-dropdown');
+  if (inp)  inp.value = combo;
+  if (drop) drop.style.display = 'none';
 }
 
 function loadData() {
@@ -3120,7 +3152,8 @@ function handlePhotoSlot(input) {
       } else {
         slot.className = 'photo-slot';
         slot.onclick = function() { openPhotoSlot(idx); };
-        slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">Failed — retry</span></div>';
+        var failMsg = res.noDriveId ? 'No Drive ID — add one or contact Purchaser' : 'Failed — retry';
+        slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">' + failMsg + '</span></div>';
       }
     }, function() {
       clearTimeout(_driveTimeout);
@@ -3954,18 +3987,46 @@ function renderSops(filter) {
 }
 
 function openJobDashboardPanel() {
-  var dl = document.getElementById('jc-jobs-list');
-  if (dl) {
-    dl.innerHTML = '';
-    gasCall('getJobsRegistry', {}, function(r) {
-      if (r.jobs) {
-        G.jobsRegistry = r.jobs;
-        r.jobs.forEach(function(j) {
-          var o = document.createElement('option'); o.value = j.jobName; dl.appendChild(o);
-        });
-      }
-    });
-  }
+  if (window._jdJobs) { jcJobFilter(''); return; }
+  var inp = document.getElementById('jc-job-input');
+  if (inp) inp.placeholder = 'Loading jobs...';
+  gasCall('getAsanaJobs', {}, function(r) {
+    window._jdJobs = r.jobs || [];
+    var inp2 = document.getElementById('jc-job-input');
+    if (inp2) inp2.placeholder = 'Search jobs…';
+  }, function() {
+    var inp2 = document.getElementById('jc-job-input');
+    if (inp2) inp2.placeholder = 'Error loading jobs';
+  });
+}
+
+function jcJobFilter(q) {
+  var drop = document.getElementById('jc-job-dropdown');
+  if (!drop || !window._jdJobs) return;
+  q = (q || '').toLowerCase().trim();
+  var filtered = q
+    ? window._jdJobs.filter(function(j){ return j.name.toLowerCase().indexOf(q) !== -1; })
+    : window._jdJobs;
+  drop.innerHTML = '';
+  if (!filtered.length) { drop.style.display = 'none'; return; }
+  filtered.slice(0, 60).forEach(function(j) {
+    var d = document.createElement('div');
+    d.textContent = j.name;
+    d.style.cssText = 'padding:11px 14px;font-size:14px;color:#222;cursor:pointer;border-bottom:1px solid #f5f5f5';
+    d.addEventListener('mousedown', function(e) { e.preventDefault(); jcSelectJob(j.gid, j.name); });
+    d.addEventListener('touchend',  function(e) { e.preventDefault(); jcSelectJob(j.gid, j.name); });
+    drop.appendChild(d);
+  });
+  drop.style.display = '';
+}
+
+function jcSelectJob(gid, name) {
+  var inp   = document.getElementById('jc-job-input');
+  var drop  = document.getElementById('jc-job-dropdown');
+  var gidEl = document.getElementById('jc-job-gid');
+  if (inp)   inp.value   = name;
+  if (gidEl) gidEl.value = gid;
+  if (drop)  drop.style.display = 'none';
 }
 
 function jobStatusBadgeCls(status) {
@@ -3981,11 +4042,12 @@ function daysLiveFrom(startDate) {
 }
 
 function loadJobDashboard() {
-  var job = document.getElementById('jc-input').value.trim();
-  if (!job) { showToast('Enter a job name'); return; }
+  var jobGid  = document.getElementById('jc-job-gid').value.trim();
+  var jobName = document.getElementById('jc-job-input').value.trim();
+  if (!jobGid) { showToast('Pick a job from the list'); return; }
   document.getElementById('jc-loading').style.display = 'block';
   document.getElementById('jc-results').style.display = 'none';
-  gasCall('getJobDashboard', { jobName: job }, function(r) {
+  gasCall('getJobDashboard', { jobGid: jobGid, jobName: jobName }, function(r) {
     document.getElementById('jc-loading').style.display = 'none';
     if (r.error) { showToast('Error: ' + r.error); return; }
     renderJobInfoCard(r.meta);

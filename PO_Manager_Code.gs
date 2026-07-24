@@ -91,8 +91,7 @@ function doPost(e) {
     else if (action === 'getJobList')          result = getJobList();
     else if (action === 'getJobCostSummary')   result = getJobCostSummary(payload.jobRef);
     else if (action === 'getMissingInvoices')  result = getMissingInvoices();
-    else if (action === 'getJobsRegistry')     result = getJobsRegistry();
-    else if (action === 'getJobDashboard')     result = getJobDashboard(payload.jobName);
+    else if (action === 'getJobDashboard')     result = getJobDashboard(payload);
     else if (action === 'updateJobMeta')       result = updateJobMeta(payload);
     else if (action === 'getVendorSpend')      result = getVendorSpend(payload.startDate, payload.endDate);
     else if (action === 'categorizeInvoices')  result = categorizeInvoices(payload);
@@ -853,14 +852,22 @@ function getPurchasingRootFolder() {
  * exists, else the global "Purchasing" folder. isProjectFolder tells the
  * caller whether to skip the ANYONE_WITH_LINK sharing fixup (project
  * folders live on a Shared Drive, governed by drive membership instead).
+ *
+ * If the Builder+Job pair IS in the Projects sheet but its Drive ID cell
+ * is blank, unparseable, or points at an inaccessible folder, this is
+ * treated as a misconfiguration worth fixing rather than silently
+ * dumping the upload into Purchasing -- callers should block and surface
+ * { blocked: true } to the user instead. A job that simply isn't in the
+ * Projects sheet at all still falls back to Purchasing as before.
  */
 function resolveBaseFolder(builder, jobRef) {
-  var projectFolderId = getProjectFolderId(builder, jobRef);
-  if (projectFolderId) {
+  var match = getProjectFolderId(builder, jobRef);
+  if (match.matched) {
+    if (!match.folderId) return { blocked: true };
     try {
-      return { folder: DriveApp.getFolderById(projectFolderId), isProjectFolder: true };
+      return { folder: DriveApp.getFolderById(match.folderId), isProjectFolder: true };
     } catch (folderErr) {
-      // bad/inaccessible ID in the Projects sheet -- fall back below
+      return { blocked: true };
     }
   }
   return { folder: getPurchasingRootFolder(), isProjectFolder: false };
@@ -898,32 +905,36 @@ var PROJECTS_SHEET_NAME = "Projects";
 
 /**
  * Looks up the Drive folder ID for a given Contractor + Job Name pair in
- * the "Projects" sheet. Returns null (not throw) on any failure to look
- * up or on no match, so callers can fall back to the default folder.
+ * the "Projects" sheet. Returns { matched, folderId }: matched is true
+ * only when a Contractor+Job row was found (folderId may still be null
+ * if that row's Drive ID cell is blank/unparseable) -- this lets
+ * resolveBaseFolder tell "job not set up at all" (fall back to
+ * Purchasing) apart from "job set up but Drive ID missing/broken"
+ * (block the upload). Never throws; failures read as no match.
  */
 function getProjectFolderId(builder, jobRef) {
   try {
     var wantBuilder = (builder || "").toString().trim().toLowerCase();
     var wantJob     = (jobRef  || "").toString().trim().toLowerCase();
-    if (!wantBuilder || !wantJob) return null;
+    if (!wantBuilder || !wantJob) return { matched: false, folderId: null };
 
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PROJECTS_SHEET_NAME);
-    if (!sheet) return null;
+    if (!sheet) return { matched: false, folderId: null };
 
     var lastRow = sheet.getLastRow();
-    if (lastRow < 2) return null;
+    if (lastRow < 2) return { matched: false, folderId: null };
 
     var data = sheet.getRange(2, 1, lastRow - 1, 3).getValues(); // A:Contractor, B:Job Name, C:Drive ID
     for (var i = 0; i < data.length; i++) {
       var rowBuilder = (data[i][0] || "").toString().trim().toLowerCase();
       var rowJob     = (data[i][1] || "").toString().trim().toLowerCase();
       if (rowBuilder === wantBuilder && rowJob === wantJob) {
-        return extractDriveFolderId(data[i][2]);
+        return { matched: true, folderId: extractDriveFolderId(data[i][2]) };
       }
     }
-    return null;
+    return { matched: false, folderId: null };
   } catch (e) {
-    return null;
+    return { matched: false, folderId: null };
   }
 }
 
@@ -941,7 +952,10 @@ function extractDriveFolderId(driveUrlOrId) {
 
 function savePhotoToDrive(base64Data, mimeType, filename, builder, jobRef, docType, poNum) {
   try {
-    var base   = resolveBaseFolder(builder, jobRef);
+    var base = resolveBaseFolder(builder, jobRef);
+    if (base.blocked) {
+      return { success: false, noDriveId: true, error: 'No Drive ID found for this job — please add one to the Projects sheet or contact Purchaser.' };
+    }
     var folder = getTypedUploadFolder(base.folder, docType, poNum);
 
     var bytes = Utilities.base64Decode(base64Data);
@@ -1220,55 +1234,45 @@ function ensureProjectsHeaders_() {
 }
 
 /**
- * Canonical job picker for the Job Dashboard panel, sourced from the
- * "Projects" sheet -- distinct from getJobList() (free-text jobRef scrape
- * of PO Database), which is left untouched for whatever else uses it.
- * Returns rowIndex so updateJobMeta can write back without re-matching.
+ * Best-effort split of an Asana task name formatted "Builder, Job Name,
+ * Address" (the convention createProjectAndTask writes) down to the bare
+ * Job Name segment, for matching against PO Database jobRef / Projects
+ * sheet Job Name (neither of which know about Asana's longer task names).
+ * Falls back to the raw string for tasks that don't follow the convention
+ * (manually created Asana tasks, older jobs, etc.) -- cost/invoice lookups
+ * for those will simply come back empty rather than erroring.
  */
-function getJobsRegistry() {
-  try {
-    ensureProjectsHeaders_();
-    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PROJECTS_SHEET_NAME);
-    if (!sheet) return { error: "Sheet '" + PROJECTS_SHEET_NAME + "' not found." };
-    var lastRow = sheet.getLastRow();
-    if (lastRow < 2) return { success: true, jobs: [] };
-    var data = sheet.getRange(2, 1, lastRow - 1, 6).getValues(); // A:F
-    var jobs = [];
-    for (var i = 0; i < data.length; i++) {
-      var jobName = (data[i][1] || '').toString().trim();
-      if (!jobName) continue;
-      jobs.push({
-        rowIndex:   i + 2,
-        contractor: (data[i][0] || '').toString().trim(),
-        jobName:    jobName,
-        status:     (data[i][4] || '').toString().trim(),
-        startDate:  data[i][5] instanceof Date ? Utilities.formatDate(data[i][5], Session.getScriptTimeZone(), 'yyyy-MM-dd') : '',
-        hasDrive:   !!extractDriveFolderId(data[i][2]),
-        hasAsana:   !!(data[i][3] || '').toString().trim()
-      });
-    }
-    return { success: true, jobs: jobs };
-  } catch (e) { return { error: e.toString() }; }
+function parseAsanaJobName_(rawTaskName) {
+  var s = (rawTaskName || '').toString().trim();
+  var parts = s.split(',');
+  return parts.length >= 2 ? parts[1].trim() : s;
 }
 
 /**
- * Combined payload for the Job Dashboard panel: job meta (Projects row),
- * cost summary (reuses getJobCostSummary as-is, spend only), missing-invoice
- * count for the job, and quality-walk history (reuses the "Quality Checks"
- * log appended to by submitQualityCheck). One round trip, matching this
- * app's existing one-action-per-panel convention.
+ * Combined payload for the Job Dashboard panel: job meta, cost summary
+ * (reuses getJobCostSummary as-is, spend only), missing-invoice count, and
+ * quality-walk history. One round trip, matching this app's existing
+ * one-action-per-panel convention.
  *
- * Quality Check's job picker uses Asana task names formatted as
- * "Builder, Job Name, Address" -- not the bare Projects-sheet Job Name --
- * so exact string matching would almost never hit. Quality-walk rows are
- * matched by substring (either direction), same fuzzy style already used
- * in reconcileStatement.
+ * The job picker is sourced from Asana (getAsanaJobs, same list Quality
+ * Check already uses) -- payload.jobGid is the Asana task gid (primary
+ * key), payload.jobName is that task's full "Builder, Job Name, Address"
+ * display string. The "Projects" sheet (Drive folder, Status, Start Date)
+ * is looked up by exact Asana Task GID match (column D) when the job has
+ * been linked via the New Project intake flow; otherwise meta falls back
+ * to a parsed short name with no editable Status/Start Date (nowhere to
+ * save them). Cost/invoice/quality matching all use the resolved short
+ * job name; quality-walk rows additionally match by exact Job GID first
+ * (submitQualityCheck logs it), falling back to fuzzy substring matching
+ * only for any row that was logged without one.
  */
-function getJobDashboard(jobName) {
+function getJobDashboard(payload) {
   try {
-    var target = (jobName || '').toString().trim();
-    if (!target) return { error: 'Job name is required.' };
-    var targetLower = target.toLowerCase();
+    var jobGid = (payload.jobGid || '').toString().trim();
+    if (!jobGid) return { error: 'A job must be selected from the list.' };
+    var rawJobName = (payload.jobName || '').toString().trim();
+
+    ensureProjectsHeaders_();
 
     var meta = null;
     var pSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PROJECTS_SHEET_NAME);
@@ -1277,14 +1281,14 @@ function getJobDashboard(jobName) {
       if (pLastRow >= 2) {
         var pData = pSheet.getRange(2, 1, pLastRow - 1, 6).getValues();
         for (var i = 0; i < pData.length; i++) {
-          var rowJob = (pData[i][1] || '').toString().trim();
-          if (rowJob.toLowerCase() !== targetLower) continue;
+          var rowGid = (pData[i][3] || '').toString().trim();
+          if (!rowGid || rowGid !== jobGid) continue;
           meta = {
             rowIndex:      i + 2,
             contractor:    (pData[i][0] || '').toString().trim(),
-            jobName:       rowJob,
+            jobName:       (pData[i][1] || '').toString().trim(),
             driveFolderId: extractDriveFolderId(pData[i][2]),
-            asanaTaskGid:  (pData[i][3] || '').toString().trim(),
+            asanaTaskGid:  rowGid,
             status:        (pData[i][4] || '').toString().trim(),
             startDate:     pData[i][5] instanceof Date ? Utilities.formatDate(pData[i][5], Session.getScriptTimeZone(), 'yyyy-MM-dd') : ''
           };
@@ -1292,17 +1296,19 @@ function getJobDashboard(jobName) {
         }
       }
     }
+    var shortJobName = meta ? meta.jobName : parseAsanaJobName_(rawJobName);
     if (!meta) {
-      meta = { rowIndex: null, contractor: '', jobName: target, driveFolderId: null, asanaTaskGid: '', status: '', startDate: '' };
+      meta = { rowIndex: null, contractor: '', jobName: shortJobName, driveFolderId: null, asanaTaskGid: jobGid, status: '', startDate: '' };
     }
+    var shortJobNameLower = shortJobName.toLowerCase();
 
-    var cost = getJobCostSummary(target);
+    var cost = getJobCostSummary(shortJobName);
 
     var missingAll = getMissingInvoices();
     var missingRows = [];
     if (missingAll.missing) {
       missingRows = missingAll.missing.filter(function(m) {
-        return (m.job || '').toString().trim().toLowerCase() === targetLower;
+        return (m.job || '').toString().trim().toLowerCase() === shortJobNameLower;
       });
     }
 
@@ -1314,9 +1320,14 @@ function getJobDashboard(jobName) {
         var qData = qcSheet.getRange(2, 1, qLastRow - 1, 7).getValues();
         var matches = [];
         for (var q = 0; q < qData.length; q++) {
-          var qJob = (qData[q][1] || '').toString().trim().toLowerCase();
-          if (!qJob) continue;
-          if (qJob.indexOf(targetLower) === -1 && targetLower.indexOf(qJob) === -1) continue;
+          var qGid = (qData[q][6] || '').toString().trim();
+          if (qGid) {
+            if (qGid !== jobGid) continue;
+          } else {
+            var qJob = (qData[q][1] || '').toString().trim().toLowerCase();
+            if (!qJob) continue;
+            if (qJob.indexOf(shortJobNameLower) === -1 && shortJobNameLower.indexOf(qJob) === -1) continue;
+          }
           matches.push({
             timestamp: qData[q][0] instanceof Date ? Utilities.formatDate(qData[q][0], Session.getScriptTimeZone(), 'MM/dd/yy') : '',
             ts:        qData[q][0] instanceof Date ? qData[q][0].getTime() : 0,
