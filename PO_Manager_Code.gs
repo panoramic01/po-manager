@@ -1733,6 +1733,31 @@ function getAsanaJobs() {
 }
 
 /**
+ * Splits a quality-check subtask's notes body into its per-item results --
+ * one {status, text, note} per "[PASS]"/"[FLAG]"/"[N/A] item - note" line --
+ * so the Job Dashboard can show the full breakdown for a walk, not just
+ * the pass/flag/n-a counts. Item text never contains " - " (checked against
+ * the checklist content), so splitting each line on the first occurrence
+ * of it to separate item text from an optional flag note is safe.
+ */
+function parseQualityCheckItems_(notes) {
+  var lines = (notes || '').split('\n').filter(function(l) {
+    return /^\[(PASS|FLAG|N\/A)\]/.test(l);
+  });
+  return lines.map(function(l) {
+    var m      = l.match(/^\[(PASS|FLAG|N\/A)\]\s*(.*)$/);
+    var status = m[1] === 'PASS' ? 'pass' : (m[1] === 'N/A' ? 'na' : 'flag');
+    var rest   = m[2] || '';
+    var sepIdx = rest.indexOf(' - ');
+    return {
+      status: status,
+      text:   sepIdx === -1 ? rest : rest.slice(0, sepIdx),
+      note:   sepIdx === -1 ? ''   : rest.slice(sepIdx + 3)
+    };
+  });
+}
+
+/**
  * Reads quality-walk history straight from Asana -- submitQualityCheck logs
  * each check as a subtask of the job's Asana task (name "Quality Check
  * [<Walk Type>] - <date>", notes starting with "Walk Type:"/"Submitted
@@ -1763,10 +1788,14 @@ function getQualityWalkHistory_(jobGid) {
       var walkType  = (notes.match(/Walk Type:\s*(.+)/)     || [])[1] || '';
       var submitter = (notes.match(/Submitted by:\s*(.+)/)  || [])[1] || '';
       var trades    = (notes.match(/Trade\(s\):\s*(.+)/)    || [])[1] || '';
-      var passCount = (notes.match(/\[PASS\]/g) || []).length;
-      var flagCount = (notes.match(/\[FLAG\]/g) || []).length;
-      var naCount   = (notes.match(/\[N\/A\]/g) || []).length;
-      var created   = t.created_at ? new Date(t.created_at) : null;
+      var items     = parseQualityCheckItems_(notes);
+      var passCount = 0, flagCount = 0, naCount = 0;
+      items.forEach(function(it) {
+        if (it.status === 'pass') passCount++;
+        else if (it.status === 'flag') flagCount++;
+        else naCount++;
+      });
+      var created = t.created_at ? new Date(t.created_at) : null;
       return {
         timestamp: created ? Utilities.formatDate(created, Session.getScriptTimeZone(), 'MM/dd/yy') : '',
         ts:        created ? created.getTime() : 0,
@@ -1775,7 +1804,8 @@ function getQualityWalkHistory_(jobGid) {
         submitter: submitter,
         passCount: passCount,
         flagCount: flagCount,
-        naCount:   naCount
+        naCount:   naCount,
+        items:     items
       };
     });
 

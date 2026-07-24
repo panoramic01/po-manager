@@ -1472,6 +1472,15 @@
   </div>
 </div>
 
+<!-- Quality Walk Detail Overlay (read-only, opened from the Job Dashboard) -->
+<div class="cleanup-overlay" id="quality-walk-detail-overlay" style="display:none">
+  <div class="cleanup-header">
+    <h2>Quality Walk Detail</h2>
+    <button class="cleanup-close" onclick="closeQualityWalkDetail()">Close</button>
+  </div>
+  <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;background:#f5f5f7" id="qwd-body"></div>
+</div>
+
 <!-- ══════════════════ JAVASCRIPT ══════════════════ -->
 <script>
 if ('serviceWorker' in navigator) {
@@ -4105,22 +4114,25 @@ function saveJobMeta(rowIndex) {
   }, function() { showToast('Connection error — redeploy GAS'); });
 }
 
+var G_qualityRecent = [];
+
 function renderQualityWalksCard(quality, days) {
+  G_qualityRecent = quality.recent || [];
   var summary = 'Quality Walks: <b>' + quality.count + '</b>'
     + (days !== null ? ' over ' + days + ' day' + (days === 1 ? '' : 's') + ' live' : '');
-  var listHtml = quality.recent.map(function(q) {
+  var listHtml = G_qualityRecent.map(function(q, idx) {
     var badge = q.walkType
       ? '<span style="display:inline-block;padding:2px 7px;border-radius:10px;background:#eef1f8;color:#1F3971;font-size:10px;font-weight:700;text-transform:uppercase;margin-right:6px">' + esc(q.walkType) + '</span>'
       : '';
     var counts = q.passCount + ' pass'
       + (q.flagCount ? ' · ' + q.flagCount + ' flag' : '')
       + (q.naCount ? ' · ' + q.naCount + ' n/a' : '');
-    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f5f5f5;gap:8px">'
+    return '<div onclick="openQualityWalkDetail(' + idx + ')" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f5f5f5;gap:8px">'
       + '<div style="flex:1;min-width:0">'
       + '<div style="font-size:13px;font-weight:600;color:#222">' + badge + esc(q.trades || 'General') + '</div>'
       + '<div style="font-size:11px;color:#888">' + esc(q.timestamp) + (q.submitter ? ' · ' + esc(q.submitter) : '') + '</div>'
       + '</div>'
-      + '<div style="text-align:right;flex-shrink:0;font-size:12px;color:#666">' + counts + '</div>'
+      + '<div style="text-align:right;flex-shrink:0;font-size:12px;color:#666">' + counts + ' <span style="color:#ccc">&rsaquo;</span></div>'
       + '</div>';
   }).join('');
   document.getElementById('jc-quality-card').innerHTML =
@@ -4128,6 +4140,43 @@ function renderQualityWalksCard(quality, days) {
     + '<div style="font-size:14px;color:#333;margin-bottom:10px">' + summary + '</div>'
     + (listHtml || '<div class="empty">No quality walks logged yet.</div>')
     + '</div>';
+}
+
+var QC_DETAIL_ICONS = {
+  pass: { icon: '&#10003;', color: '#1e7e34' },
+  flag: { icon: '&#9873;',  color: '#b45309' },
+  na:   { icon: '&#8211;',  color: '#888' }
+};
+
+function openQualityWalkDetail(idx) {
+  var q = G_qualityRecent[idx];
+  if (!q) return;
+  var badge = q.walkType
+    ? '<span style="display:inline-block;padding:2px 7px;border-radius:10px;background:#eef1f8;color:#1F3971;font-size:10px;font-weight:700;text-transform:uppercase;margin-right:6px">' + esc(q.walkType) + '</span>'
+    : '';
+  var itemsHtml = (q.items || []).map(function(it) {
+    var style = QC_DETAIL_ICONS[it.status] || QC_DETAIL_ICONS.pass;
+    return '<div style="padding:8px 0;border-bottom:1px solid #f5f5f5">'
+      + '<div style="display:flex;gap:8px;align-items:flex-start">'
+      + '<span style="color:' + style.color + ';font-weight:700;flex-shrink:0;width:16px">' + style.icon + '</span>'
+      + '<span style="font-size:13px;color:#333;flex:1">' + esc(it.text) + '</span>'
+      + '</div>'
+      + (it.note ? '<div style="margin-left:24px;margin-top:6px;font-size:12px;color:#b45309;background:#fef3cd;padding:6px 8px;border-radius:6px">' + esc(it.note) + '</div>' : '')
+      + '</div>';
+  }).join('');
+  document.getElementById('qwd-body').innerHTML =
+    '<div style="background:#fff;border-radius:12px;padding:16px 20px;margin-bottom:12px">'
+    + '<div style="font-size:15px;font-weight:700;color:#222">' + badge + esc(q.trades || 'General') + '</div>'
+    + '<div style="font-size:12px;color:#888;margin-top:4px">' + esc(q.timestamp) + (q.submitter ? ' · ' + esc(q.submitter) : '') + '</div>'
+    + '</div>'
+    + '<div style="background:#fff;border-radius:12px;padding:4px 20px 2px">'
+    + (itemsHtml || '<div class="empty">No item detail available for this walk.</div>')
+    + '</div>';
+  document.getElementById('quality-walk-detail-overlay').style.display = 'flex';
+}
+
+function closeQualityWalkDetail() {
+  document.getElementById('quality-walk-detail-overlay').style.display = 'none';
 }
 
 function renderJobCostCard(cost, missingCount) {
