@@ -1,6 +1,6 @@
 {
   "project": "Panoramic Ops PWA",
-  "last_updated": "2026-07-09",
+  "last_updated": "2026-07-23",
   "owner": "Aidan Salisbury",
   "email": "aidansalisbury213@gmail.com",
 
@@ -20,7 +20,7 @@
   },
 
   "current_state": {
-    "sw_cache_version": "po-manager-v141",
+    "sw_cache_version": "po-manager-v146",
     "nav_tabs": ["dashboard", "receive", "other", "account"],
     "nav_tab_ids": ["tab-dashboard", "tab-create", "tab-receive", "tab-other", "tab-account"]
   },
@@ -89,7 +89,10 @@
     "savePhotoToDrive", "getPTOData", "submitPTO", "approvePTO", "denyPTO",
     "clockIn", "clockOut", "getClockStatus", "getTimesheet",
     "getEmployees", "addEmployee", "updateEmployee", "removeEmployee",
-    "getPTOOverview", "getPayrollSummary", "emailPayroll", "updateProfile"
+    "getPTOOverview", "getPayrollSummary", "emailPayroll", "updateProfile",
+    "getJobList", "getJobCostSummary", "getMissingInvoices", "getVendorSpend",
+    "getAsanaJobs", "submitQualityCheck",
+    "getJobsRegistry", "getJobDashboard", "updateJobMeta"
   ],
 
   "key_functions": {
@@ -140,14 +143,15 @@
     "PTO Overview (admin: balance bars + pending queue)",
     "Payroll Summary (admin: hours per employee, email summary)",
     "Back button / swipe navigation (History API)",
-    "Service worker with offline caching"
+    "Service worker with offline caching",
+    "Job Dashboard (Other tab, admin only): repurposed the old Job Cost Summary panel. Job picker now sourced from a 'Jobs Registry' -- the 'Projects' sheet extended with Status (col E) and Start Date (col F), editable inline. Shows Job Info card (status badge, days live, Drive/Asana quick links), Quality Walks card (count + recent list, reusing the existing Quality Check feature unchanged -- submitQualityCheck now additionally logs each check to a new 'Quality Checks' sheet so history is queryable; matched to a job by case-insensitive substring since Quality Check's job picker uses Asana task names, not bare Job Names), and Job Cost Summary card (spend only, reuses getJobCostSummary, plus a missing-invoice count badge). New GAS routes: getJobsRegistry, getJobDashboard, updateJobMeta."
   ],
 
   "features_planned": [
     "Office Notes tab (notes sheet + optional Asana subtask with per-note flag)",
     "Announcements (admin posts once-per-version message, localStorage dismissal)",
-    "Jobs Registry: new 'Jobs' tab in PO Database (Job Name, GC, Asana GID, QuickBooks ID, Status) as single source of truth linking a job across systems. 'Add Job' admin panel links an existing Asana task via search (option A - link only, does not create the Asana task). QuickBooks ID stays blank until QuickBooks OAuth integration is built. New PO switches from free-text job entry to a searchable dropdown against this registry once populated. Future option: create QuickBooks project + Asana task + registry link all in one action.",
-    "Site Walk Checklists: OSHA/Safety, Cleanup, and Quality walk checklists for job sites. Likely reuses/extends the Quality Check pattern (job picker, per-category checklist, pass/flag, submit to Asana) rather than built from scratch. Needs scoping: separate panel per walk type vs one flow with a walk-type selector; real checklist content still needs to be supplied before building."
+    "Job budget tracking: Job Cost Summary is currently spend-only (no budget field). A future pass could add a Budget column to the Projects/Jobs sheet and show budget-vs-actual on the Job Dashboard.",
+    "QuickBooks ID / integration for the Jobs Registry (Projects sheet) -- deferred until QuickBooks OAuth is built."
   ],
 
   "known_bugs_fixed": [

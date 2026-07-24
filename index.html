@@ -634,7 +634,7 @@
 
         <div id="other-card-job-cost" onclick="showOtherPanel('job-cost')" style="background:#fff;border-radius:12px;padding:22px 12px;text-align:center;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.08);display:flex;flex-direction:column;align-items:center;gap:10px">
           <svg width="32" height="32" fill="none" stroke="#1F3971" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
-          <span style="font-size:13px;font-weight:600;color:#1F3971">Job Cost Summary</span>
+          <span style="font-size:13px;font-weight:600;color:#1F3971">Job Dashboard</span>
         </div>
 
 <div id="other-card-vendor-spend" onclick="showOtherPanel('vendor-spend')" style="background:#fff;border-radius:12px;padding:22px 12px;text-align:center;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.08);display:flex;flex-direction:column;align-items:center;gap:10px">
@@ -765,18 +765,22 @@
     </div>
       <div style="padding:16px;max-width:680px;margin:0 auto">
         <div style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:12px">
-          <p style="font-size:13px;color:#666;margin:0 0 14px">Select a job to see all POs, total spend, and status breakdown.</p>
+          <p style="font-size:13px;color:#666;margin:0 0 14px">Select a job to see its status, quality walks, and cost summary.</p>
           <div style="display:flex;gap:8px;margin-bottom:4px">
             <input id="jc-input" list="jc-jobs-list" placeholder="Type or pick a job…" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none;flex:1">
             <datalist id="jc-jobs-list"></datalist>
-            <button onclick="loadJobCost()" style="background:#1F3971;color:#fff;border:none;border-radius:8px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap">Load</button>
+            <button onclick="loadJobDashboard()" style="background:#1F3971;color:#fff;border:none;border-radius:8px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap">Load</button>
           </div>
         </div>
         <div id="jc-loading" style="display:none;text-align:center;padding:20px">
           <div class="spinner" style="margin:0 auto 8px"></div>
           <p style="font-size:13px;color:#666">Loading…</p>
         </div>
-        <div id="jc-results" style="display:none"></div>
+        <div id="jc-results" style="display:none">
+          <div id="jc-info-card"></div>
+          <div id="jc-quality-card"></div>
+          <div id="jc-cost-card"></div>
+        </div>
       </div>
     </div>
 
@@ -3858,7 +3862,7 @@ function showOtherPanel(name) {
   if (name === 'pricing')    loadPricing();
   if (name === 'contacts')   loadContacts();
   if (name === 'reconcile')  initStmtDrop();
-  if (name === 'job-cost')   openJobCostPanel();
+  if (name === 'job-cost')   openJobDashboardPanel();
   if (name === 'missing-inv') loadMissingInvoices();
   if (name === 'vendor-spend') openVendorSpendPanel();
   if (name === 'material-report') openMaterialReportPanel();
@@ -3949,56 +3953,150 @@ function renderSops(filter) {
   list.innerHTML = out;
 }
 
-function openJobCostPanel() {
+function openJobDashboardPanel() {
   var dl = document.getElementById('jc-jobs-list');
-  if (dl && dl.children.length === 0) {
-    gasCall('getJobList', {}, function(r) {
+  if (dl) {
+    dl.innerHTML = '';
+    gasCall('getJobsRegistry', {}, function(r) {
       if (r.jobs) {
+        G.jobsRegistry = r.jobs;
         r.jobs.forEach(function(j) {
-          var o = document.createElement('option'); o.value = j; dl.appendChild(o);
+          var o = document.createElement('option'); o.value = j.jobName; dl.appendChild(o);
         });
       }
     });
   }
 }
 
-function loadJobCost() {
+function jobStatusBadgeCls(status) {
+  var map = { 'Active': 'bd-green', 'On Hold': 'bd-amber', 'Complete': 'bd-gray', 'Canceled': 'bd-red' };
+  return map[status] || 'bd-gray';
+}
+
+function daysLiveFrom(startDate) {
+  if (!startDate) return null;
+  var start = new Date(startDate + 'T00:00:00');
+  if (isNaN(start.getTime())) return null;
+  return Math.max(0, Math.floor((Date.now() - start.getTime()) / 86400000));
+}
+
+function loadJobDashboard() {
   var job = document.getElementById('jc-input').value.trim();
   if (!job) { showToast('Enter a job name'); return; }
   document.getElementById('jc-loading').style.display = 'block';
   document.getElementById('jc-results').style.display = 'none';
-  gasCall('getJobCostSummary', { jobRef: job }, function(r) {
+  gasCall('getJobDashboard', { jobName: job }, function(r) {
     document.getElementById('jc-loading').style.display = 'none';
     if (r.error) { showToast('Error: ' + r.error); return; }
-    var statuses = {}, open = 0;
-    r.rows.forEach(function(row) {
-      var s = (row.status || 'Unknown');
-      statuses[s] = (statuses[s] || 0) + 1;
-      if (s !== 'Reconcile' && s !== 'Closed') open++;
-    });
-    var statusHtml = Object.keys(statuses).map(function(s) {
-      return '<span style="display:inline-block;background:#eef2ff;border-radius:6px;padding:2px 8px;font-size:12px;margin:2px">' + s + ' (' + statuses[s] + ')</span>';
-    }).join(' ');
-    var rowsHtml = r.rows.map(function(row) {
-      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #f5f5f5;gap:8px">'
-        + '<div style="flex:1;min-width:0">'
-        + '<div style="font-size:13px;font-weight:600;color:#222">' + (row.vendor || '—') + '</div>'
-        + '<div style="font-size:11px;color:#888">PO #' + row.poNum + (row.invoiceNum ? ' · Inv ' + row.invoiceNum : ' · <span style="color:#e57373">No invoice</span>') + ' · ' + row.dateIssued + '</div>'
-        + '</div>'
-        + '<div style="text-align:right;flex-shrink:0">'
-        + '<div style="font-size:13px;font-weight:700;color:#1F3971">$' + (row.total ? row.total.toFixed(2) : '—') + '</div>'
-        + '<div style="font-size:11px;color:#888">' + (row.status || '') + '</div>'
-        + '</div></div>';
-    }).join('');
-    document.getElementById('jc-results').innerHTML =
-      '<div style="background:#1F3971;color:#fff;border-radius:12px;padding:16px 20px;margin-bottom:12px">'
-      + '<div style="font-size:13px;opacity:.8;margin-bottom:2px">' + job + ' — ' + r.rows.length + ' PO' + (r.rows.length !== 1 ? 's' : '') + (open ? ' · ' + open + ' open' : '') + '</div>'
-      + '<div style="font-size:24px;font-weight:700">$' + r.totalSpend.toFixed(2) + '</div>'
-      + '<div style="margin-top:8px">' + statusHtml + '</div>'
-      + '</div>'
-      + '<div style="background:#fff;border-radius:12px;padding:4px 16px;box-shadow:0 1px 4px rgba(0,0,0,0.08)">' + (rowsHtml || '<p style="text-align:center;color:#888;padding:16px">No POs found for this job.</p>') + '</div>';
+    renderJobInfoCard(r.meta);
+    renderQualityWalksCard(r.quality, daysLiveFrom(r.meta.startDate));
+    renderJobCostCard(r.cost, r.missingCount);
     document.getElementById('jc-results').style.display = 'block';
   }, function() { document.getElementById('jc-loading').style.display = 'none'; showToast('Connection error — redeploy GAS'); });
+}
+
+function renderJobInfoCard(meta) {
+  var days = daysLiveFrom(meta.startDate);
+  var statusBadge = meta.status
+    ? '<span class="badge ' + jobStatusBadgeCls(meta.status) + '">' + esc(meta.status) + '</span>'
+    : '<span style="font-size:12px;opacity:.75;font-style:italic">Status not set</span>';
+  var daysLine = days === null
+    ? '<span style="opacity:.75;font-style:italic">Start date not set</span>'
+    : '<b>' + days + '</b> day' + (days === 1 ? '' : 's') + ' live';
+  var links = '';
+  if (meta.driveFolderId) links += '<a href="https://drive.google.com/drive/folders/' + esc(meta.driveFolderId) + '" target="_blank" style="display:inline-block;margin-right:10px;font-size:12px;font-weight:600;color:#fff;text-decoration:underline">Drive folder</a>';
+  if (meta.asanaTaskGid) links += '<a href="https://app.asana.com/0/0/' + esc(meta.asanaTaskGid) + '" target="_blank" style="display:inline-block;font-size:12px;font-weight:600;color:#fff;text-decoration:underline">Asana task</a>';
+
+  var editHtml = '';
+  if (meta.rowIndex) {
+    var statusOptions = ['', 'Active', 'On Hold', 'Complete', 'Canceled'].map(function(s) {
+      return '<option value="' + s + '"' + (s === meta.status ? ' selected' : '') + '>' + (s || 'Set status…') + '</option>';
+    }).join('');
+    editHtml =
+      '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center">'
+      + '<select id="jc-status-input" style="padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:13px">' + statusOptions + '</select>'
+      + '<input id="jc-startdate-input" type="date" value="' + esc(meta.startDate || '') + '" style="padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:13px">'
+      + '<button onclick="saveJobMeta(' + meta.rowIndex + ')" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.4);border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer">Save</button>'
+      + '</div>';
+  }
+
+  document.getElementById('jc-info-card').innerHTML =
+    '<div style="background:#1F3971;color:#fff;border-radius:12px;padding:16px 20px;margin-bottom:12px">'
+    + '<div style="font-size:16px;font-weight:700;margin-bottom:6px">' + esc(meta.jobName) + (meta.contractor ? ' <span style="font-weight:400;opacity:.8">· ' + esc(meta.contractor) + '</span>' : '') + '</div>'
+    + '<div style="margin-bottom:6px">' + statusBadge + '</div>'
+    + '<div style="font-size:13px;opacity:.9">' + daysLine + '</div>'
+    + (links ? '<div style="margin-top:10px">' + links + '</div>' : '')
+    + editHtml
+    + '</div>';
+}
+
+function saveJobMeta(rowIndex) {
+  var status    = document.getElementById('jc-status-input').value;
+  var startDate = document.getElementById('jc-startdate-input').value;
+  gasCall('updateJobMeta', { rowIndex: rowIndex, status: status, startDate: startDate }, function(r) {
+    if (r.error) { showToast('Error: ' + r.error); return; }
+    showToast('Job info saved');
+    loadJobDashboard();
+  }, function() { showToast('Connection error — redeploy GAS'); });
+}
+
+function renderQualityWalksCard(quality, days) {
+  var summary = 'Quality Walks: <b>' + quality.count + '</b>'
+    + (days !== null ? ' over ' + days + ' day' + (days === 1 ? '' : 's') + ' live' : '');
+  var listHtml = quality.recent.map(function(q) {
+    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f5f5f5;gap:8px">'
+      + '<div style="flex:1;min-width:0">'
+      + '<div style="font-size:13px;font-weight:600;color:#222">' + esc(q.trades || 'General') + '</div>'
+      + '<div style="font-size:11px;color:#888">' + esc(q.timestamp) + (q.submitter ? ' · ' + esc(q.submitter) : '') + '</div>'
+      + '</div>'
+      + '<div style="text-align:right;flex-shrink:0;font-size:12px;color:#666">' + q.passCount + ' pass' + (q.flagCount ? ' · ' + q.flagCount + ' flag' : '') + '</div>'
+      + '</div>';
+  }).join('');
+  document.getElementById('jc-quality-card').innerHTML =
+    '<div style="background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:12px">'
+    + '<div style="font-size:14px;color:#333;margin-bottom:10px">' + summary + '</div>'
+    + (listHtml || '<div class="empty">No quality walks logged yet.</div>')
+    + '<div style="font-size:11px;color:#aaa;margin-top:8px">Matched by job name — may miss walks logged under a differently worded name.</div>'
+    + '</div>';
+}
+
+function renderJobCostCard(cost, missingCount) {
+  if (cost.error) {
+    document.getElementById('jc-cost-card').innerHTML = '<div class="empty">Could not load cost summary: ' + esc(cost.error) + '</div>';
+    return;
+  }
+  var statuses = {}, open = 0;
+  cost.rows.forEach(function(row) {
+    var s = (row.status || 'Unknown');
+    statuses[s] = (statuses[s] || 0) + 1;
+    if (s !== 'Reconcile' && s !== 'Closed') open++;
+  });
+  var statusHtml = Object.keys(statuses).map(function(s) {
+    return '<span style="display:inline-block;background:#eef2ff;border-radius:6px;padding:2px 8px;font-size:12px;margin:2px">' + esc(s) + ' (' + statuses[s] + ')</span>';
+  }).join(' ');
+  var missingBadge = missingCount ? '<span class="badge bd-red" style="margin-left:4px">' + missingCount + ' missing invoice' + (missingCount === 1 ? '' : 's') + '</span>' : '';
+  var rowsHtml = renderJobCostRows(cost.rows);
+  document.getElementById('jc-cost-card').innerHTML =
+    '<div style="background:#1F3971;color:#fff;border-radius:12px;padding:16px 20px;margin-bottom:12px">'
+    + '<div style="font-size:13px;opacity:.8;margin-bottom:2px">Job Cost — ' + cost.rows.length + ' PO' + (cost.rows.length !== 1 ? 's' : '') + (open ? ' · ' + open + ' open' : '') + '</div>'
+    + '<div style="font-size:24px;font-weight:700">$' + cost.totalSpend.toFixed(2) + '</div>'
+    + '<div style="margin-top:8px">' + statusHtml + missingBadge + '</div>'
+    + '</div>'
+    + '<div style="background:#fff;border-radius:12px;padding:4px 16px;box-shadow:0 1px 4px rgba(0,0,0,0.08)">' + (rowsHtml || '<div class="empty">No POs found for this job.</div>') + '</div>';
+}
+
+function renderJobCostRows(rows) {
+  return rows.map(function(row) {
+    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #f5f5f5;gap:8px">'
+      + '<div style="flex:1;min-width:0">'
+      + '<div style="font-size:13px;font-weight:600;color:#222">' + (row.vendor || '—') + '</div>'
+      + '<div style="font-size:11px;color:#888">PO #' + row.poNum + (row.invoiceNum ? ' · Inv ' + row.invoiceNum : ' · <span style="color:#e57373">No invoice</span>') + ' · ' + row.dateIssued + '</div>'
+      + '</div>'
+      + '<div style="text-align:right;flex-shrink:0">'
+      + '<div style="font-size:13px;font-weight:700;color:#1F3971">$' + (row.total ? row.total.toFixed(2) : '—') + '</div>'
+      + '<div style="font-size:11px;color:#888">' + (row.status || '') + '</div>'
+      + '</div></div>';
+  }).join('');
 }
 
 // ── Missing Invoices ──────────────────────────────────────────────────────────

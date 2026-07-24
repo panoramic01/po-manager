@@ -91,6 +91,9 @@ function doPost(e) {
     else if (action === 'getJobList')          result = getJobList();
     else if (action === 'getJobCostSummary')   result = getJobCostSummary(payload.jobRef);
     else if (action === 'getMissingInvoices')  result = getMissingInvoices();
+    else if (action === 'getJobsRegistry')     result = getJobsRegistry();
+    else if (action === 'getJobDashboard')     result = getJobDashboard(payload.jobName);
+    else if (action === 'updateJobMeta')       result = updateJobMeta(payload);
     else if (action === 'getVendorSpend')      result = getVendorSpend(payload.startDate, payload.endDate);
     else if (action === 'categorizeInvoices')  result = categorizeInvoices(payload);
     else if (action === 'suggestCategories')   result = suggestCategories(payload);
@@ -1192,6 +1195,169 @@ function getMissingInvoices() {
   } catch(e) { return { error: e.toString() }; }
 }
 
+// ── Job Dashboard (Jobs Registry + Quality Walk log) ──────────────────────────
+// Extends the "Projects" sheet with two appended columns: E=Status,
+// F=Start Date. Existing A-D columns (Contractor, Job Name, Drive folder,
+// Asana GID) are untouched -- getProjectFolderId/getRecentJobs only ever
+// read fixed-width ranges, so appending E/F is safe.
+var QUALITY_CHECKS_SHEET_NAME = "Quality Checks";
+
+function getOrCreateQualityChecksSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(QUALITY_CHECKS_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(QUALITY_CHECKS_SHEET_NAME);
+    sheet.appendRow(['Timestamp', 'Job Name', 'Trade(s)', 'Submitted By', 'Pass Count', 'Flag Count', 'Job GID']);
+  }
+  return sheet;
+}
+
+function ensureProjectsHeaders_() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PROJECTS_SHEET_NAME);
+  if (!sheet) return;
+  if (!sheet.getRange(1, 5).getValue()) sheet.getRange(1, 5).setValue('Status');
+  if (!sheet.getRange(1, 6).getValue()) sheet.getRange(1, 6).setValue('Start Date');
+}
+
+/**
+ * Canonical job picker for the Job Dashboard panel, sourced from the
+ * "Projects" sheet -- distinct from getJobList() (free-text jobRef scrape
+ * of PO Database), which is left untouched for whatever else uses it.
+ * Returns rowIndex so updateJobMeta can write back without re-matching.
+ */
+function getJobsRegistry() {
+  try {
+    ensureProjectsHeaders_();
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PROJECTS_SHEET_NAME);
+    if (!sheet) return { error: "Sheet '" + PROJECTS_SHEET_NAME + "' not found." };
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { success: true, jobs: [] };
+    var data = sheet.getRange(2, 1, lastRow - 1, 6).getValues(); // A:F
+    var jobs = [];
+    for (var i = 0; i < data.length; i++) {
+      var jobName = (data[i][1] || '').toString().trim();
+      if (!jobName) continue;
+      jobs.push({
+        rowIndex:   i + 2,
+        contractor: (data[i][0] || '').toString().trim(),
+        jobName:    jobName,
+        status:     (data[i][4] || '').toString().trim(),
+        startDate:  data[i][5] instanceof Date ? Utilities.formatDate(data[i][5], Session.getScriptTimeZone(), 'yyyy-MM-dd') : '',
+        hasDrive:   !!extractDriveFolderId(data[i][2]),
+        hasAsana:   !!(data[i][3] || '').toString().trim()
+      });
+    }
+    return { success: true, jobs: jobs };
+  } catch (e) { return { error: e.toString() }; }
+}
+
+/**
+ * Combined payload for the Job Dashboard panel: job meta (Projects row),
+ * cost summary (reuses getJobCostSummary as-is, spend only), missing-invoice
+ * count for the job, and quality-walk history (reuses the "Quality Checks"
+ * log appended to by submitQualityCheck). One round trip, matching this
+ * app's existing one-action-per-panel convention.
+ *
+ * Quality Check's job picker uses Asana task names formatted as
+ * "Builder, Job Name, Address" -- not the bare Projects-sheet Job Name --
+ * so exact string matching would almost never hit. Quality-walk rows are
+ * matched by substring (either direction), same fuzzy style already used
+ * in reconcileStatement.
+ */
+function getJobDashboard(jobName) {
+  try {
+    var target = (jobName || '').toString().trim();
+    if (!target) return { error: 'Job name is required.' };
+    var targetLower = target.toLowerCase();
+
+    var meta = null;
+    var pSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PROJECTS_SHEET_NAME);
+    if (pSheet) {
+      var pLastRow = pSheet.getLastRow();
+      if (pLastRow >= 2) {
+        var pData = pSheet.getRange(2, 1, pLastRow - 1, 6).getValues();
+        for (var i = 0; i < pData.length; i++) {
+          var rowJob = (pData[i][1] || '').toString().trim();
+          if (rowJob.toLowerCase() !== targetLower) continue;
+          meta = {
+            rowIndex:      i + 2,
+            contractor:    (pData[i][0] || '').toString().trim(),
+            jobName:       rowJob,
+            driveFolderId: extractDriveFolderId(pData[i][2]),
+            asanaTaskGid:  (pData[i][3] || '').toString().trim(),
+            status:        (pData[i][4] || '').toString().trim(),
+            startDate:     pData[i][5] instanceof Date ? Utilities.formatDate(pData[i][5], Session.getScriptTimeZone(), 'yyyy-MM-dd') : ''
+          };
+          break;
+        }
+      }
+    }
+    if (!meta) {
+      meta = { rowIndex: null, contractor: '', jobName: target, driveFolderId: null, asanaTaskGid: '', status: '', startDate: '' };
+    }
+
+    var cost = getJobCostSummary(target);
+
+    var missingAll = getMissingInvoices();
+    var missingRows = [];
+    if (missingAll.missing) {
+      missingRows = missingAll.missing.filter(function(m) {
+        return (m.job || '').toString().trim().toLowerCase() === targetLower;
+      });
+    }
+
+    var quality = { count: 0, recent: [] };
+    var qcSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(QUALITY_CHECKS_SHEET_NAME);
+    if (qcSheet) {
+      var qLastRow = qcSheet.getLastRow();
+      if (qLastRow >= 2) {
+        var qData = qcSheet.getRange(2, 1, qLastRow - 1, 7).getValues();
+        var matches = [];
+        for (var q = 0; q < qData.length; q++) {
+          var qJob = (qData[q][1] || '').toString().trim().toLowerCase();
+          if (!qJob) continue;
+          if (qJob.indexOf(targetLower) === -1 && targetLower.indexOf(qJob) === -1) continue;
+          matches.push({
+            timestamp: qData[q][0] instanceof Date ? Utilities.formatDate(qData[q][0], Session.getScriptTimeZone(), 'MM/dd/yy') : '',
+            ts:        qData[q][0] instanceof Date ? qData[q][0].getTime() : 0,
+            trades:    qData[q][2],
+            submitter: qData[q][3],
+            passCount: qData[q][4],
+            flagCount: qData[q][5]
+          });
+        }
+        matches.sort(function(a, b) { return b.ts - a.ts; });
+        quality.count = matches.length;
+        quality.recent = matches.slice(0, 8);
+      }
+    }
+
+    return { success: true, meta: meta, cost: cost, missingCount: missingRows.length, missingRows: missingRows, quality: quality };
+  } catch (e) { return { error: e.toString() }; }
+}
+
+/**
+ * Admin edit of a job's Status/Start Date on the Projects sheet, keyed by
+ * rowIndex (not name) so two contractors sharing a job name can't collide.
+ */
+function updateJobMeta(payload) {
+  try {
+    var rowIndex = payload.rowIndex;
+    if (!rowIndex) return { error: 'rowIndex is required.' };
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PROJECTS_SHEET_NAME);
+    if (!sheet) return { error: "Sheet '" + PROJECTS_SHEET_NAME + "' not found." };
+    sheet.getRange(rowIndex, 5).setValue((payload.status || '').toString().trim());
+    var startDate = (payload.startDate || '').toString().trim();
+    if (startDate) {
+      var parts = startDate.split('-'); // input type=date gives YYYY-MM-DD
+      sheet.getRange(rowIndex, 6).setValue(new Date(parts[0], parts[1] - 1, parts[2]));
+    } else {
+      sheet.getRange(rowIndex, 6).setValue('');
+    }
+    return { success: true };
+  } catch (e) { return { error: e.toString() }; }
+}
+
 // ── Vendor Spend ──────────────────────────────────────────────────────────────
 function getVendorSpend(startDate, endDate) {
   try {
@@ -1618,6 +1784,19 @@ function submitQualityCheck(payload) {
       completed: true
     });
     if (sub.errors) return { error: sub.errors[0].message };
+
+    // Additive: log this check to the "Quality Checks" sheet so job
+    // dashboards can show walk history. Never let a logging failure break
+    // the Asana submission above -- that flow must behave exactly as before.
+    try {
+      var passCount = 0, flagCountForLog = 0;
+      sections.forEach(function(s) { if (s.status === 'pass') passCount++; else flagCountForLog++; });
+      var qcLogSheet = getOrCreateQualityChecksSheet_();
+      var tradesStr = (payload.trades || []).join(', ') || 'General';
+      qcLogSheet.appendRow([new Date(), jobName, tradesStr, submitter, passCount, flagCountForLog, jobGid]);
+    } catch (logErr) {
+      // swallow -- logging must never fail the Quality Check submission
+    }
 
     if (flagged.length > 0) {
       var offLines = ['Quality check flagged items for: ' + jobName + ' (' + date + ')', ''];
