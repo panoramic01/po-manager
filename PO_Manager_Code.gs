@@ -107,6 +107,9 @@ function doPost(e) {
     else if (action === 'saveMaterialHistory')          result = saveMaterialHistory(payload);
     else if (action === 'getAsanaJobs')                result = getAsanaJobs();
     else if (action === 'submitQualityCheck')           result = submitQualityCheck(payload);
+    else if (action === 'submitOfficeNote')             result = submitOfficeNote(payload);
+    else if (action === 'getAssignableEmployees')       result = getAssignableEmployees(payload);
+    else if (action === 'saveOfficeNotePhoto')          result = saveOfficeNotePhoto(payload.base64Data, payload.mimeType, payload.filename);
     else if (action === 'getPTOData')                  result = getPTOData(payload);
     else if (action === 'submitPTORequest')             result = submitPTORequest(payload);
     else if (action === 'getPTOQueue')                  result = getPTOQueue(payload);
@@ -1010,6 +1013,33 @@ function saveFileToFolderById(base64Data, mimeType, filename, folderIdOrLink) {
   }
 }
 
+/**
+ * Saves an Office Notes photo into Purchasing/Office Notes (created on first
+ * use). Filenames are timestamped since, unlike Home Plans, there's no
+ * per-note stable name to dedupe against -- every upload is a distinct file.
+ */
+function saveOfficeNotePhoto(base64Data, mimeType, filename) {
+  try {
+    var folder = getOrCreateChildFolder(getPurchasingRootFolder(), 'Office Notes');
+
+    var bytes = Utilities.base64Decode(base64Data);
+    var blob  = Utilities.newBlob(bytes, mimeType, filename);
+    var file  = folder.createFile(blob);
+
+    try {
+      if (file.getSharingAccess() !== DriveApp.Access.ANYONE_WITH_LINK) {
+        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      }
+    } catch (sharingErr) {
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    }
+
+    return { success: true, url: file.getUrl() };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
 // One-time setup helper: run this once from the Apps Script editor's Run
 // menu so new files created under the "Purchasing" folder (and its Issued
 // POs / Invoices / Received Photos subfolders) inherit link-sharing and
@@ -1866,6 +1896,48 @@ function submitQualityCheck(payload) {
 }
 
 /**
+ * Office Notes intake: creates a task directly in the ASANA_OFFICE_TASKS
+ * project, optionally with a due date and an assignee. Replaces the external
+ * Asana-hosted form, which had no way to assign the resulting task to
+ * someone. Asana's task-create API accepts a plain email address for
+ * `assignee`, so no separate Asana-user-gid mapping is needed here.
+ */
+function submitOfficeNote(payload) {
+  try {
+    var note         = (payload.note || '').toString().trim();
+    var dueDate       = (payload.dueDate || '').toString().trim();
+    var assigneeEmail = (payload.assigneeEmail || '').toString().trim();
+    var photoUrls      = payload.photoUrls || [];
+    var submittedBy    = (payload.submittedBy || '').toString().trim();
+
+    if (!note) return { success: false, error: 'Note is required' };
+
+    var tz   = Session.getScriptTimeZone();
+    var date = Utilities.formatDate(new Date(), tz, 'MM/dd/yyyy');
+
+    var lines = ['Note: ' + note, 'Submitted by: ' + (submittedBy || 'N/A'), 'Submitted: ' + date];
+    photoUrls.forEach(function(url) { lines.push('Photo: ' + url); });
+
+    var taskPayload = {
+      projects: [ASANA_OFFICE_TASKS],
+      name:     'Office Note - ' + date,
+      notes:    lines.join('\n')
+    };
+    if (dueDate)       taskPayload.due_on   = dueDate;
+    if (assigneeEmail) taskPayload.assignee = assigneeEmail;
+
+    var created = asanaRequest('post', '/tasks', taskPayload);
+    if (created.errors) return { success: false, error: created.errors[0].message };
+
+    return {
+      success:      true,
+      asanaTaskGid: created.data.gid,
+      asanaTaskUrl: 'https://app.asana.com/0/' + ASANA_OFFICE_TASKS + '/' + created.data.gid
+    };
+  } catch(e) { return { success: false, error: e.toString() }; }
+}
+
+/**
  * New Project intake: creates an Asana task in ASANA_EXT_SCHED (moved into
  * the "Estimate Requested" section), then appends a row to the "Projects"
  * sheet linking Contractor + Job Name to the Drive folder ID and the new
@@ -2374,6 +2446,30 @@ function getTimesheet(payload) {
       periodLabel:  periodLabel,
       allEmployees: allEmployees
     };
+  } catch(e) { return { error: e.toString() }; }
+}
+
+/**
+ * Lean {name, email} list for populating the Office Notes "Assigned To"
+ * dropdown. Unlike getEmployees, this isn't gated to admin/HR -- Office
+ * Notes is visible to every role, and this only exposes name+email, none
+ * of getEmployees' PTO/role data.
+ */
+function getAssignableEmployees() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sh = ss.getSheetByName(ROLES_SHEET);
+    if (!sh) return { error: 'HR sheet not found' };
+    var lastRow = sh.getLastRow();
+    if (lastRow < 2) return { employees: [] };
+    var data = sh.getRange(2, 1, lastRow - 1, 2).getValues();
+    var employees = [];
+    for (var i = 0; i < data.length; i++) {
+      var email = (data[i][1] || '').toString().trim();
+      if (!email) continue;
+      employees.push({ name: (data[i][0] || '').toString().trim(), email: email });
+    }
+    return { employees: employees };
   } catch(e) { return { error: e.toString() }; }
 }
 

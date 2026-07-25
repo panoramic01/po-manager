@@ -574,7 +574,7 @@
         <span style="font-size:13px;font-weight:600;color:#1F3971">Runner Cleanup Log</span>
       </div>
 
-      <div onclick="openFormOverlay('officenotes-overlay')" style="background:#fff;border-radius:12px;padding:22px 12px;text-align:center;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.08);display:flex;flex-direction:column;align-items:center;gap:10px">
+      <div onclick="showOtherPanel('office-notes')" style="background:#fff;border-radius:12px;padding:22px 12px;text-align:center;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.08);display:flex;flex-direction:column;align-items:center;gap:10px">
         <svg width="32" height="32" fill="none" stroke="#1F3971" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
         <span style="font-size:13px;font-weight:600;color:#1F3971">Office Notes</span>
       </div>
@@ -1369,6 +1369,61 @@
             <div id="new-project-success-links" style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px"></div>
             <div style="display:flex;flex-direction:column;gap:10px">
               <button class="btn btn-primary" onclick="showNewProjectPanelForm()">+ Create Another Project</button>
+              <button class="btn btn-secondary" style="width:100%;padding:14px;font-size:15px;border-radius:12px" onclick="showOtherHome()">← Back to Other Tools</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="other-panel-office-notes" style="display:none">
+      <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #f0f0f0;background:#fff;position:sticky;top:0;z-index:1">
+        <button onclick="showOtherHome()" style="background:none;border:none;font-size:14px;font-weight:600;color:#1F3971;cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
+        <span style="font-size:16px;font-weight:700;color:#1F3971">Office Notes</span>
+      </div>
+
+      <div style="padding:16px;padding-bottom:80px">
+        <div class="card" id="office-notes-form-card">
+          <div class="card-title" style="display:none">Office Notes</div>
+
+          <div class="form-group">
+            <label class="form-label">Note *</label>
+            <textarea class="form-control" id="on-note" placeholder="Enter your answer"></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Due Date</label>
+            <input type="date" class="form-control" id="on-due-date">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Assigned To</label>
+            <select class="form-control" id="on-assignee">
+              <option value="">— Unassigned —</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Add any photos</label>
+            <input type="file" id="on-photos-file" accept="image/*" multiple style="display:none" onchange="handleOfficeNotePhotos(this)">
+            <div id="on-photos-drop" onclick="onOfficeNotePhotoZoneClick()"
+              style="background:#fff;border-radius:10px;padding:24px 16px;text-align:center;border:2px dashed #c0c8e8;cursor:pointer;transition:background .15s,border-color .15s">
+              <svg width="28" height="28" fill="none" stroke="#8896c4" stroke-width="1.5" viewBox="0 0 24 24" style="margin:0 auto 8px;display:block"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+              <p style="font-size:13px;font-weight:600;color:#1F3971;margin:0 0 2px">Select a file…</p>
+              <p style="font-size:11px;color:#888;margin:0">or drag and drop a file here</p>
+            </div>
+            <p id="on-photos-status" class="photo-status" style="margin-top:8px"></p>
+          </div>
+          <button class="btn btn-primary" id="office-note-btn" onclick="submitOfficeNote()">Submit</button>
+        </div>
+
+        <!-- Success screen (shown after the note is submitted) -->
+        <div id="office-note-success-card" style="display:none">
+          <div class="card" style="text-align:center;padding:32px 20px">
+            <div style="font-size:48px;margin-bottom:12px;color:#1F3971;font-weight:800">✓</div>
+            <div style="font-size:13px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:6px">Note Submitted</div>
+            <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">
+              <a id="office-note-success-link" href="#" target="_blank" class="btn btn-secondary" style="width:100%;padding:14px;font-size:15px;border-radius:12px;text-decoration:none">View Asana Task</a>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <button class="btn btn-primary" onclick="loadOfficeNotesPanel()">+ Add Another Note</button>
               <button class="btn btn-secondary" style="width:100%;padding:14px;font-size:15px;border-radius:12px" onclick="showOtherHome()">← Back to Other Tools</button>
             </div>
           </div>
@@ -2649,6 +2704,152 @@ function showNewProjectPanelForm() {
   document.getElementById('new-project-success-card').style.display = 'none';
 }
 
+// ── Office Notes ──────────────────────────────────────────────────────────────
+function loadOfficeNotesPanel() {
+  document.getElementById('office-notes-form-card').style.display    = '';
+  document.getElementById('office-note-success-card').style.display  = 'none';
+  document.getElementById('on-note').value      = '';
+  document.getElementById('on-due-date').value  = '';
+  document.getElementById('on-assignee').value  = '';
+  document.getElementById('on-photos-file').value = '';
+  document.getElementById('on-photos-status').textContent = '';
+  document.getElementById('on-photos-status').className   = 'photo-status';
+  G.officeNotePhotoUrls      = [];
+  G.officeNotePhotosUploading = 0;
+  setBtnState('office-note-btn', 'Submit', false);
+
+  initOfficeNotesDrop();
+
+  gasCall('getAssignableEmployees', {}, function(res) {
+    var sel = document.getElementById('on-assignee');
+    sel.innerHTML = '<option value="">— Unassigned —</option>';
+    if (res.error) { showToast('Error:' + res.error); return; }
+    (res.employees || []).forEach(function(emp) {
+      var opt = document.createElement('option');
+      opt.value = emp.email;
+      opt.textContent = emp.name || emp.email;
+      sel.appendChild(opt);
+    });
+  }, function() {
+    showToast('Error:Could not load employees');
+  });
+}
+
+// Wires drag-and-drop onto the Office Notes photo zone once (idempotent via
+// _dropWired, same pattern as initNewProjectHomePlansDrop), but accepts
+// multiple dropped files instead of just the first.
+function initOfficeNotesDrop() {
+  var zone = document.getElementById('on-photos-drop');
+  if (!zone || zone._dropWired) return;
+  zone._dropWired = true;
+  zone.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    zone.style.background = '#eef2ff';
+    zone.style.borderColor = '#1F3971';
+  });
+  zone.addEventListener('dragleave', function() {
+    zone.style.background = '';
+    zone.style.borderColor = '';
+  });
+  zone.addEventListener('drop', function(e) {
+    e.preventDefault();
+    zone.style.background = '';
+    zone.style.borderColor = '';
+    var files = e.dataTransfer && e.dataTransfer.files;
+    if (files) for (var i = 0; i < files.length; i++) uploadOfficeNotePhoto(files[i]);
+  });
+}
+
+function onOfficeNotePhotoZoneClick() {
+  document.getElementById('on-photos-file').click();
+}
+
+function handleOfficeNotePhotos(input) {
+  var files = input.files;
+  if (!files || !files.length) return;
+  for (var i = 0; i < files.length; i++) uploadOfficeNotePhoto(files[i]);
+}
+
+function updateOfficeNotePhotoStatus() {
+  var statusEl = document.getElementById('on-photos-status');
+  if (G.officeNotePhotosUploading > 0) {
+    statusEl.textContent = 'Uploading…';
+    statusEl.className   = 'photo-status uploading';
+  } else {
+    var n = (G.officeNotePhotoUrls || []).length;
+    statusEl.textContent = n ? (n + ' photo' + (n === 1 ? '' : 's') + ' uploaded') : '';
+    statusEl.className   = 'photo-status done';
+  }
+}
+
+function uploadOfficeNotePhoto(file) {
+  G.officeNotePhotosUploading = (G.officeNotePhotosUploading || 0) + 1;
+  setBtnState('office-note-btn', 'Uploading photos…', true);
+  updateOfficeNotePhotoStatus();
+
+  readAndCompressFile(file, function(dataUrl, mimeType) {
+    var ext = mimeType === 'image/jpeg' ? 'jpg' : (file.name.split('.').pop() || 'bin');
+    var filename = 'OfficeNote-' + Date.now() + '-' + Math.floor(Math.random() * 1e6) + '.' + ext;
+    gasCall('saveOfficeNotePhoto', {
+      base64Data: dataUrl.split(',')[1], mimeType: mimeType, filename: filename
+    }, function(res) {
+      G.officeNotePhotosUploading = Math.max(0, (G.officeNotePhotosUploading || 0) - 1);
+      if (res.success) {
+        G.officeNotePhotoUrls = (G.officeNotePhotoUrls || []).concat([res.url]);
+      } else {
+        showToast('Error:' + res.error);
+      }
+      if (G.officeNotePhotosUploading === 0) setBtnState('office-note-btn', 'Submit', false);
+      updateOfficeNotePhotoStatus();
+    }, function() {
+      G.officeNotePhotosUploading = Math.max(0, (G.officeNotePhotosUploading || 0) - 1);
+      showToast('Error:Photo upload failed — check connection');
+      if (G.officeNotePhotosUploading === 0) setBtnState('office-note-btn', 'Submit', false);
+      updateOfficeNotePhotoStatus();
+    });
+  }, function() {
+    G.officeNotePhotosUploading = Math.max(0, (G.officeNotePhotosUploading || 0) - 1);
+    showToast('Error:Could not read file — try a different one');
+    if (G.officeNotePhotosUploading === 0) setBtnState('office-note-btn', 'Submit', false);
+    updateOfficeNotePhotoStatus();
+  });
+}
+
+function submitOfficeNote() {
+  if (G.officeNotePhotosUploading > 0) {
+    showToast('Please wait for photos to finish uploading');
+    return;
+  }
+
+  var note = trim('on-note');
+  if (!note) {
+    showToast('Note is required');
+    return;
+  }
+
+  setBtnState('office-note-btn', 'Submitting…', true);
+
+  gasCall('submitOfficeNote', {
+    note:          note,
+    dueDate:       trim('on-due-date'),
+    assigneeEmail: val('on-assignee'),
+    photoUrls:     G.officeNotePhotoUrls || [],
+    submittedBy:   (G.config && G.config.userName) || G.userEmail
+  }, function(res) {
+    setBtnState('office-note-btn', 'Submit', false);
+    if (res.success) {
+      document.getElementById('office-note-success-link').href = res.asanaTaskUrl;
+      document.getElementById('office-notes-form-card').style.display   = 'none';
+      document.getElementById('office-note-success-card').style.display = 'block';
+    } else {
+      showToast('Error:' + res.error);
+    }
+  }, function() {
+    setBtnState('office-note-btn', 'Submit', false);
+    showToast('Error:Error submitting note');
+  });
+}
+
 // ── Receive PO ────────────────────────────────────────────────────────────────
 function lookupPO() {
   var poNum = trim('r-ponum');
@@ -3677,8 +3878,7 @@ var FORM_URLS = {
   'cleanup-overlay':          'https://form.asana.com/?k=kiMhpmASAeEg_D4e631yjA&d=1208027938795761',
   'reimbursement-overlay':    'https://form.asana.com/?k=_Klc2P6hcqrs1fOpBWIRWg&d=1208027938795761',
   'creditcard-overlay':       'https://form.asana.com/?k=op5VV1qG1S8SQoAHCs6t1w&d=1208027938795761',
-  'materialrequest-overlay':  'https://form.asana.com/?k=2jXgnoyqZUuRb5rd2_S27w&d=1208027938795761',
-  'officenotes-overlay':      'https://form.asana.com/?k=BJAK9Zn4PVyId7MxMngYXA&d=1208027938795761'
+  'materialrequest-overlay':  'https://form.asana.com/?k=2jXgnoyqZUuRb5rd2_S27w&d=1208027938795761'
 };
 
 function openFormOverlay(overlayId) {
@@ -3911,7 +4111,7 @@ function submitContactEdit() {
 function showOtherPanel(name) {
   if (!_navPop) history.pushState({ view: 'other-panel', panel: name }, '');
   document.getElementById('other-home').style.display = 'none';
-  ['pricing', 'contacts', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project'].forEach(function(p) {
+  ['pricing', 'contacts', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project', 'office-notes'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
     if (el) el.style.display = p === name ? '' : 'none';
   });
@@ -3929,6 +4129,7 @@ function showOtherPanel(name) {
   if (name === 'pto-overview') loadPTOOverview();
   if (name === 'payroll') loadPayroll();
   if (name === 'new-project') resetNewProjectDriveHint();
+  if (name === 'office-notes') loadOfficeNotesPanel();
 }
 
 // Several other-panel-* elements aren't actually nested inside #tab-other in
@@ -3938,7 +4139,7 @@ function showOtherPanel(name) {
 // returning to its home grid.
 function resetOtherPanels() {
   document.getElementById('other-home').style.display = '';
-  ['pricing', 'contacts', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project'].forEach(function(p) {
+  ['pricing', 'contacts', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project', 'office-notes'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
     if (el) el.style.display = 'none';
   });
