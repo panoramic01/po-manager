@@ -4221,6 +4221,52 @@ function contactCard(c, idx) {
   '</div>';
 }
 
+// ── Contact Type dropdown (shared by Add + Edit) ───────────────────────────────
+function isContactTypeHeader(h) {
+  var k = h.trim().toLowerCase().replace(/\s+/g, '');
+  return k === 'contacttype' || k === 'type';
+}
+
+function getContactTypeOptions() {
+  var seen = {}, types = [];
+  (G.contacts || []).forEach(function(c) {
+    var t = getContactType(c);
+    if (t && !seen[t]) { seen[t] = true; types.push(t); }
+  });
+  types.sort();
+  return types;
+}
+
+function contactTypeFieldHtml(id, currentVal) {
+  var opts = getContactTypeOptions();
+  if (currentVal && opts.indexOf(currentVal) === -1) opts.push(currentVal);
+  var optHtml = '<option value="">Select type…</option>' +
+    opts.map(function(t) {
+      return '<option value="' + esc(t) + '"' + (t === currentVal ? ' selected' : '') + '>' + esc(t) + '</option>';
+    }).join('') +
+    '<option value="__new__">+ Add new category…</option>';
+  return '<select id="' + id + '" onchange="handleContactTypeChange(this)" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px;background:#fff">' + optHtml + '</select>' +
+         '<input type="text" id="' + id + '-new" placeholder="New category name" style="display:none;width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">';
+}
+
+function handleContactTypeChange(sel) {
+  var newInput = document.getElementById(sel.id + '-new');
+  if (!newInput) return;
+  var showNew = sel.value === '__new__';
+  newInput.style.display = showNew ? '' : 'none';
+  if (showNew) newInput.focus();
+}
+
+function readContactFieldValue(id) {
+  var el = document.getElementById(id);
+  if (!el) return undefined;
+  if (el.tagName === 'SELECT' && el.value === '__new__') {
+    var newEl = document.getElementById(id + '-new');
+    return newEl ? newEl.value.trim() : '';
+  }
+  return (el.value || '').trim();
+}
+
 // ── Contact Edit ──────────────────────────────────────────────────────────────
 function openContactEdit(idx) {
   var c = G.contacts[idx];
@@ -4229,7 +4275,9 @@ function openContactEdit(idx) {
 
   var fields = G.contactsHeaders.map(function(h) {
     var val = c[h] || '';
-    return fg(h, '<input type="text" class="form-control" id="ce-' + esc(h.replace(/\s+/g,'-')) + '" value="' + esc(val) + '" placeholder="' + esc(h) + '">');
+    var id = 'ce-' + h.replace(/\s+/g,'-');
+    if (isContactTypeHeader(h)) return fg(h, contactTypeFieldHtml(id, val));
+    return fg(h, '<input type="text" class="form-control" id="' + esc(id) + '" value="' + esc(val) + '" placeholder="' + esc(h) + '">');
   }).join('');
 
   var name = c['Name'] || c['name'] || c['Full Name'] || c['Contact'] || 'Contact';
@@ -4250,8 +4298,8 @@ function submitContactEdit() {
 
   var values = {};
   G.contactsHeaders.forEach(function(h) {
-    var el = document.getElementById('ce-' + h.replace(/\s+/g,'-'));
-    if (el) values[h] = el.value.trim();
+    var v = readContactFieldValue('ce-' + h.replace(/\s+/g,'-'));
+    if (v !== undefined) values[h] = v;
   });
 
   var btn = document.getElementById('contact-save-btn');
@@ -4285,7 +4333,9 @@ function showAddContactForm() {
   f.style.display = willShow ? '' : 'none';
   if (willShow) {
     document.getElementById('ct-add-fields').innerHTML = contactAddHeaders().map(function(h) {
-      return '<input type="text" id="ctn-' + esc(h.replace(/\s+/g,'-')) + '" placeholder="' + esc(h) + '" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">';
+      var id = 'ctn-' + h.replace(/\s+/g,'-');
+      if (isContactTypeHeader(h)) return contactTypeFieldHtml(id, '');
+      return '<input type="text" id="' + esc(id) + '" placeholder="' + esc(h) + '" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">';
     }).join('');
   }
 }
@@ -4295,8 +4345,7 @@ function doAddContact() {
   var values = {};
   var hasAny = false;
   headers.forEach(function(h) {
-    var el = document.getElementById('ctn-' + h.replace(/\s+/g,'-'));
-    var v = el ? el.value.trim() : '';
+    var v = readContactFieldValue('ctn-' + h.replace(/\s+/g,'-')) || '';
     values[h] = v;
     if (v) hasAny = true;
   });
