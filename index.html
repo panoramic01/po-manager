@@ -2426,7 +2426,7 @@ function renderRecentOrdersCard() {
 }
 
 function recentOrderRow(po) {
-  return '<div class="po-item" data-ponum="'+esc(po.poNum)+'" onclick="openEdit(\''+po.poNum+'\')" style="cursor:pointer">' +
+  return '<div class="po-item" data-ponum="'+esc(po.poNum)+'" onclick="showPODetail(\''+po.poNum+'\')" style="cursor:pointer">' +
     '<div class="row-between">' +
       '<div>' +
         '<div class="po-main" style="margin:0;font-size:16px">'+(po.jobRef||po.vendor||'\u2014')+'</div>' +
