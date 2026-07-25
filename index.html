@@ -330,6 +330,13 @@
     .status-option:active { opacity: 0.7; }
     .status-option.selected { border-color: #1F3971; background: #eaedfa; color: #1F3971; }
 
+    /* ── PO Detail View ── */
+    .po-detail-row { padding: 10px 0; border-bottom: 1px solid #f0efe9; }
+    .po-detail-row:last-child { border-bottom: none; }
+    .po-detail-label { font-size: 11px; font-weight: 700; color: #A2A092; text-transform: uppercase; letter-spacing: 0.4px; }
+    .po-detail-value { font-size: 15px; color: #2E2E2E; font-weight: 600; margin-top: 2px; white-space: pre-wrap; }
+    .po-detail-edit-btn { background: rgba(255,255,255,0.2); border: none; color: white; border-radius: 10px; padding: 8px 14px; font-size: 15px; font-weight: 700; cursor: pointer; min-height: 40px; }
+
     /* ── Swipe to receive ── */
     .po-item { position: relative; }
     .swipe-bg { position: absolute; left: 0; top: 0; bottom: 0; width: 100%; background: linear-gradient(90deg, #eaedfa 0%, transparent 60%); border-radius: 14px; opacity: 0; pointer-events: none; transition: opacity 0.15s; display: flex; align-items: center; padding-left: 14px; }
@@ -1536,6 +1543,18 @@
   <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;background:#f5f5f7" id="qwd-body"></div>
 </div>
 
+<!-- PO Detail View -->
+<div class="cleanup-overlay" id="po-detail-overlay" style="display:none">
+  <div class="cleanup-header">
+    <h2 id="po-detail-title">PO</h2>
+    <div style="display:flex;gap:8px;flex-shrink:0">
+      <button class="po-detail-edit-btn" id="po-detail-edit-btn" onclick="editFromPODetail()" title="Edit PO">&#9998;</button>
+      <button class="cleanup-close" onclick="closePODetail()">Close</button>
+    </div>
+  </div>
+  <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;background:#f5f5f7" id="po-detail-body"></div>
+</div>
+
 <!-- ══════════════════ JAVASCRIPT ══════════════════ -->
 <script>
 if ('serviceWorker' in navigator) {
@@ -2425,7 +2444,7 @@ function poCard(po, type) {
     ? '<div class="swipe-bg"><svg width="22" height="22" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>'
     : '';
 
-  return '<div class="po-item '+type+'" data-ponum="'+esc(po.poNum)+'" data-rowindex="'+po.rowIndex+'" onclick="openEdit(\''+po.poNum+'\')" style="cursor:pointer">' +
+  return '<div class="po-item '+type+'" data-ponum="'+esc(po.poNum)+'" data-rowindex="'+po.rowIndex+'" onclick="showPODetail(\''+po.poNum+'\')" style="cursor:pointer">' +
     swipeBg +
     '<div class="row-between">' +
       '<span class="po-num">'+po.poNum+'</span>' + amt +
@@ -3012,6 +3031,63 @@ function typeClass(status) {
     'Ordered':'ordered','Being made':'ordered','Currently Picking Up':'pickup'
   };
   return m[status] || 'pickup';
+}
+
+// ── PO Detail View ────────────────────────────────────────────────────────────
+function poDetailRow(label, value) {
+  if (!value) return '';
+  return '<div class="po-detail-row">' +
+    '<div class="po-detail-label">' + esc(label) + '</div>' +
+    '<div class="po-detail-value">' + esc(value) + '</div>' +
+  '</div>';
+}
+
+function showPODetail(poNum) {
+  var po = G.pos.find(function(p){ return p.poNum === poNum; });
+  if (!po) return;
+  G.detailPO = poNum;
+
+  document.getElementById('po-detail-title').textContent = po.poNum;
+  var editBtn = document.getElementById('po-detail-edit-btn');
+  if (editBtn) editBtn.style.display = G.perms.canEdit ? '' : 'none';
+
+  var invoiceBtn = G.perms.canViewInvoice
+    ? (po.invoiceLink
+        ? '<a href="'+esc(po.invoiceLink)+'" target="_blank" class="doc-link doc-link-invoice">Invoice</a>'
+        : '<span class="doc-link doc-link-disabled">No Invoice</span>')
+    : '';
+  var issuedBtn = po.issuedPOLink
+    ? '<a href="'+esc(po.issuedPOLink)+'" target="_blank" class="doc-link doc-link-issued">Issued PO</a>'
+    : '<span class="doc-link doc-link-disabled">No Issued PO</span>';
+
+  var amtRow = (G.perms.canViewInvoice && po.invoiceTotal && parseFloat(po.invoiceTotal) > 0)
+    ? poDetailRow('Invoice Total', '$' + fmtCurrency(po.invoiceTotal)) : '';
+
+  document.getElementById('po-detail-body').innerHTML =
+    '<div class="doc-links">' + invoiceBtn + issuedBtn + '</div>' +
+    '<div style="background:#fff;border-radius:12px;padding:2px 16px;margin-bottom:12px">' +
+      '<div class="po-detail-row"><span class="badge '+badgeCls(po.status)+'">'+esc(po.status)+'</span></div>' +
+      poDetailRow('Builder', po.builder) +
+      poDetailRow('Job Reference', po.jobRef) +
+      poDetailRow('Vendor', po.vendor) +
+      poDetailRow('Vendor Invoice #', po.vendorInvoice) +
+      amtRow +
+      poDetailRow('Delivery / Pickup Date', po.deliveryDate) +
+      poDetailRow('Notes', po.notes) +
+    '</div>' +
+    buildPhotoSection(po.receivedNote);
+
+  document.getElementById('po-detail-overlay').style.display = 'flex';
+}
+
+function closePODetail() {
+  document.getElementById('po-detail-overlay').style.display = 'none';
+}
+
+function editFromPODetail() {
+  if (!G.detailPO) return;
+  closePODetail();
+  openEdit(G.detailPO);
 }
 
 // ── Edit Modal ────────────────────────────────────────────────────────────────
@@ -6812,6 +6888,10 @@ window.addEventListener('load', function() {
 
 window.addEventListener('popstate', function(e) {
   _navPop = true;
+  // A PO detail view sits on top of whatever tab/panel is behind it and isn't
+  // part of the history stack itself -- make sure hardware/gesture back closes
+  // it instead of leaving it stuck on screen while the tab underneath changes.
+  closePODetail();
   var state = e.state;
   if (!state) {
     // No state — we're at the very start; just re-push so app stays open
