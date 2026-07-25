@@ -591,7 +591,7 @@
 
       <div onclick="openFormOverlay('materialrequest-overlay')" style="background:#fff;border-radius:12px;padding:22px 12px;text-align:center;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.08);display:flex;flex-direction:column;align-items:center;gap:10px">
         <svg width="32" height="32" fill="none" stroke="#1F3971" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
-        <span style="font-size:13px;font-weight:600;color:#1F3971">Material Request</span>
+        <span style="font-size:13px;font-weight:600;color:#1F3971">Material Delivery Request</span>
       </div>
 
       <div onclick="window.open('https://form.asana.com/?k=-79MbvjUOp8LQtbAxRMT0g&d=1208027938795761','_blank')" style="background:#fff;border-radius:12px;padding:22px 12px;text-align:center;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.08);display:flex;flex-direction:column;align-items:center;gap:10px">
@@ -1253,10 +1253,11 @@
           <input id="emp-new-password" type="text"  placeholder="Password *"      style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px"/>
           <select id="emp-new-role" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px;background:#fff">
             <option value="runner">Runner</option>
-            <option value="office">Office</option>
             <option value="site_manager">Site Manager</option>
-            <option value="accountant">Accountant</option>
+            <option value="purchaser">Purchaser</option>
+            <option value="human_resources">Human Resources</option>
             <option value="admin">Admin</option>
+            <option value="aidan">Aidan (Owner)</option>
           </select>
           <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
             <label style="font-size:12px;color:#555;font-weight:600;white-space:nowrap">PTO Days:</label>
@@ -1688,9 +1689,10 @@ function handleGoogleCredential(response) {
 }
 
 function gasCall(action, payload, onSuccess, onFailure) {
+  var fullPayload = Object.assign({ callerEmail: G.userEmail }, payload || {});
   fetch(GAS_URL, {
     method: 'POST',
-    body: JSON.stringify({ action: action, payload: payload || {} }),
+    body: JSON.stringify({ action: action, payload: fullPayload }),
     redirect: 'follow'
   })
   .then(function(r) { return r.json(); })
@@ -1998,21 +2000,28 @@ function forceUpdate() {
 }
 
 // ── Role-Based Access ─────────────────────────────────────────────────────────
+// True for aidan/admin/human_resources - the roles that can see all-employee
+// PTO and Time Clock data, not just their own.
+function canManageHR(role) {
+  return role === 'admin' || role === 'aidan' || role === 'human_resources';
+}
+
 function applyRole(role) {
   hideSplash();
+  // 'aidan' is the owner-only login label; it carries identical permissions
+  // to 'admin' everywhere in this app - effRole is what every check below uses.
+  var effRole = (role === 'aidan') ? 'admin' : role;
   var p = {
-    canDash:        role !== 'runner',
-    canCreate:      role === 'admin' || role === 'office',
-    canReceive:     role !== 'accountant',                           // controls Log tab visibility
-    canReceivePO:   role !== 'accountant',                           // controls Receive PO form + actions
-    canSearch:      role !== 'runner',
-    canPricing:     role === 'admin',
-    canEdit:        role === 'admin' || role === 'office',
-    canViewInvoice: role !== 'site_manager' && role !== 'runner',
-    canContacts:    role === 'admin' || role === 'office',
-    canOther:       role === 'admin' || role === 'office',
-    canCleanup:     role === 'admin' || role === 'office' || role === 'site_manager' || role === 'runner',
-    canAdmin:       false,
+    canDash:        effRole === 'admin' || effRole === 'purchaser' || effRole === 'site_manager',
+    canCreate:      effRole === 'admin' || effRole === 'purchaser',
+    canReceive:     effRole !== 'human_resources',                   // controls Log tab visibility
+    canReceivePO:   effRole !== 'human_resources',                   // controls Receive PO form + actions
+    canSearch:      effRole === 'admin' || effRole === 'purchaser' || effRole === 'site_manager',
+    canPricing:     effRole === 'admin' || effRole === 'purchaser',
+    canEdit:        effRole === 'admin' || effRole === 'purchaser',
+    canViewInvoice: effRole === 'admin' || effRole === 'purchaser',
+    canContacts:    effRole === 'admin' || effRole === 'purchaser',
+    canOther:       true,
     canAccount:     true
   };
   G.perms = p;
@@ -2026,20 +2035,20 @@ function applyRole(role) {
   sd('nav-account',     p.canAccount);
   sd('other-card-pricing',   p.canPricing);
   sd('other-card-contacts',  p.canContacts);
-  sd('other-card-reconcile', role === 'admin');
-  sd('other-card-job-cost',   role === 'admin');
-  sd('other-card-missing-inv', role === 'admin');
-  sd('other-card-vendor-spend', role === 'admin');
-  sd('other-card-material-report', role === 'admin');
+  sd('other-card-reconcile', effRole === 'admin');
+  sd('other-card-job-cost',   effRole === 'admin');
+  sd('other-card-missing-inv', effRole === 'admin');
+  sd('other-card-vendor-spend', effRole === 'admin' || effRole === 'purchaser');
+  sd('other-card-material-report', effRole === 'admin');
   sd('other-card-sop', true);
-  sd('other-card-emp-mgr',      role === 'admin');
-  sd('other-card-pto-overview',  role === 'admin');
-  sd('other-card-payroll',       role === 'admin');
+  sd('other-card-emp-mgr',      effRole === 'admin' || effRole === 'human_resources');
+  sd('other-card-pto-overview',  effRole === 'admin' || effRole === 'human_resources');
+  sd('other-card-payroll',       effRole === 'admin' || effRole === 'human_resources');
   sd('other-card-new-project',   p.canCreate);
   sd('receive-po-card', p.canReceivePO);
 
   // Show role badge in header
-  var labels = { admin:'Admin', office:'Office', site_manager:'Site Manager', runner:'Runner', accountant:'Accountant' };
+  var labels = { aidan:'Aidan', admin:'Admin', purchaser:'Purchaser', site_manager:'Site Manager', runner:'Runner', human_resources:'HR' };
   var headerP = document.querySelector('.app-header p');
   if (headerP && labels[role]) {
     headerP.innerHTML = 'Panoramic Building' +
@@ -2049,6 +2058,8 @@ function applyRole(role) {
   // Navigate to the correct default tab
   if (role === 'runner') {
     showTabDirect('receive', document.getElementById('nav-receive'));
+  } else if (role === 'human_resources') {
+    showTabDirect('account', document.getElementById('nav-account'));
   } else {
     showTabDirect('dashboard', document.getElementById('nav-dashboard'));
   }
@@ -4005,7 +4016,7 @@ function openJobDashboardPanel() {
   gasCall('getAsanaJobs', {}, function(r) {
     window._jdJobs = r.jobs || [];
     var inp2 = document.getElementById('jc-job-input');
-    if (inp2) inp2.placeholder = 'Search jobs…';
+    if (inp2) { inp2.placeholder = 'Search jobs…'; jcJobFilter(inp2.value); }
   }, function() {
     var inp2 = document.getElementById('jc-job-input');
     if (inp2) inp2.placeholder = 'Error loading jobs';
@@ -4073,45 +4084,22 @@ function renderJobInfoCard(meta) {
   var days = daysLiveFrom(meta.startDate);
   var statusBadge = meta.status
     ? '<span class="badge ' + jobStatusBadgeCls(meta.status) + '">' + esc(meta.status) + '</span>'
-    : '<span style="font-size:12px;opacity:.75;font-style:italic">Status not set</span>';
+    : '<span style="font-size:12px;opacity:.75;font-style:italic">Not on the Exterior Master Schedule</span>';
   var daysLine = days === null
-    ? '<span style="opacity:.75;font-style:italic">Start date not set</span>'
+    ? '<span style="opacity:.75;font-style:italic">Start date not set in Asana</span>'
     : '<b>' + days + '</b> day' + (days === 1 ? '' : 's') + ' live';
+  var dueLine = meta.endDate ? ' · Due <b>' + esc(meta.endDate) + '</b>' : '';
   var links = '';
   if (meta.driveFolderId) links += '<a href="https://drive.google.com/drive/folders/' + esc(meta.driveFolderId) + '" target="_blank" style="display:inline-block;margin-right:10px;font-size:12px;font-weight:600;color:#fff;text-decoration:underline">Drive folder</a>';
   if (meta.asanaTaskGid) links += '<a href="https://app.asana.com/0/0/' + esc(meta.asanaTaskGid) + '" target="_blank" style="display:inline-block;font-size:12px;font-weight:600;color:#fff;text-decoration:underline">Asana task</a>';
-
-  var editHtml = '';
-  if (meta.rowIndex) {
-    var statusOptions = ['', 'Active', 'On Hold', 'Complete', 'Canceled'].map(function(s) {
-      return '<option value="' + s + '"' + (s === meta.status ? ' selected' : '') + '>' + (s || 'Set status…') + '</option>';
-    }).join('');
-    editHtml =
-      '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center">'
-      + '<select id="jc-status-input" style="padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:13px">' + statusOptions + '</select>'
-      + '<input id="jc-startdate-input" type="date" value="' + esc(meta.startDate || '') + '" style="padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:13px">'
-      + '<button onclick="saveJobMeta(' + meta.rowIndex + ')" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.4);border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer">Save</button>'
-      + '</div>';
-  }
 
   document.getElementById('jc-info-card').innerHTML =
     '<div style="background:#1F3971;color:#fff;border-radius:12px;padding:16px 20px;margin-bottom:12px">'
     + '<div style="font-size:16px;font-weight:700;margin-bottom:6px">' + esc(meta.jobName) + (meta.contractor ? ' <span style="font-weight:400;opacity:.8">· ' + esc(meta.contractor) + '</span>' : '') + '</div>'
     + '<div style="margin-bottom:6px">' + statusBadge + '</div>'
-    + '<div style="font-size:13px;opacity:.9">' + daysLine + '</div>'
+    + '<div style="font-size:13px;opacity:.9">' + daysLine + dueLine + '</div>'
     + (links ? '<div style="margin-top:10px">' + links + '</div>' : '')
-    + editHtml
     + '</div>';
-}
-
-function saveJobMeta(rowIndex) {
-  var status    = document.getElementById('jc-status-input').value;
-  var startDate = document.getElementById('jc-startdate-input').value;
-  gasCall('updateJobMeta', { rowIndex: rowIndex, status: status, startDate: startDate }, function(r) {
-    if (r.error) { showToast('Error: ' + r.error); return; }
-    showToast('Job info saved');
-    loadJobDashboard();
-  }, function() { showToast('Connection error — redeploy GAS'); });
 }
 
 var G_qualityRecent = [];
@@ -6281,8 +6269,8 @@ function submitQualityCheck() {
 
 // ── PTO / Time Off ────────────────────────────────────────────────────────────
 function loadPTOPanel() {
-  // Show admin queue section only for admins
-  var isAdmin = G.role === 'admin';
+  // Show admin queue section only for aidan/admin/human_resources
+  var isAdmin = canManageHR(G.role);
   document.getElementById('pto-admin-section').style.display = isAdmin ? 'block' : 'none';
 
   // Load data from GAS
@@ -6487,7 +6475,7 @@ var _tcClockInterval = null;
 var _tcClockInTime = null;
 
 function loadTimeClock() {
-  document.getElementById('tc-admin-section').style.display = G.role === 'admin' ? 'block' : 'none';
+  document.getElementById('tc-admin-section').style.display = canManageHR(G.role) ? 'block' : 'none';
   // Get status + timesheet in parallel
   gasCall('getClockStatus', { email: G.userEmail }, function(s) {
     if (s.error) return;
@@ -6518,15 +6506,15 @@ function loadTimeClock() {
       daysEl.innerHTML = '<p style="font-size:13px;color:#aaa;margin:0">No hours recorded yet this period.</p>';
     }
 
-    // Admin team list
-    if (G.role === 'admin' && d.allEmployees && d.allEmployees.length) {
+    // Admin/HR team list
+    if (canManageHR(G.role) && d.allEmployees && d.allEmployees.length) {
       document.getElementById('tc-team-list').innerHTML = d.allEmployees.map(function(e) {
         return '<div style="background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,0.07);display:flex;justify-content:space-between;align-items:center">'
           + '<span style="font-size:14px;font-weight:600;color:#222">' + e.name + '</span>'
           + '<span style="font-size:15px;font-weight:700;color:#1F3971">' + e.hours + ' hrs</span>'
           + '</div>';
       }).join('');
-    } else if (G.role === 'admin') {
+    } else if (canManageHR(G.role)) {
       document.getElementById('tc-team-list').innerHTML = '<p style="font-size:13px;color:#aaa">No hours recorded yet this period.</p>';
     }
   }, function(){});
@@ -6818,8 +6806,8 @@ function loadEmpMgr() {
 }
 
 function renderEmpList() {
-  var roleColors = { admin: '#1F3971', office: '#0277bd', site_manager: '#558b2f', runner: '#6d4c41', accountant: '#6a1b9a' };
-  var roleLabels = { admin: 'Admin', office: 'Office', site_manager: 'Site Manager', runner: 'Runner', accountant: 'Accountant' };
+  var roleColors = { aidan: '#b71c1c', admin: '#1F3971', purchaser: '#0277bd', site_manager: '#558b2f', runner: '#6d4c41', human_resources: '#6a1b9a' };
+  var roleLabels = { aidan: 'Aidan (Owner)', admin: 'Admin', purchaser: 'Purchaser', site_manager: 'Site Manager', runner: 'Runner', human_resources: 'Human Resources' };
   document.getElementById('emp-list').innerHTML = _empData.map(function(e, i) {
     var initial = e.name ? e.name.charAt(0).toUpperCase() : '?';
     var roleColor = roleColors[e.role] || '#888';
@@ -6835,7 +6823,7 @@ function renderEmpList() {
       + '<input id="emp-edit-name-' + i + '" type="text" value="' + esc(e.name) + '" placeholder="Name" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-top:10px;margin-bottom:8px"/>'
       + '<input id="emp-edit-phone-' + i + '" type="tel" value="' + esc(e.phone) + '" placeholder="Phone" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px"/>'
       + '<select id="emp-edit-role-' + i + '" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px;background:#fff">'
-      + ['runner','office','site_manager','accountant','admin'].map(function(r_) { return '<option value="' + r_ + '"' + (e.role===r_?' selected':'') + '>' + (roleLabels[r_]||r_) + '</option>'; }).join('')
+      + ['runner','site_manager','purchaser','human_resources','admin','aidan'].map(function(r_) { return '<option value="' + r_ + '"' + (e.role===r_?' selected':'') + '>' + (roleLabels[r_]||r_) + '</option>'; }).join('')
       + '</select>'
       + '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><label style="font-size:12px;color:#555;font-weight:600;white-space:nowrap">PTO Days:</label>'
       + '<input id="emp-edit-allotted-' + i + '" type="number" min="0" value="' + e.allotted + '" style="width:80px;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px"/></div>'

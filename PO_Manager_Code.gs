@@ -24,6 +24,13 @@ function isOwnerEmail(email) {
   return false;
 }
 
+// 'aidan' is the owner-only role label; it carries the exact same permissions
+// as 'admin' everywhere in the app. Every role comparison should normalize
+// through this first so allow-lists never need to spell out 'aidan'.
+function normalizeRole_(role) {
+  return role === 'aidan' ? 'admin' : role;
+}
+
 var STATUS_OPTIONS = [
   "Pending Pickup",
   "Pending Delivery",
@@ -83,17 +90,16 @@ function doPost(e) {
     else if (action === 'savePhotoToDrive')  result = savePhotoToDrive(payload.base64Data, payload.mimeType, payload.filename, payload.builder, payload.jobRef, payload.docType, payload.poNum);
     else if (action === 'createProject')       result = createProjectAndTask(payload);
     else if (action === 'saveFileToFolderById') result = saveFileToFolderById(payload.base64Data, payload.mimeType, payload.filename, payload.folderId);
-    else if (action === 'getPricingData')    result = getPricingData();
-    else if (action === 'updatePricing')     result = updatePricing(payload.rowIndex, payload.vendorPrices);
-    else if (action === 'getContacts')         result = getContacts();
-    else if (action === 'updateContact')       result = updateContact(payload.rowIndex, payload.values);
-    else if (action === 'reconcileStatement')  result = reconcileStatement(payload.invoiceNumbers);
+    else if (action === 'getPricingData')    result = getPricingData(payload);
+    else if (action === 'updatePricing')     result = updatePricing(payload);
+    else if (action === 'getContacts')         result = getContacts(payload);
+    else if (action === 'updateContact')       result = updateContact(payload);
+    else if (action === 'reconcileStatement')  result = reconcileStatement(payload);
     else if (action === 'getJobList')          result = getJobList();
-    else if (action === 'getJobCostSummary')   result = getJobCostSummary(payload.jobRef);
-    else if (action === 'getMissingInvoices')  result = getMissingInvoices();
+    else if (action === 'getJobCostSummary')   result = getJobCostSummary(payload);
+    else if (action === 'getMissingInvoices')  result = getMissingInvoices(payload);
     else if (action === 'getJobDashboard')     result = getJobDashboard(payload);
-    else if (action === 'updateJobMeta')       result = updateJobMeta(payload);
-    else if (action === 'getVendorSpend')      result = getVendorSpend(payload.startDate, payload.endDate);
+    else if (action === 'getVendorSpend')      result = getVendorSpend(payload);
     else if (action === 'categorizeInvoices')  result = categorizeInvoices(payload);
     else if (action === 'suggestCategories')   result = suggestCategories(payload);
     else if (action === 'processEstimateWithMatching') result = processEstimateWithMatching(payload);
@@ -101,9 +107,9 @@ function doPost(e) {
     else if (action === 'saveMaterialHistory')          result = saveMaterialHistory(payload);
     else if (action === 'getAsanaJobs')                result = getAsanaJobs();
     else if (action === 'submitQualityCheck')           result = submitQualityCheck(payload);
-    else if (action === 'getPTOData')                  result = getPTOData(payload.email, payload.role);
+    else if (action === 'getPTOData')                  result = getPTOData(payload);
     else if (action === 'submitPTORequest')             result = submitPTORequest(payload);
-    else if (action === 'getPTOQueue')                  result = getPTOQueue();
+    else if (action === 'getPTOQueue')                  result = getPTOQueue(payload);
     else if (action === 'approvePTO')                   result = approvePTO(payload);
     else if (action === 'denyPTO')                      result = denyPTO(payload);
     else if (action === 'clockIn')                      result = clockIn(payload);
@@ -210,6 +216,9 @@ function getFirstName(fullName) {
  */
 function createPO(data) {
   try {
+    var auth = authorizeCaller(data, ['admin', 'purchaser']);
+    if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
+
     if (!data.jobRef || !data.vendor) {
       return { success: false, error: "Job Reference and Vendor are required." };
     }
@@ -349,7 +358,7 @@ function verifyLogin(email, password) {
       var rowPhone = (data[i][2] || '').toString().trim();               // Column C
       if (rowEmail === email) {
         if (rowPass && rowPass === password) {
-          if (isOwnerEmail(email)) rowRole = 'admin';
+          if (isOwnerEmail(email)) rowRole = 'aidan';
           return {
             success: true, role: rowRole, email: email,
             config: { statusOptions: STATUS_OPTIONS, vendorOptions: VENDOR_OPTIONS, userRole: rowRole, userEmail: email, userName: rowName, userPhone: rowPhone }
@@ -405,7 +414,7 @@ function verifyGoogleLogin(idToken) {
         var rowRole  = (data[i][3] || '').toString().toLowerCase().trim(); // Column D
         var rowName  = (data[i][0] || '').toString().trim();               // Column A
         var rowPhone = (data[i][2] || '').toString().trim();               // Column C
-        if (isOwnerEmail(email)) rowRole = 'admin';
+        if (isOwnerEmail(email)) rowRole = 'aidan';
         return {
           success: true, role: rowRole, email: email,
           config: { statusOptions: STATUS_OPTIONS, vendorOptions: VENDOR_OPTIONS, userRole: rowRole, userEmail: email, userName: rowName, userPhone: rowPhone }
@@ -600,7 +609,7 @@ function getRoleByEmail(email) {
 
     var ss    = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName(ROLES_SHEET);
-    if (!sheet) return { role: isOwnerEmail(email) ? 'admin' : 'runner', email: email };
+    if (!sheet) return { role: isOwnerEmail(email) ? 'aidan' : 'runner', email: email };
 
     var data = sheet.getDataRange().getValues();
     for (var i = 1; i < data.length; i++) {
@@ -609,13 +618,13 @@ function getRoleByEmail(email) {
       var rowName  = (data[i][0] || '').toString().trim();               // Column A
       var rowPhone = (data[i][2] || '').toString().trim();               // Column C
       if (rowEmail === email) {
-        if (isOwnerEmail(email)) rowRole = 'admin';
+        if (isOwnerEmail(email)) rowRole = 'aidan';
         return { role: rowRole, email: email, name: rowName, phone: rowPhone };
       }
     }
-    return { role: isOwnerEmail(email) ? 'admin' : 'runner', email: email, name: '', phone: '' };
+    return { role: isOwnerEmail(email) ? 'aidan' : 'runner', email: email, name: '', phone: '' };
   } catch(e) {
-    return { role: isOwnerEmail(email) ? 'admin' : 'runner', email: email, name: '', phone: '' };
+    return { role: isOwnerEmail(email) ? 'aidan' : 'runner', email: email, name: '', phone: '' };
   }
 }
 
@@ -627,55 +636,20 @@ function getRoleByEmail(email) {
 function authorizeCaller(payload, allowedRoles) {
   var callerEmail = ((payload && payload.callerEmail) || '').toString().toLowerCase().trim();
   if (!callerEmail) return { ok: false, code: 'AUTH_REQUIRED', error: 'You must be signed in to do this.' };
-  var role = getRoleByEmail(callerEmail).role;
+  var role = normalizeRole_(getRoleByEmail(callerEmail).role);
   if (allowedRoles.indexOf(role) === -1) {
     return { ok: false, code: 'FORBIDDEN', error: 'You do not have permission to do this.' };
   }
   return { ok: true, role: role, email: callerEmail };
 }
 
-/** Counts rows whose role (column D, index 3) is 'admin'. */
+/** Counts rows whose role (column D, index 3) normalizes to 'admin' (covers both 'admin' and 'aidan'). */
 function countAdminRows(data) {
   var n = 0;
   for (var i = 0; i < data.length; i++) {
-    if ((data[i][3] || '').toString().toLowerCase().trim() === 'admin') n++;
+    if (normalizeRole_((data[i][3] || '').toString().toLowerCase().trim()) === 'admin') n++;
   }
   return n;
-}
-
-/**
- * Looks up the active user's email in the Roles sheet and returns their role.
- * Roles sheet columns: A = Email, B = Role
- * Valid roles: admin | office | site_manager | runner | accountant
- * Falls back to 'runner' (most restricted) if email not found.
- */
-function getUserRole() {
-  try {
-    var email = Session.getActiveUser().getEmail();
-    if (!email) return { role: 'runner', email: 'unknown' };
-    email = email.toLowerCase().trim();
-
-    var ss    = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName(ROLES_SHEET);
-
-    // No Roles sheet yet? Grant admin to script owner, runner to everyone else.
-    if (!sheet) {
-      var owner = Session.getEffectiveUser().getEmail().toLowerCase().trim();
-      return { role: (email === owner ? 'admin' : 'runner'), email: email };
-    }
-
-    var data = sheet.getDataRange().getValues();
-    for (var i = 1; i < data.length; i++) {          // row 0 = header
-      var rowEmail = (data[i][0] || '').toString().toLowerCase().trim();
-      var rowRole  = (data[i][1] || '').toString().toLowerCase().trim();
-      if (rowEmail === email) return { role: rowRole, email: email };
-    }
-
-    // Not in the Roles sheet - default to runner (most restricted)
-    return { role: 'runner', email: email };
-  } catch(e) {
-    return { role: 'runner', email: '' };
-  }
 }
 
 // ─── Pricing ─────────────────────────────────────────────────────────────────
@@ -690,8 +664,11 @@ var PRICING_SHEET = "Pricing";
  * Layout: A=Description, B=U/M, C=Best Price, D=empty, E+=Vendors
  * Category header rows: description in A, everything else blank - no U/M and no prices.
  */
-function getPricingData() {
+function getPricingData(payload) {
   try {
+    var auth = authorizeCaller(payload, ['admin', 'purchaser']);
+    if (!auth.ok) return { error: auth.error, code: auth.code };
+
     var ss    = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName(PRICING_SHEET);
     if (!sheet) return { vendors: [], items: [] };
@@ -761,8 +738,14 @@ function getPricingData() {
  * Updates vendor prices for a single material row.
  * Auto-calculates best price as the minimum of all entered vendor prices.
  */
-function updatePricing(rowIndex, vendorPrices) {
+function updatePricing(payload) {
   try {
+    var auth = authorizeCaller(payload, ['admin', 'purchaser']);
+    if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
+
+    var rowIndex     = payload.rowIndex;
+    var vendorPrices = payload.vendorPrices;
+
     var ss    = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName(PRICING_SHEET);
     if (!sheet) return { success: false, error: 'Pricing sheet not found' };
@@ -1048,8 +1031,11 @@ function authorizeDrive() {
  * Reads the Contacts sheet. Row 1 = headers, rows 2+ = data.
  * Returns an array of objects keyed by header name.
  */
-function getContacts() {
+function getContacts(payload) {
   try {
+    var auth = authorizeCaller(payload, ['admin', 'purchaser']);
+    if (!auth.ok) return { headers: [], contacts: [], error: auth.error, code: auth.code };
+
     var ss    = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName('Contacts');
     if (!sheet) return { headers: [], contacts: [] };
@@ -1073,8 +1059,14 @@ function getContacts() {
 /**
  * Updates a single contact row. `values` is an object keyed by column header.
  */
-function updateContact(rowIndex, values) {
+function updateContact(payload) {
   try {
+    var auth = authorizeCaller(payload, ['admin', 'purchaser']);
+    if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
+
+    var rowIndex = payload.rowIndex;
+    var values   = payload.values;
+
     var ss    = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName('Contacts');
     if (!sheet) return { success: false, error: 'Contacts sheet not found' };
@@ -1092,8 +1084,13 @@ function updateContact(rowIndex, values) {
 }
 
 // ── Reconcile Statement ───────────────────────────────────────────────────────
-function reconcileStatement(invoiceNumbers) {
+function reconcileStatement(payload) {
   try {
+    var auth = authorizeCaller(payload, ['admin']);
+    if (!auth.ok) return { error: auth.error, code: auth.code };
+
+    var invoiceNumbers = payload.invoiceNumbers;
+
     var ss    = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName(SHEET_NAME);
     if (!sheet) return { error: 'PO Database sheet not found' };
@@ -1151,7 +1148,15 @@ function getJobList() {
 }
 
 // ── Job Cost Summary ──────────────────────────────────────────────────────────
-function getJobCostSummary(jobRef) {
+/** Public, authorized entry point for the client. */
+function getJobCostSummary(payload) {
+  var auth = authorizeCaller(payload, ['admin']);
+  if (!auth.ok) return { error: auth.error, code: auth.code };
+  return getJobCostSummary_(payload.jobRef);
+}
+
+/** Unauthenticated helper - only call from other server-side functions that have already authorized the caller. */
+function getJobCostSummary_(jobRef) {
   try {
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
     if (!sheet) return { error: 'PO Database sheet not found' };
@@ -1178,7 +1183,15 @@ function getJobCostSummary(jobRef) {
 }
 
 // ── Missing Invoices ──────────────────────────────────────────────────────────
-function getMissingInvoices() {
+/** Public, authorized entry point for the client. */
+function getMissingInvoices(payload) {
+  var auth = authorizeCaller(payload, ['admin']);
+  if (!auth.ok) return { error: auth.error, code: auth.code };
+  return getMissingInvoices_();
+}
+
+/** Unauthenticated helper - only call from other server-side functions that have already authorized the caller. */
+function getMissingInvoices_() {
   try {
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
     if (!sheet) return { error: 'PO Database sheet not found' };
@@ -1210,17 +1223,11 @@ function getMissingInvoices() {
 }
 
 // ── Job Dashboard (Jobs Registry + Quality Walk log) ──────────────────────────
-// Extends the "Projects" sheet with two appended columns: E=Status,
-// F=Start Date. Existing A-D columns (Contractor, Job Name, Drive folder,
-// Asana GID) are untouched -- getProjectFolderId/getRecentJobs only ever
-// read fixed-width ranges, so appending E/F is safe.
-
-function ensureProjectsHeaders_() {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PROJECTS_SHEET_NAME);
-  if (!sheet) return;
-  if (!sheet.getRange(1, 5).getValue()) sheet.getRange(1, 5).setValue('Status');
-  if (!sheet.getRange(1, 6).getValue()) sheet.getRange(1, 6).setValue('Start Date');
-}
+// The "Projects" sheet's A-D columns (Contractor, Job Name, Drive folder,
+// Asana GID) are the only ones this feature still reads -- getProjectFolderId/
+// getRecentJobs only ever read that same fixed-width range, so nothing else
+// touches it. Status/Start Date/End Date are NOT stored on this sheet at all;
+// they're read live from Asana (see getJobDashboard).
 
 /**
  * Best-effort split of an Asana task name formatted "Builder, Job Name,
@@ -1246,40 +1253,45 @@ function parseAsanaJobName_(rawTaskName) {
  * The job picker is sourced from Asana (getAsanaJobs, same list Quality
  * Check already uses) -- payload.jobGid is the Asana task gid (primary
  * key), payload.jobName is that task's full "Builder, Job Name, Address"
- * display string. The "Projects" sheet (Drive folder, Status, Start Date)
- * is looked up by exact Asana Task GID match (column D) when the job has
+ * display string. The "Projects" sheet (Contractor, Drive folder) is
+ * looked up by exact Asana Task GID match (column D) when the job has
  * been linked via the New Project intake flow; otherwise meta falls back
- * to a parsed short name with no editable Status/Start Date (nowhere to
- * save them). Cost/invoice matching uses the resolved short job name;
- * quality-walk history is read live from Asana (getQualityWalkHistory_) --
- * submitQualityCheck writes each check as a subtask of the job's Asana
- * task, so there's nothing to look up by name at all.
+ * to a parsed short name with no Drive folder (nowhere to look one up).
+ * Status, Start Date, and End Date all come live from the job's Asana
+ * task itself: Status is whichever section/bucket the task currently sits
+ * in on the Exterior Master Schedule board (ASANA_EXT_SCHED) -- the same
+ * board getAsanaJobs sources the job picker from, so every job here is
+ * guaranteed to be a task on it -- and Start/End Date are the task's own
+ * start_on/due_on fields. None of the three are stored anywhere in this
+ * app; moving a task's bucket or dates in Asana is reflected immediately.
+ * Cost/invoice matching uses the resolved short job name; quality-walk
+ * history is read live from Asana (getQualityWalkHistory_) -- submitQualityCheck
+ * writes each check as a subtask of the job's Asana task, so there's
+ * nothing to look up by name at all.
  */
 function getJobDashboard(payload) {
   try {
+    var auth = authorizeCaller(payload, ['admin', 'purchaser', 'site_manager']);
+    if (!auth.ok) return { error: auth.error, code: auth.code };
+
     var jobGid = (payload.jobGid || '').toString().trim();
     if (!jobGid) return { error: 'A job must be selected from the list.' };
     var rawJobName = (payload.jobName || '').toString().trim();
-
-    ensureProjectsHeaders_();
 
     var meta = null;
     var pSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PROJECTS_SHEET_NAME);
     if (pSheet) {
       var pLastRow = pSheet.getLastRow();
       if (pLastRow >= 2) {
-        var pData = pSheet.getRange(2, 1, pLastRow - 1, 6).getValues();
+        var pData = pSheet.getRange(2, 1, pLastRow - 1, 4).getValues();
         for (var i = 0; i < pData.length; i++) {
           var rowGid = (pData[i][3] || '').toString().trim();
           if (!rowGid || rowGid !== jobGid) continue;
           meta = {
-            rowIndex:      i + 2,
             contractor:    (pData[i][0] || '').toString().trim(),
             jobName:       (pData[i][1] || '').toString().trim(),
             driveFolderId: extractDriveFolderId(pData[i][2]),
-            asanaTaskGid:  rowGid,
-            status:        (pData[i][4] || '').toString().trim(),
-            startDate:     pData[i][5] instanceof Date ? Utilities.formatDate(pData[i][5], Session.getScriptTimeZone(), 'yyyy-MM-dd') : ''
+            asanaTaskGid:  rowGid
           };
           break;
         }
@@ -1287,13 +1299,22 @@ function getJobDashboard(payload) {
     }
     var shortJobName = meta ? meta.jobName : parseAsanaJobName_(rawJobName);
     if (!meta) {
-      meta = { rowIndex: null, contractor: '', jobName: shortJobName, driveFolderId: null, asanaTaskGid: jobGid, status: '', startDate: '' };
+      meta = { contractor: '', jobName: shortJobName, driveFolderId: null, asanaTaskGid: jobGid };
     }
     var shortJobNameLower = shortJobName.toLowerCase();
 
-    var cost = getJobCostSummary(shortJobName);
+    var taskInfo = asanaRequest('get', '/tasks/' + jobGid +
+      '?opt_fields=start_on,due_on,memberships.section.name,memberships.project.gid');
+    meta.startDate = (taskInfo.data && taskInfo.data.start_on) || '';
+    meta.endDate   = (taskInfo.data && taskInfo.data.due_on)   || '';
+    var membership = ((taskInfo.data && taskInfo.data.memberships) || []).filter(function(m) {
+      return m.project && m.project.gid === ASANA_EXT_SCHED;
+    })[0];
+    meta.status = (membership && membership.section && membership.section.name) || '';
 
-    var missingAll = getMissingInvoices();
+    var cost = getJobCostSummary_(shortJobName);
+
+    var missingAll = getMissingInvoices_();
     var missingRows = [];
     if (missingAll.missing) {
       missingRows = missingAll.missing.filter(function(m) {
@@ -1307,31 +1328,15 @@ function getJobDashboard(payload) {
   } catch (e) { return { error: e.toString() }; }
 }
 
-/**
- * Admin edit of a job's Status/Start Date on the Projects sheet, keyed by
- * rowIndex (not name) so two contractors sharing a job name can't collide.
- */
-function updateJobMeta(payload) {
-  try {
-    var rowIndex = payload.rowIndex;
-    if (!rowIndex) return { error: 'rowIndex is required.' };
-    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PROJECTS_SHEET_NAME);
-    if (!sheet) return { error: "Sheet '" + PROJECTS_SHEET_NAME + "' not found." };
-    sheet.getRange(rowIndex, 5).setValue((payload.status || '').toString().trim());
-    var startDate = (payload.startDate || '').toString().trim();
-    if (startDate) {
-      var parts = startDate.split('-'); // input type=date gives YYYY-MM-DD
-      sheet.getRange(rowIndex, 6).setValue(new Date(parts[0], parts[1] - 1, parts[2]));
-    } else {
-      sheet.getRange(rowIndex, 6).setValue('');
-    }
-    return { success: true };
-  } catch (e) { return { error: e.toString() }; }
-}
-
 // ── Vendor Spend ──────────────────────────────────────────────────────────────
-function getVendorSpend(startDate, endDate) {
+function getVendorSpend(payload) {
   try {
+    var auth = authorizeCaller(payload, ['admin', 'purchaser']);
+    if (!auth.ok) return { error: auth.error, code: auth.code };
+
+    var startDate = payload.startDate;
+    var endDate   = payload.endDate;
+
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
     if (!sheet) return { error: 'PO Database sheet not found' };
     var data = sheet.getDataRange().getValues();
@@ -1872,6 +1877,9 @@ function submitQualityCheck(payload) {
  */
 function createProjectAndTask(payload) {
   try {
+    var auth = authorizeCaller(payload, ['admin', 'purchaser']);
+    if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
+
     var builder        = (payload.builder || '').toString().trim();
     var jobName         = (payload.jobName || '').toString().trim();
     var address         = (payload.address || '').toString().trim();
@@ -1958,8 +1966,12 @@ function createProjectAndTask(payload) {
 /**
  * Gets PTO balance + request history for an employee (and pending queue for admins).
  */
-function getPTOData(email, role) {
+function getPTOData(payload) {
   try {
+    var email = (payload.email || '').toString();
+    var callerRole = normalizeRole_(getRoleByEmail((payload.callerEmail || email)).role);
+    var canSeeQueue = (callerRole === 'admin' || callerRole === 'human_resources');
+
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var hrSheet = ss.getSheetByName(ROLES_SHEET);
     var balance = { allotted: 0, used: 0, remaining: 0, name: '' };
@@ -2020,7 +2032,7 @@ function getPTOData(email, role) {
       if (taskEmail.toLowerCase() === email.toLowerCase().trim()) {
         myRequests.push(req);
       }
-      if (status === 'pending' && role === 'admin') {
+      if (status === 'pending' && canSeeQueue) {
         pendingQueue.push(req);
       }
     });
@@ -2074,8 +2086,11 @@ function submitPTORequest(payload) {
 /**
  * Returns all pending (non-completed, non-denied) PTO requests for admin view.
  */
-function getPTOQueue() {
+function getPTOQueue(payload) {
   try {
+    var auth = authorizeCaller(payload, ['admin', 'human_resources']);
+    if (!auth.ok) return { error: auth.error, code: auth.code };
+
     var result = asanaRequest('get',
       '/projects/' + ASANA_PTO_PROJECT +
       '/tasks?opt_fields=gid,name,notes,completed,memberships.section.name&limit=100');
@@ -2115,6 +2130,9 @@ function getPTOQueue() {
  */
 function approvePTO(payload) {
   try {
+    var auth = authorizeCaller(payload, ['admin', 'human_resources']);
+    if (!auth.ok) return { error: auth.error, code: auth.code };
+
     var taskGid  = payload.taskGid;
     var empEmail = payload.employeeEmail;
     var days     = parseFloat(payload.days) || 0;
@@ -2135,6 +2153,9 @@ function approvePTO(payload) {
  */
 function denyPTO(payload) {
   try {
+    var auth = authorizeCaller(payload, ['admin', 'human_resources']);
+    if (!auth.ok) return { error: auth.error, code: auth.code };
+
     var taskGid = payload.taskGid;
 
     // Move to Denied section (triggers Asana email rule)
@@ -2294,7 +2315,8 @@ function getClockStatus(payload) {
 function getTimesheet(payload) {
   try {
     var email  = payload.email;
-    var role   = payload.role || 'runner';
+    var callerRole = normalizeRole_(getRoleByEmail((payload.callerEmail || email)).role);
+    var canSeeAll  = (callerRole === 'admin' || callerRole === 'human_resources');
     var sh     = getTimeSheet_();
     var tz     = Session.getScriptTimeZone();
     var now    = new Date();
@@ -2331,8 +2353,8 @@ function getTimesheet(payload) {
           myDays[dayLabel] = Math.round(((myDays[dayLabel] || 0) + rowHours) * 100) / 100;
         }
 
-        // All employees (admin)
-        if (role === 'admin') {
+        // All employees (admin / HR)
+        if (canSeeAll) {
           if (!empMap[rowEmail]) empMap[rowEmail] = { name: (data[i][0] || rowEmail).toString().trim(), hours: 0 };
           empMap[rowEmail].hours = Math.round((empMap[rowEmail].hours + rowHours) * 100) / 100;
         }
@@ -2340,7 +2362,7 @@ function getTimesheet(payload) {
     }
 
     var allEmployees = [];
-    if (role === 'admin') {
+    if (canSeeAll) {
       allEmployees = Object.keys(empMap).map(function(e) {
         return { name: empMap[e].name, hours: empMap[e].hours };
       }).sort(function(a, b) { return b.hours - a.hours; });
@@ -2358,7 +2380,7 @@ function getTimesheet(payload) {
 // ── Admin: Employee Manager ───────────────────────────────────────────────────
 function getEmployees(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin']);
+    var auth = authorizeCaller(payload, ['admin', 'human_resources']);
     if (!auth.ok) return { error: auth.error, code: auth.code };
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sh = ss.getSheetByName(ROLES_SHEET);
@@ -2386,15 +2408,15 @@ function getEmployees(payload) {
 
 function addEmployee(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin']);
+    var auth = authorizeCaller(payload, ['admin', 'human_resources']);
     if (!auth.ok) return { error: auth.error, code: auth.code };
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sh = ss.getSheetByName(ROLES_SHEET);
     if (!sh) return { error: 'HR sheet not found' };
     var email = (payload.email || '').toLowerCase().trim();
     if (!email || !payload.name) return { error: 'Name and email are required' };
-    if (isOwnerEmail(email) && (payload.role || '').toLowerCase().trim() !== 'admin') {
-      return { error: 'This account is protected and must be added as admin.', code: 'OWNER_PROTECTED' };
+    if (isOwnerEmail(email) && (payload.role || '').toLowerCase().trim() !== 'aidan') {
+      return { error: 'This account is protected and must be added as aidan.', code: 'OWNER_PROTECTED' };
     }
     var lastRow = sh.getLastRow();
     if (lastRow >= 2) {
@@ -2420,7 +2442,7 @@ function addEmployee(payload) {
 
 function updateEmployee(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin']);
+    var auth = authorizeCaller(payload, ['admin', 'human_resources']);
     if (!auth.ok) return { error: auth.error, code: auth.code };
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sh = ss.getSheetByName(ROLES_SHEET);
@@ -2432,12 +2454,12 @@ function updateEmployee(payload) {
     for (var i = 0; i < data.length; i++) {
       if ((data[i][1] || '').toLowerCase().trim() === email) {
         var newRole = payload.role !== undefined ? payload.role.toString().toLowerCase().trim() : undefined;
-        if (newRole !== undefined && newRole !== 'admin') {
+        if (newRole !== undefined && newRole !== 'aidan') {
           if (isOwnerEmail(email)) {
-            return { error: 'This account is protected and must remain admin.', code: 'OWNER_PROTECTED' };
+            return { error: 'This account is protected and must remain aidan.', code: 'OWNER_PROTECTED' };
           }
           var currentRole = (data[i][3] || '').toString().toLowerCase().trim();
-          if (currentRole === 'admin' && countAdminRows(data) <= 1) {
+          if (normalizeRole_(currentRole) === 'admin' && countAdminRows(data) <= 1) {
             return { error: 'Cannot demote the last remaining admin.', code: 'LAST_ADMIN_PROTECTED' };
           }
         }
@@ -2456,7 +2478,7 @@ function updateEmployee(payload) {
 
 function removeEmployee(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin']);
+    var auth = authorizeCaller(payload, ['admin', 'human_resources']);
     if (!auth.ok) return { error: auth.error, code: auth.code };
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sh = ss.getSheetByName(ROLES_SHEET);
@@ -2471,7 +2493,7 @@ function removeEmployee(payload) {
           return { error: 'This account is protected and cannot be removed.', code: 'OWNER_PROTECTED' };
         }
         var currentRole = (data[i][3] || '').toString().toLowerCase().trim();
-        if (currentRole === 'admin' && countAdminRows(data) <= 1) {
+        if (normalizeRole_(currentRole) === 'admin' && countAdminRows(data) <= 1) {
           return { error: 'Cannot remove the last remaining admin.', code: 'LAST_ADMIN_PROTECTED' };
         }
         sh.deleteRow(i + 2);
@@ -2485,7 +2507,7 @@ function removeEmployee(payload) {
 // ── Admin: PTO Overview ───────────────────────────────────────────────────────
 function getPTOOverview(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin']);
+    var auth = authorizeCaller(payload, ['admin', 'human_resources']);
     if (!auth.ok) return { error: auth.error, code: auth.code };
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sh = ss.getSheetByName(ROLES_SHEET);
@@ -2524,7 +2546,7 @@ function getPTOOverview(payload) {
 // ── Admin: Payroll Summary ────────────────────────────────────────────────────
 function getPayrollSummary(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin']);
+    var auth = authorizeCaller(payload, ['admin', 'human_resources']);
     if (!auth.ok) return { error: auth.error, code: auth.code };
     var sh  = getTimeSheet_();
     var tz  = Session.getScriptTimeZone();
@@ -2574,7 +2596,7 @@ function getPayrollSummary(payload) {
 
 function emailPayroll(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin']);
+    var auth = authorizeCaller(payload, ['admin', 'human_resources']);
     if (!auth.ok) return { error: auth.error, code: auth.code };
     var to = payload.to || Session.getActiveUser().getEmail();
     var summary = getPayrollSummary(payload);
