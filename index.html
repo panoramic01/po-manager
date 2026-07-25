@@ -330,6 +330,21 @@
     .status-option:active { opacity: 0.7; }
     .status-option.selected { border-color: #1F3971; background: #eaedfa; color: #1F3971; }
 
+    /* ── Photo Lightbox ── */
+    .photo-lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.92); z-index: 380; display: none; flex-direction: column; }
+    .photo-lightbox.open { display: flex; }
+    .photo-lightbox-header { display: flex; justify-content: flex-end; padding: 14px 16px; padding-top: calc(14px + env(safe-area-inset-top)); flex-shrink: 0; }
+    .photo-lightbox-close { background: rgba(255,255,255,0.15); border: none; color: white; border-radius: 50%; width: 40px; height: 40px; font-size: 20px; line-height: 1; cursor: pointer; }
+    .photo-lightbox-body { flex: 1; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; padding: 0 16px; }
+    .photo-lightbox-body img { max-width: 100%; max-height: 74vh; object-fit: contain; border-radius: 6px; }
+    .photo-lightbox-error { display: none; color: rgba(255,255,255,0.75); font-size: 14px; text-align: center; padding: 20px; }
+    .photo-lightbox-nav { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,0.15); border: none; color: white; width: 44px; height: 44px; border-radius: 50%; font-size: 22px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .photo-lightbox-nav.prev { left: 10px; }
+    .photo-lightbox-nav.next { right: 10px; }
+    .photo-lightbox-footer { display: flex; align-items: center; justify-content: center; gap: 16px; padding: 14px 16px calc(14px + env(safe-area-inset-bottom)); flex-shrink: 0; }
+    .photo-lightbox-count { color: rgba(255,255,255,0.7); font-size: 13px; font-weight: 600; }
+    .photo-lightbox-open-link { color: #9db4e8; font-size: 13px; font-weight: 700; text-decoration: none; }
+
     /* ── PO Detail View ── */
     .po-detail-row { padding: 10px 0; border-bottom: 1px solid #f0efe9; }
     .po-detail-row:last-child { border-bottom: none; }
@@ -1553,6 +1568,23 @@
     </div>
   </div>
   <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;background:#f5f5f7" id="po-detail-body"></div>
+</div>
+
+<!-- Photo Lightbox -->
+<div class="photo-lightbox" id="photo-lightbox" onclick="maybeClosePhotoLightbox(event)">
+  <div class="photo-lightbox-header">
+    <button class="photo-lightbox-close" onclick="closePhotoLightbox()">&times;</button>
+  </div>
+  <div class="photo-lightbox-body">
+    <button class="photo-lightbox-nav prev" id="photo-lightbox-prev" onclick="event.stopPropagation();lightboxNav(-1)">&#8249;</button>
+    <img id="photo-lightbox-img" alt="Received photo" onerror="this.style.display='none';document.getElementById('photo-lightbox-error').style.display='block'">
+    <div class="photo-lightbox-error" id="photo-lightbox-error">Preview unavailable — use "Open Original" below.</div>
+    <button class="photo-lightbox-nav next" id="photo-lightbox-next" onclick="event.stopPropagation();lightboxNav(1)">&#8250;</button>
+  </div>
+  <div class="photo-lightbox-footer">
+    <span class="photo-lightbox-count" id="photo-lightbox-count"></span>
+    <a href="#" target="_blank" class="photo-lightbox-open-link" id="photo-lightbox-open-link" onclick="event.stopPropagation()">Open Original</a>
+  </div>
 </div>
 
 <!-- ══════════════════ JAVASCRIPT ══════════════════ -->
@@ -3183,19 +3215,63 @@ function fg(label, input) {
 function driveThumb(url) {
   var m = url.match(/\/d\/([a-zA-Z0-9_-]+)/) || url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
   if (!m) return null;
-  return { thumb: 'https://drive.google.com/thumbnail?id=' + m[1] + '&sz=w400', open: url };
+  return { thumb: 'https://drive.google.com/thumbnail?id=' + m[1] + '&sz=w400', full: 'https://drive.google.com/thumbnail?id=' + m[1] + '&sz=w1600', open: url };
 }
 
 function buildPhotoSection(note) {
   if (!note) return '';
   var urls = note.split(/[\n,]+/).map(function(u){ return u.trim(); }).filter(function(u){ return u.indexOf('http') === 0; });
   if (!urls.length) return '';
-  var thumbs = urls.map(function(url) {
+  G.lastPhotoUrls = urls;
+  var thumbs = urls.map(function(url, i) {
     var d = driveThumb(url);
-    if (d) return '<a href="' + url + '" target="_blank" style="display:block;border-radius:8px;overflow:hidden;border:1px solid #dde1ef"><img src="' + d.thumb + '" style="width:100%;display:block;object-fit:cover;max-height:130px" onerror="this.style.display=\'none\'"></a>';
-    return '<a href="' + url + '" target="_blank" style="display:block;padding:10px;background:#f0f2fa;border-radius:8px;font-size:12px;color:#1F3971">Open photo</a>';
+    var inner = d
+      ? '<img src="' + d.thumb + '" style="width:100%;display:block;object-fit:cover;max-height:130px" onerror="this.style.display=\'none\'">'
+      : '<div style="padding:10px;font-size:12px;color:#1F3971">Open photo</div>';
+    return '<div onclick="openPhotoLightbox(G.lastPhotoUrls,' + i + ')" style="display:block;border-radius:8px;overflow:hidden;border:1px solid #dde1ef;cursor:pointer;background:#f0f2fa">' + inner + '</div>';
   }).join('');
   return '<div class="form-group"><label class="form-label">Received Photos (' + urls.length + ')</label><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">' + thumbs + '</div></div>';
+}
+
+// ── Photo Lightbox ────────────────────────────────────────────────────────────
+function openPhotoLightbox(urls, idx) {
+  if (!urls || !urls.length) return;
+  G.lightboxUrls  = urls;
+  G.lightboxIndex = idx;
+  renderLightboxImage();
+  document.getElementById('photo-lightbox').classList.add('open');
+}
+
+function renderLightboxImage() {
+  var urls = G.lightboxUrls, idx = G.lightboxIndex;
+  var url  = urls[idx];
+  var d    = driveThumb(url);
+
+  var img = document.getElementById('photo-lightbox-img');
+  img.style.display = '';
+  document.getElementById('photo-lightbox-error').style.display = 'none';
+  img.src = d ? d.full : url;
+
+  document.getElementById('photo-lightbox-open-link').href = url;
+  document.getElementById('photo-lightbox-count').textContent = (idx + 1) + ' of ' + urls.length;
+
+  var multi = urls.length > 1;
+  document.getElementById('photo-lightbox-prev').style.display = multi ? '' : 'none';
+  document.getElementById('photo-lightbox-next').style.display = multi ? '' : 'none';
+}
+
+function lightboxNav(dir) {
+  var n = G.lightboxUrls.length;
+  G.lightboxIndex = (G.lightboxIndex + dir + n) % n;
+  renderLightboxImage();
+}
+
+function closePhotoLightbox() {
+  document.getElementById('photo-lightbox').classList.remove('open');
+}
+
+function maybeClosePhotoLightbox(e) {
+  if (e.target === document.getElementById('photo-lightbox')) closePhotoLightbox();
 }
 
 function closeEdit() { document.getElementById('edit-modal').classList.remove('open'); }
@@ -6888,9 +6964,11 @@ window.addEventListener('load', function() {
 
 window.addEventListener('popstate', function(e) {
   _navPop = true;
-  // A PO detail view sits on top of whatever tab/panel is behind it and isn't
-  // part of the history stack itself -- make sure hardware/gesture back closes
-  // it instead of leaving it stuck on screen while the tab underneath changes.
+  // A PO detail view (and the photo lightbox that can sit on top of it) aren't
+  // part of the history stack themselves -- make sure hardware/gesture back
+  // closes them instead of leaving them stuck on screen while the tab
+  // underneath changes.
+  closePhotoLightbox();
   closePODetail();
   var state = e.state;
   if (!state) {
