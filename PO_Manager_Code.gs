@@ -83,7 +83,7 @@ function doPost(e) {
     if      (action === 'getConfig')        result = getConfig(payload.email);
     else if (action === 'verifyLogin')       result = verifyLogin(payload.email, payload.password);
     else if (action === 'verifyGoogleLogin') result = verifyGoogleLogin(payload.credential);
-    else if (action === 'getSheetData')      result = getSheetData();
+    else if (action === 'getSheetData')      result = getSheetData(payload);
     else if (action === 'createPO')          result = createPO(payload);
     else if (action === 'updatePO')          result = updatePO(payload.rowIndex, payload.updates);
     else if (action === 'findPOByNumber')    result = findPOByNumber(payload.poNum);
@@ -145,8 +145,19 @@ function doPost(e) {
  * Returns all valid PO rows from the sheet as an array of objects.
  * Rows without a valid PO number (YY-QQ-###) are skipped automatically,
  * so the input/header rows at the top of the sheet are ignored.
+ *
+ * Invoice fields (invoiceTotal, invoiceFile, invoiceLink) are only
+ * populated for admin/purchaser callers -- this mirrors the client's
+ * canViewInvoice gate, but enforced here too so the raw response can't be
+ * used to read invoice data for a role the UI hides it from. An
+ * unresolvable caller (missing/unknown email) is treated as the lowest
+ * privilege and gets the fields stripped, same as any other role.
  */
-function getSheetData() {
+function getSheetData(payload) {
+  var callerEmail = ((payload && payload.callerEmail) || '').toString().toLowerCase().trim();
+  var callerRole  = normalizeRole_(getRoleByEmail(callerEmail).role);
+  var canViewInvoice = callerRole === 'admin' || callerRole === 'purchaser';
+
   var sheet = getSheet();
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
@@ -179,7 +190,7 @@ function getSheetData() {
     // Column J may also just contain a plain-text URL
     if (!issuedPOLink) issuedPOLink = str(row[9]);
 
-    var invoiceFile = str(row[13]);
+    var invoiceFile = canViewInvoice ? str(row[13]) : "";
 
     pos.push({
       rowIndex:     i + 2,
@@ -190,12 +201,12 @@ function getSheetData() {
       vendor:       str(row[4]),
       vendorInvoice:str(row[5]),
       status:       str(row[6]).trim(),
-      invoiceTotal: str(row[7]),
+      invoiceTotal: canViewInvoice ? str(row[7]) : "",
       deliveryDate: deliveryDate,
       issuedPO:     str(row[9]),
       issuedPOLink: issuedPOLink,
       invoiceFile:  invoiceFile,
-      invoiceLink:  invoiceFile || legacyInvoiceLink,
+      invoiceLink:  canViewInvoice ? (invoiceFile || legacyInvoiceLink) : "",
       receivedNote: str(row[10]),
       notes:        str(row[11]),
       orderedBy:    str(row[12])
