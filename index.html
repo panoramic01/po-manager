@@ -3128,7 +3128,6 @@ function closePODetail() {
 
 function editFromPODetail() {
   if (!G.detailPO) return;
-  closePODetail();
   openEdit(G.detailPO);
 }
 
@@ -3151,7 +3150,10 @@ function openEdit(poNum) {
     return '<option value="'+esc(v)+'"'+(selected?' selected':'')+'>'+esc(v)+'</option>';
   }).join('');
 
-  document.getElementById('edit-modal-title').textContent = poNum;
+  document.getElementById('po-detail-title').textContent = poNum;
+  document.getElementById('po-detail-overlay').style.display = 'flex';
+  var poDetailEditBtn = document.getElementById('po-detail-edit-btn');
+  if (poDetailEditBtn) poDetailEditBtn.style.display = 'none';
 
   var issuedField =
     '<div class="form-group">' +
@@ -3177,7 +3179,7 @@ function openEdit(poNum) {
       '<p id="e-invoicefile-status" class="photo-status" style="margin-top:8px"></p>' +
     '</div>' : '';
 
-  document.getElementById('edit-modal-body').innerHTML =
+  document.getElementById('po-detail-body').innerHTML =
     buildDocLinks(po) +
     fg('Builder',         '<input type="text"   class="form-control" id="e-builder"  value="'+esc(po.builder)+'">') +
     fg('Job Reference',   '<input type="text"   class="form-control" id="e-job"      value="'+esc(po.jobRef)+'">') +
@@ -3201,10 +3203,8 @@ function openEdit(poNum) {
     fg('Notes',           '<textarea class="form-control" id="e-notes" rows="3">'+esc(po.notes)+'</textarea>') +
     '<div class="modal-actions">' +
       '<button class="btn btn-primary" style="flex:1" onclick="submitEdit()">Save</button>' +
-      '<button class="btn btn-secondary" style="flex:0 0 auto" onclick="closeEdit()">Cancel</button>' +
+      '<button class="btn btn-secondary" style="flex:0 0 auto" onclick="showPODetail(\''+poNum+'\')">Cancel</button>' +
     '</div>';
-
-  document.getElementById('edit-modal').classList.add('open');
 }
 
 function fg(label, input) {
@@ -3319,24 +3319,32 @@ function maybeCloseModal(e) { if (e.target===document.getElementById('edit-modal
 function submitEdit() {
   if (!G.editRow) return;
 
-  gasCall('updatePO', {
-    rowIndex: G.editRow,
-    updates: {
-      builder:       trim('e-builder'),
-      jobRef:        trim('e-job'),
-      vendor:        getVendorValue('e-vendor', 'e-vendor-other'),
-      vendorInvoice: trim('e-vinvoice'),
-      status:        getVendorValue('e-status', 'e-status-other'),
-      invoiceTotal:  G.perms.canViewInvoice ? val('e-total') : undefined,
-      deliveryDate:  fromInputDate(trim('e-date')),
-      issuedPO:      trim('e-issued'),
-      invoiceFile:   G.perms.canViewInvoice ? trim('e-invoicefile') : undefined,
-      notes:         trim('e-notes')
-    }
-  }, function(res) {
+  var updates = {
+    builder:       trim('e-builder'),
+    jobRef:        trim('e-job'),
+    vendor:        getVendorValue('e-vendor', 'e-vendor-other'),
+    vendorInvoice: trim('e-vinvoice'),
+    status:        getVendorValue('e-status', 'e-status-other'),
+    invoiceTotal:  G.perms.canViewInvoice ? val('e-total') : undefined,
+    deliveryDate:  fromInputDate(trim('e-date')),
+    issuedPO:      trim('e-issued'),
+    invoiceFile:   G.perms.canViewInvoice ? trim('e-invoicefile') : undefined,
+    notes:         trim('e-notes')
+  };
+
+  gasCall('updatePO', { rowIndex: G.editRow, updates: updates }, function(res) {
     if (res.success) {
-      closeEdit();
+      // Patch the local record and drop straight back into the PO detail
+      // view (instead of the old bottom-sheet modal) so the "own tab" flow
+      // -- view → edit → save -- stays on the same full-screen view.
+      var po = G.pos.find(function(p){ return p.rowIndex === G.editRow; });
+      if (po) {
+        Object.keys(updates).forEach(function(k) {
+          if (updates[k] !== undefined) po[k] = updates[k];
+        });
+      }
       showToast('PO updated!');
+      if (po) showPODetail(po.poNum); else closePODetail();
       loadData();
     } else {
       showToast('Error:' + (res.error||'Save failed'));
