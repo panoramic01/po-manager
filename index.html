@@ -1587,6 +1587,18 @@
   </div>
 </div>
 
+<!-- Document Viewer (Invoice / Issued PO) -->
+<div class="cleanup-overlay" id="doc-viewer-overlay" style="display:none">
+  <div class="cleanup-header">
+    <h2 id="doc-viewer-title">Document</h2>
+    <div style="display:flex;gap:8px;flex-shrink:0">
+      <a href="#" target="_blank" class="cleanup-close" id="doc-viewer-open-link" style="text-decoration:none;display:inline-flex;align-items:center">Open</a>
+      <button class="cleanup-close" onclick="closeDocViewer()">Close</button>
+    </div>
+  </div>
+  <iframe id="doc-viewer-frame" src="about:blank"></iframe>
+</div>
+
 <!-- ══════════════════ JAVASCRIPT ══════════════════ -->
 <script>
 if ('serviceWorker' in navigator) {
@@ -2487,8 +2499,8 @@ function poCard(po, type) {
     '<div class="po-actions">' +
       statusBadge +
       (G.perms.canReceivePO ? '<button class="btn btn-sm btn-receive" onclick="event.stopPropagation();quickReceive(\''+po.poNum+'\')">Receive</button>'     : '') +
-      (po.invoiceLink && G.perms.canViewInvoice ? '<a href="'+esc(po.invoiceLink)+'" target="_blank" class="btn btn-sm" style="background:#fff8e1;color:#e65100;text-decoration:none" onclick="event.stopPropagation()">Invoice</a>' : '') +
-      (po.issuedPOLink ? '<a href="'+esc(po.issuedPOLink)+'" target="_blank" class="btn btn-sm" style="background:#eaedfa;color:#1F3971;text-decoration:none" onclick="event.stopPropagation()">Issued PO</a>' : '') +
+      (po.invoiceLink && G.perms.canViewInvoice ? '<a href="'+esc(po.invoiceLink)+'" class="btn btn-sm" data-doclabel="Invoice" style="background:#fff8e1;color:#e65100;text-decoration:none" onclick="return openDocViewer(event,this)">Invoice</a>' : '') +
+      (po.issuedPOLink ? '<a href="'+esc(po.issuedPOLink)+'" class="btn btn-sm" data-doclabel="Issued PO" style="background:#eaedfa;color:#1F3971;text-decoration:none" onclick="return openDocViewer(event,this)">Issued PO</a>' : '') +
     '</div>' +
   '</div>';
 }
@@ -3083,20 +3095,11 @@ function showPODetail(poNum) {
   var editBtn = document.getElementById('po-detail-edit-btn');
   if (editBtn) editBtn.style.display = G.perms.canEdit ? '' : 'none';
 
-  var invoiceBtn = G.perms.canViewInvoice
-    ? (po.invoiceLink
-        ? '<a href="'+esc(po.invoiceLink)+'" target="_blank" class="doc-link doc-link-invoice">Invoice</a>'
-        : '<span class="doc-link doc-link-disabled">No Invoice</span>')
-    : '';
-  var issuedBtn = po.issuedPOLink
-    ? '<a href="'+esc(po.issuedPOLink)+'" target="_blank" class="doc-link doc-link-issued">Issued PO</a>'
-    : '<span class="doc-link doc-link-disabled">No Issued PO</span>';
-
   var amtRow = (G.perms.canViewInvoice && po.invoiceTotal && parseFloat(po.invoiceTotal) > 0)
     ? poDetailRow('Invoice Total', '$' + fmtCurrency(po.invoiceTotal)) : '';
 
   document.getElementById('po-detail-body').innerHTML =
-    '<div class="doc-links">' + invoiceBtn + issuedBtn + '</div>' +
+    buildDocLinks(po) +
     '<div style="background:#fff;border-radius:12px;padding:2px 16px;margin-bottom:12px">' +
       '<div class="po-detail-row"><span class="badge '+badgeCls(po.status)+'">'+esc(po.status)+'</span></div>' +
       poDetailRow('Builder', po.builder) +
@@ -3143,17 +3146,6 @@ function openEdit(poNum) {
 
   document.getElementById('edit-modal-title').textContent = poNum;
 
-  // Build document link buttons
-  var invoiceBtn = G.perms.canViewInvoice
-    ? (po.invoiceLink
-        ? '<a href="'+esc(po.invoiceLink)+'" target="_blank" class="doc-link doc-link-invoice">Invoice</a>'
-        : '<span class="doc-link doc-link-disabled">No Invoice</span>')
-    : '';
-
-  var issuedBtn = po.issuedPOLink
-    ? '<a href="'+esc(po.issuedPOLink)+'" target="_blank" class="doc-link doc-link-issued">Issued PO</a>'
-    : '<span class="doc-link doc-link-disabled">No Issued PO</span>';
-
   var issuedField =
     '<div class="form-group">' +
       '<label class="form-label">' + (po.issuedPOLink ? 'Update Issued PO' : 'Add Issued PO') + '</label>' +
@@ -3179,7 +3171,7 @@ function openEdit(poNum) {
     '</div>' : '';
 
   document.getElementById('edit-modal-body').innerHTML =
-    '<div class="doc-links">' + invoiceBtn + issuedBtn + '</div>' +
+    buildDocLinks(po) +
     fg('Builder',         '<input type="text"   class="form-control" id="e-builder"  value="'+esc(po.builder)+'">') +
     fg('Job Reference',   '<input type="text"   class="form-control" id="e-job"      value="'+esc(po.jobRef)+'">') +
     fg('Vendor',
@@ -3210,6 +3202,45 @@ function openEdit(poNum) {
 
 function fg(label, input) {
   return '<div class="form-group"><label class="form-label">'+label+'</label>'+input+'</div>';
+}
+
+function buildDocLinks(po) {
+  var invoiceBtn = G.perms.canViewInvoice
+    ? (po.invoiceLink
+        ? '<a href="'+esc(po.invoiceLink)+'" class="doc-link doc-link-invoice" data-doclabel="Invoice" onclick="return openDocViewer(event,this)">Invoice</a>'
+        : '<span class="doc-link doc-link-disabled">No Invoice</span>')
+    : '';
+  var issuedBtn = po.issuedPOLink
+    ? '<a href="'+esc(po.issuedPOLink)+'" class="doc-link doc-link-issued" data-doclabel="Issued PO" onclick="return openDocViewer(event,this)">Issued PO</a>'
+    : '<span class="doc-link doc-link-disabled">No Issued PO</span>';
+  return '<div class="doc-links">' + invoiceBtn + issuedBtn + '</div>';
+}
+
+// ── Document Viewer (Invoice / Issued PO) ───────────────────────────────────────
+function docViewerSrc(url) {
+  var m = url.match(/\/d\/([a-zA-Z0-9_-]+)/) || url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  return m ? 'https://drive.google.com/file/d/' + m[1] + '/preview' : url;
+}
+
+function showDocViewer(url, label) {
+  document.getElementById('doc-viewer-title').textContent = label || 'Document';
+  document.getElementById('doc-viewer-open-link').href = url;
+  document.getElementById('doc-viewer-frame').src = docViewerSrc(url);
+  document.getElementById('doc-viewer-overlay').style.display = 'flex';
+}
+
+function closeDocViewer() {
+  document.getElementById('doc-viewer-overlay').style.display = 'none';
+  document.getElementById('doc-viewer-frame').src = 'about:blank';
+}
+
+function openDocViewer(e, el) {
+  e.preventDefault();
+  e.stopPropagation();
+  var url = el.getAttribute('href');
+  if (!url) return false;
+  showDocViewer(url, el.getAttribute('data-doclabel') || 'Document');
+  return false;
 }
 
 function driveThumb(url) {
@@ -6969,6 +7000,7 @@ window.addEventListener('popstate', function(e) {
   // closes them instead of leaving them stuck on screen while the tab
   // underneath changes.
   closePhotoLightbox();
+  closeDocViewer();
   closePODetail();
   var state = e.state;
   if (!state) {
