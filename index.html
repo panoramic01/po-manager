@@ -722,7 +722,17 @@
     <div id="other-panel-contacts" style="display:none">
       <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #f0f0f0;background:#fff;position:sticky;top:0;z-index:1">
       <button onclick="showOtherHome()" style="background:none;border:none;font-size:14px;font-weight:600;color:#1F3971;cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
+      <span style="font-size:15px;font-weight:700;color:#1F3971;flex:1;margin-left:2px">Contacts</span>
+      <button id="ct-add-btn" onclick="showAddContactForm()" style="display:none;background:#1F3971;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:700;cursor:pointer">+ Add</button>
     </div>
+      <div id="ct-add-form" style="display:none;background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin:12px 16px 0">
+        <div style="font-size:14px;font-weight:700;color:#1F3971;margin-bottom:12px">New Contact</div>
+        <div id="ct-add-fields"></div>
+        <div style="display:flex;gap:8px;margin-top:4px">
+          <button onclick="doAddContact()" style="flex:1;background:#1F3971;color:#fff;border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:700;cursor:pointer">Save</button>
+          <button onclick="document.getElementById('ct-add-form').style.display='none'" style="flex:1;background:#f0f0f0;color:#555;border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+        </div>
+      </div>
       <div class="search-row">
         <div class="search-wrap">
           <input type="text" class="search-input" id="ct-input"
@@ -2152,6 +2162,7 @@ function applyRole(role) {
   sd('nav-account',     p.canAccount);
   sd('other-card-pricing',   p.canPricing);
   sd('other-card-contacts',  p.canContacts);
+  sd('ct-add-btn',           p.canContacts);
   sd('other-card-reconcile', effRole === 'admin');
   sd('other-card-job-cost',   effRole === 'admin');
   sd('other-card-missing-inv', effRole === 'admin');
@@ -4260,6 +4271,51 @@ function submitContactEdit() {
   }, function() {
     showToast('Error:Error saving contact');
     if (btn) { btn.textContent = 'Save'; btn.disabled = false; }
+  });
+}
+
+// ── Add Contact ───────────────────────────────────────────────────────────────
+function contactAddHeaders() {
+  return G.contactsHeaders && G.contactsHeaders.length ? G.contactsHeaders : ['Name', 'Contact Type', 'Phone', 'Email'];
+}
+
+function showAddContactForm() {
+  var f = document.getElementById('ct-add-form');
+  var willShow = f.style.display === 'none';
+  f.style.display = willShow ? '' : 'none';
+  if (willShow) {
+    document.getElementById('ct-add-fields').innerHTML = contactAddHeaders().map(function(h) {
+      return '<input type="text" id="ctn-' + esc(h.replace(/\s+/g,'-')) + '" placeholder="' + esc(h) + '" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">';
+    }).join('');
+  }
+}
+
+function doAddContact() {
+  var headers = contactAddHeaders();
+  var values = {};
+  var hasAny = false;
+  headers.forEach(function(h) {
+    var el = document.getElementById('ctn-' + h.replace(/\s+/g,'-'));
+    var v = el ? el.value.trim() : '';
+    values[h] = v;
+    if (v) hasAny = true;
+  });
+  if (!hasAny) { showToast('Enter at least one field'); return; }
+
+  var nameKey = headers.filter(function(h) { return /name/i.test(h); })[0];
+  if (nameKey && !values[nameKey]) { showToast('Name is required'); return; }
+
+  gasCall('addContact', { values: values }, function(res) {
+    if (res.success) {
+      document.getElementById('ct-add-form').style.display = 'none';
+      showToast('Contact added!');
+      G.contactsLoaded = false;
+      loadContacts();
+    } else {
+      showToast('Error: ' + (res.error || 'Save failed'));
+    }
+  }, function() {
+    showToast('Error: Could not connect');
   });
 }
 

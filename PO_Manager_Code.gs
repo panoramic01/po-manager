@@ -94,6 +94,7 @@ function doPost(e) {
     else if (action === 'updatePricing')     result = updatePricing(payload);
     else if (action === 'getContacts')         result = getContacts(payload);
     else if (action === 'updateContact')       result = updateContact(payload);
+    else if (action === 'addContact')          result = addContact(payload);
     else if (action === 'reconcileStatement')  result = reconcileStatement(payload);
     else if (action === 'getJobList')          result = getJobList();
     else if (action === 'getJobCostSummary')   result = getJobCostSummary(payload);
@@ -1122,6 +1123,36 @@ function updateContact(payload) {
     SpreadsheetApp.flush();
     return { success: true };
   } catch(e) { return { error: e.toString() }; }
+}
+
+/**
+ * Appends a new contact row. `values` is an object keyed by column header.
+ */
+function addContact(payload) {
+  try {
+    var auth = authorizeCaller(payload, ['admin', 'purchaser']);
+    if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
+
+    var values = payload.values || {};
+
+    var ss    = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('Contacts');
+    if (!sheet) return { success: false, error: 'Contacts sheet not found' };
+
+    var lastCol = Math.max(sheet.getLastColumn(), 1);
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    var row = headers.map(function(h) {
+      var key = h.toString().trim();
+      return key && values[key] !== undefined ? values[key] : '';
+    });
+    if (!row.some(function(v) { return v !== '' && v !== null; })) {
+      return { success: false, error: 'No contact data provided' };
+    }
+
+    sheet.appendRow(row);
+    SpreadsheetApp.flush();
+    return { success: true, rowIndex: sheet.getLastRow() };
+  } catch(e) { return { success: false, error: e.toString() }; }
 }
 
 // ── Reconcile Statement ───────────────────────────────────────────────────────
