@@ -3016,10 +3016,17 @@ function runSearch() {
   var dashContent = document.getElementById('dash-content');
   var chipsEl     = document.getElementById('s-chips');
   var sortEl      = document.getElementById('s-sort');
+  var delpickCard = document.getElementById('dash-delpick-card');
+  var recentCard  = document.getElementById('dash-recent-card');
 
   // Show filter chips whenever there's any search activity; sort only when text typed
   if (chipsEl) chipsEl.style.display = isSearching ? 'flex' : 'none';
   if (sortEl)  sortEl.style.display  = q           ? 'flex' : 'none';
+
+  // Hide the Deliveries & Pickups / Recent Orders cards while searching so
+  // the results aren't buried below them.
+  if (delpickCard) delpickCard.style.display = isSearching ? 'none' : '';
+  if (recentCard)  recentCard.style.display  = isSearching ? 'none' : '';
 
   if (!isSearching) {
     if (resultsEl)   resultsEl.style.display   = 'none';
