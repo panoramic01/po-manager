@@ -1171,7 +1171,7 @@ function ensureSheetWithHeaders_(name, headers) {
   return sheet;
 }
 
-var ASSET_HEADERS = ['Asset Name', 'Type', 'Assigned To', 'Status', 'Next Due Date', 'Last Service Date', 'Notes'];
+var ASSET_HEADERS = ['Asset Name', 'Type', 'VIN / Serial #', 'Assigned To', 'Status', 'Next Due Date', 'Last Service Date', 'Notes'];
 var ASSET_LOG_HEADERS = ['Asset Row', 'Asset Name', 'Event Type', 'Date Performed', 'Performed By', 'Next Due Date', 'Notes'];
 
 function getInventory(payload) {

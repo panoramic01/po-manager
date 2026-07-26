@@ -4678,7 +4678,7 @@ var runInventorySearchDebounced = debounce(function(){ runInventorySearch(); }, 
 
 // ── Add Asset ─────────────────────────────────────────────────────────────────
 function inventoryAddHeaders() {
-  return G.assetsHeaders && G.assetsHeaders.length ? G.assetsHeaders : ['Asset Name', 'Type', 'Assigned To', 'Status', 'Next Due Date', 'Last Service Date', 'Notes'];
+  return G.assetsHeaders && G.assetsHeaders.length ? G.assetsHeaders : ['Asset Name', 'Type', 'VIN / Serial #', 'Assigned To', 'Status', 'Next Due Date', 'Last Service Date', 'Notes'];
 }
 
 function showAddAssetForm() {
@@ -4690,7 +4690,7 @@ function showAddAssetForm() {
       var id = 'ivn-' + h.replace(/\s+/g,'-');
       if (isInvTypeHeader(h)) return genericDropdownFieldHtml(id, getAssetTypeOptions(), '', 'Select type…');
       if (isInvStatusHeader(h)) return genericDropdownFieldHtml(id, ASSET_STATUS_OPTIONS, '', 'Select status…');
-      if (isInvDateHeader(h)) return '<input type="date" id="' + esc(id) + '" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">';
+      if (isInvDateHeader(h)) return '<label style="font-size:11px;font-weight:600;color:#888;display:block;margin-bottom:4px">' + esc(h) + '</label><input type="date" id="' + esc(id) + '" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">';
       return '<input type="text" id="' + esc(id) + '" placeholder="' + esc(h) + '" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">';
     }).join('');
   }
@@ -4759,8 +4759,10 @@ function openAssetEdit(idx) {
       '<div id="inv-log-list"><p style="color:#888;font-size:13px">Loading…</p></div>' +
       '<div style="margin-top:14px">' +
         genericDropdownFieldHtml('iml-type', ASSET_LOG_TYPE_OPTIONS, '', 'Event type…') +
+        '<label style="font-size:11px;font-weight:600;color:#888;display:block;margin-bottom:4px">Date Performed</label>' +
         '<input type="date" id="iml-date" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px" value="' + esc(todayInputDate()) + '">' +
         '<input type="text" id="iml-by" placeholder="Performed by" value="' + esc(G.name || '') + '" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">' +
+        '<label style="font-size:11px;font-weight:600;color:#888;display:block;margin-bottom:4px">Next Due Date (optional)</label>' +
         '<input type="date" id="iml-nextdue" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">' +
         '<textarea id="iml-notes" placeholder="Notes" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px;min-height:60px"></textarea>' +
         '<button onclick="doAddMaintenanceLog()" style="width:100%;background:#1F3971;color:#fff;border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:700;cursor:pointer">Log Entry</button>' +
