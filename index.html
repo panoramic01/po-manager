@@ -404,7 +404,7 @@
       <div class="search-wrap">
         <input type="text" class="search-input" id="s-input"
                placeholder="Search POs, jobs, vendors…"
-               oninput="runSearch(); toggleClear('s-input','s-clear')">
+               oninput="toggleClear('s-input','s-clear'); runSearchDebounced()">
         <button class="search-clear" id="s-clear" onclick="clearSearch('s-input','s-clear'); runSearch()">✕</button>
       </div>
     </div>
@@ -476,7 +476,7 @@
         <label class="form-label">Builder &amp; Job *</label>
         <input type="text" class="form-control" id="c-job-combo" autocomplete="off"
                placeholder="e.g. CRESCENT_RIDGE-WEGNER"
-               oninput="this.value=this.value.toUpperCase().replace(/\s+/g,'_'); cJobFilter(this.value)"
+               oninput="this.value=this.value.toUpperCase().replace(/\s+/g,'_'); cJobFilterDebounced(this.value)"
                onfocus="cJobFilter(this.value)">
         <div id="c-job-dropdown" style="display:none;position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #ddd;border-radius:8px;margin-top:4px;max-height:220px;overflow-y:auto;z-index:20;box-shadow:0 4px 12px rgba(0,0,0,0.12)"></div>
         <p style="font-size:12px;color:#888;margin:4px 0 0">Pick an existing job, or type a new one as BUILDER_NAME-JOB_NAME</p>
@@ -706,7 +706,7 @@
         <div class="search-wrap">
           <input type="text" class="search-input" id="p-input"
                  placeholder="Search materials…"
-                 oninput="runPricingSearch(); toggleClear('p-input','p-clear')">
+                 oninput="toggleClear('p-input','p-clear'); runPricingSearchDebounced()">
           <button class="search-clear" id="p-clear" onclick="clearSearch('p-input','p-clear'); runPricingSearch()">✕</button>
         </div>
       </div>
@@ -737,7 +737,7 @@
         <div class="search-wrap">
           <input type="text" class="search-input" id="ct-input"
                  placeholder="Search contacts…"
-                 oninput="runContactSearch(); toggleClear('ct-input','ct-clear')">
+                 oninput="toggleClear('ct-input','ct-clear'); runContactSearchDebounced()">
           <button class="search-clear" id="ct-clear" onclick="clearSearch('ct-input','ct-clear'); runContactSearch()">✕</button>
         </div>
       </div>
@@ -802,7 +802,7 @@
           <div style="display:flex;gap:8px;margin-bottom:4px;align-items:flex-start">
             <div style="position:relative;flex:1">
               <input id="jc-job-input" placeholder="Search jobs…" autocomplete="off"
-                     oninput="jcJobFilter(this.value); document.getElementById('jc-job-gid').value='';"
+                     oninput="jcJobFilterDebounced(this.value); document.getElementById('jc-job-gid').value='';"
                      onfocus="jcJobFilter(this.value)"
                      style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box">
               <input type="hidden" id="jc-job-gid" value="">
@@ -1056,7 +1056,7 @@
         <span style="font-size:16px;font-weight:700;color:#1F3971">SOPs</span>
       </div>
       <div style="padding:12px 16px 0;background:#fff;border-bottom:1px solid #f0f0f0">
-        <input id="sop-search" type="search" placeholder="Search SOPs..." oninput="renderSops(this.value)"
+        <input id="sop-search" type="search" placeholder="Search SOPs..." oninput="renderSopsDebounced(this.value)"
                style="width:100%;padding:9px 12px;border:1px solid #dde1ef;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box;background:#f7f6f2">
       </div>
       <div style="padding:16px">
@@ -1531,7 +1531,7 @@
         <label class="form-label">Job</label>
         <input type="text" class="form-control" id="qc-job-input" placeholder="Search jobs…"
                autocomplete="off"
-               oninput="qcJobFilter(this.value); document.getElementById('qc-job-gid').value='';"
+               oninput="qcJobFilterDebounced(this.value); document.getElementById('qc-job-gid').value='';"
                onfocus="qcJobFilter(this.value)">
         <input type="hidden" id="qc-job-gid" value="">
         <div id="qc-job-dropdown" style="display:none;position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #ddd;border-radius:8px;margin-top:4px;max-height:220px;overflow-y:auto;z-index:20;box-shadow:0 4px 12px rgba(0,0,0,0.12)"></div>
@@ -1751,6 +1751,8 @@ var G = {
 
 var vsData = null;
 var vsChartType = 'bar-h';
+var vsTrendMode = 'overall';
+var vsTrendAutoWidened = false;
 function fmtMoney(n) { return (+(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
 // ── GAS endpoint (fetch() replaces google.script.run) ────────────────────────
@@ -2049,10 +2051,10 @@ function cJobFilter(q) {
   if (!drop || !G.jobComboMap) return;
   q = (q || '').trim();
   var combos = Object.keys(G.jobComboMap);
-  var filtered = q ? combos.filter(function(c){ return c.indexOf(q) !== -1; }) : combos;
+  var filtered = fuzzySearch(combos, function(c){ return [{ text: c.toLowerCase(), weight: 1 }]; }, q, { limit: 60 });
   drop.innerHTML = '';
   if (!filtered.length) { drop.style.display = 'none'; return; }
-  filtered.slice(0, 60).forEach(function(c) {
+  filtered.forEach(function(c) {
     var d = document.createElement('div');
     d.textContent = c;
     d.style.cssText = 'padding:11px 14px;font-size:14px;color:#222;cursor:pointer;border-bottom:1px solid #f5f5f5';
@@ -3019,6 +3021,93 @@ function setChip(filter, el) {
   runSearch();
 }
 
+// -- Fuzzy search utility (shared by all search bars) --------------------------
+// Scores how well `text` matches `token`: prefix match > substring match >
+// typo-tolerant subsequence match. Returns 0 if there's no match at all.
+function fuzzyTokenScore(text, token) {
+  if (!token) return 1;
+  var idx = text.indexOf(token);
+  if (idx === 0) return 100;
+  if (idx > 0)   return 60 - Math.min(idx, 20);
+  return fuzzySubsequenceScore(text, token);
+}
+
+// Typo-tolerant scorer: token's characters must appear in text in order,
+// gaps between matched characters are allowed but penalized. No full
+// Levenshtein -- O(text.length) per token, cheap enough for every keystroke.
+function fuzzySubsequenceScore(text, token) {
+  var ti = 0, score = 0, gapPenalty = 0, run = 0;
+  for (var i = 0; i < text.length && ti < token.length; i++) {
+    if (text[i] === token[ti]) {
+      run++;
+      score += run > 1 ? 4 : 2;
+      ti++;
+    } else if (ti > 0) {
+      gapPenalty++;
+      run = 0;
+    }
+  }
+  if (ti < token.length) return 0;
+  if (gapPenalty > token.length * 2) return 0;
+  return Math.max(1, score - gapPenalty);
+}
+
+// fields: array of { text: <lowercased string>, weight: <number> }
+// tokens: array of lowercased query tokens (AND semantics -- every token must
+// match at least one field, or the item is rejected)
+function fuzzyItemScore(fields, tokens) {
+  var total = 0;
+  for (var t = 0; t < tokens.length; t++) {
+    var token = tokens[t], best = 0;
+    for (var f = 0; f < fields.length; f++) {
+      var s = fuzzyTokenScore(fields[f].text, token) * fields[f].weight;
+      if (s > best) best = s;
+    }
+    if (best === 0) return -1;
+    total += best;
+  }
+  return total;
+}
+
+// list: array of source items
+// fieldsFn: function(item) -> [{text, weight}, ...] (text already lowercased)
+// query: raw query string (not yet lowercased/tokenized)
+// opts: { limit }
+// Returns list filtered + sorted best-match-first. Empty query returns list unchanged.
+function fuzzySearch(list, fieldsFn, query, opts) {
+  opts = opts || {};
+  var q = (query || '').toLowerCase().trim();
+  if (!q) return list.slice();
+  var tokens = q.split(/\s+/).filter(Boolean);
+  var scored = [];
+  for (var i = 0; i < list.length; i++) {
+    var score = fuzzyItemScore(fieldsFn(list[i]), tokens);
+    if (score >= 0) scored.push({ item: list[i], score: score });
+  }
+  scored.sort(function(a, b) { return b.score - a.score; });
+  var out = scored.map(function(s) { return s.item; });
+  return opts.limit ? out.slice(0, opts.limit) : out;
+}
+
+function debounce(fn, ms) {
+  var t;
+  return function() {
+    var args = arguments, ctx = this;
+    clearTimeout(t);
+    t = setTimeout(function() { fn.apply(ctx, args); }, ms || 150);
+  };
+}
+
+// Debounced wrappers for the 7 search bars -- function declarations below are
+// hoisted, so referencing them here before their textual definition is safe.
+var runSearchDebounced        = debounce(function(){ runSearch(); }, 150);
+var runPricingSearchDebounced = debounce(function(){ runPricingSearch(); }, 150);
+var runContactSearchDebounced = debounce(function(){ runContactSearch(); }, 150);
+var renderSopsDebounced       = debounce(function(v){ renderSops(v); }, 150);
+var cJobFilterDebounced       = debounce(function(v){ cJobFilter(v); }, 150);
+var jcJobFilterDebounced      = debounce(function(v){ jcJobFilter(v); }, 150);
+var qcJobFilterDebounced      = debounce(function(v){ qcJobFilter(v); }, 150);
+
 function runSearch() {
   var q          = (document.getElementById('s-input').value || '').toLowerCase().trim();
   var isSearching = !!q || G.filter !== 'all';
@@ -3049,13 +3138,18 @@ function runSearch() {
   if (resultsEl)   resultsEl.style.display   = 'block';
   if (dashContent) dashContent.style.display = 'none';
 
-  var tokens  = q.split(/\s+/).filter(Boolean);
-  var results = G.pos.filter(function(po) {
-    if (G.filter !== 'all' && po.status !== G.filter) return false;
-    if (!q) return true;
-    var text = (po.poNum+' '+po.jobRef+' '+po.vendor+' '+po.builder+' '+po.notes+' '+po.vendorInvoice).toLowerCase();
-    return tokens.every(function(t) { return text.includes(t); });
-  });
+  var results = fuzzySearch(
+    G.pos.filter(function(po) { return G.filter === 'all' || po.status === G.filter; }),
+    function(po) { return [
+      { text: (po.poNum || '').toLowerCase(), weight: 3 },
+      { text: (po.jobRef || '').toLowerCase(), weight: 2 },
+      { text: (po.vendor || '').toLowerCase(), weight: 2 },
+      { text: (po.builder || '').toLowerCase(), weight: 1.5 },
+      { text: (po.vendorInvoice || '').toLowerCase(), weight: 1.5 },
+      { text: (po.notes || '').toLowerCase(), weight: 1 }
+    ]; },
+    q
+  );
 
   // Sort
   if (G.sort === 'oldest') {
@@ -3857,13 +3951,14 @@ function runPricingSearch() {
     return;
   }
 
-  var tokens  = q ? q.split(/\s+/).filter(Boolean) : [];
-  var matches = G.pricing.filter(function(item) {
-    if (cat && (item.category || '').trim() !== cat) return false;
-    if (!tokens.length) return true;
-    var text = (item.description + ' ' + item.category).toLowerCase();
-    return tokens.every(function(t) { return text.includes(t); });
-  });
+  var matches = fuzzySearch(
+    G.pricing.filter(function(item) { return !cat || (item.category || '').trim() === cat; }),
+    function(item) { return [
+      { text: (item.description || '').toLowerCase(), weight: 2 },
+      { text: (item.category || '').toLowerCase(), weight: 1 }
+    ]; },
+    q
+  );
 
   if (!matches.length) {
     resultsEl.innerHTML = '<div class="empty">No materials match' + (cat ? ' in ' + esc(cat) : '') + (q ? ' "' + esc(q) + '"' : '') + '.</div>';
@@ -4164,13 +4259,11 @@ function runContactSearch() {
   var el = document.getElementById('ct-results');
   if (!G.contacts.length) { el.innerHTML = '<div class="empty">No contacts found. Add people to the Contacts tab in the database.</div>'; return; }
 
-  var tokens = q.split(/\s+/).filter(Boolean);
-  var filtered = G.contacts.filter(function(c) {
-    if (type && getContactType(c) !== type) return false;
-    if (!q) return true;
-    var text = Object.values(c).join(' ').toLowerCase();
-    return tokens.every(function(t){ return text.includes(t); });
-  });
+  var filtered = fuzzySearch(
+    G.contacts.filter(function(c) { return !type || getContactType(c) === type; }),
+    function(c) { return [{ text: Object.values(c).join(' ').toLowerCase(), weight: 1 }]; },
+    q
+  );
 
   if (!filtered.length) { el.innerHTML = '<div class="empty">No contacts match' + (type ? ' in ' + esc(type) : '') + (q ? ' "' + esc(q) + '"' : '') + '.</div>'; return; }
 
@@ -4489,10 +4582,12 @@ function renderSops(filter) {
   list.style.display = '';
   if (!G_sops) return;
   var q = (filter || '').toLowerCase().trim();
-  var matches = G_sops.filter(function(s) {
-    if (!q) return true;
-    return (s.title + ' ' + s.category + ' ' + s.role + ' ' + s.notes).toLowerCase().indexOf(q) !== -1;
-  });
+  var matches = fuzzySearch(G_sops, function(s) { return [
+    { text: (s.title || '').toLowerCase(), weight: 3 },
+    { text: (s.category || '').toLowerCase(), weight: 1.5 },
+    { text: (s.role || '').toLowerCase(), weight: 1.5 },
+    { text: (s.notes || '').toLowerCase(), weight: 1 }
+  ]; }, q);
   if (!matches.length) {
     list.innerHTML = '<p style="color:#888;text-align:center;font-size:14px;padding:40px 0">No SOPs match "' + esc(filter) + '".</p>';
     return;
@@ -4538,12 +4633,10 @@ function jcJobFilter(q) {
   var drop = document.getElementById('jc-job-dropdown');
   if (!drop || !window._jdJobs) return;
   q = (q || '').toLowerCase().trim();
-  var filtered = q
-    ? window._jdJobs.filter(function(j){ return j.name.toLowerCase().indexOf(q) !== -1; })
-    : window._jdJobs;
+  var filtered = fuzzySearch(window._jdJobs, function(j){ return [{ text: (j.name || '').toLowerCase(), weight: 1 }]; }, q, { limit: 60 });
   drop.innerHTML = '';
   if (!filtered.length) { drop.style.display = 'none'; return; }
-  filtered.slice(0, 60).forEach(function(j) {
+  filtered.forEach(function(j) {
     var d = document.createElement('div');
     d.textContent = j.name;
     d.style.cssText = 'padding:11px 14px;font-size:14px;color:#222;cursor:pointer;border-bottom:1px solid #f5f5f5';
@@ -4757,6 +4850,7 @@ function loadMissingInvoices() {
 
 // ── Vendor Spend ──────────────────────────────────────────────────────────────
 function openVendorSpendPanel() {
+  vsTrendAutoWidened = false;
   if (!document.getElementById('vs-start').value) {
     var now = new Date();
     var y = now.getFullYear(), m = String(now.getMonth() + 1).padStart(2, '0');
@@ -4770,7 +4864,7 @@ function loadVendorSpend() {
   var end   = document.getElementById('vs-end').value;
   document.getElementById('vs-loading').style.display = 'block';
   document.getElementById('vs-results').style.display = 'none';
-  gasCall('getVendorSpend', { startDate: start, endDate: end }, function(r) {
+  gasCall('getVendorSpend', { startDate: start, endDate: end, includeTrend: true }, function(r) {
     document.getElementById('vs-loading').style.display = 'none';
     if (!r || r.error) { showToast('Error: ' + (r ? r.error : 'Empty response from GAS')); return; }
     vsData = r;
@@ -4786,12 +4880,36 @@ function toggleVsDrill(id) {
 
 function setVsChartType(type) {
   vsChartType = type;
-  ['bar-h','bar-v','pie'].forEach(function(t) {
+  ['bar-h','bar-v','pie','trend'].forEach(function(t) {
     var btn = document.getElementById('vs-toggle-' + t);
     if (!btn) return;
     btn.style.background = t === type ? '#1F3971' : '#eef2ff';
     btn.style.color      = t === type ? '#fff'    : '#1F3971';
   });
+  if (type === 'trend' && !vsTrendAutoWidened && isVsRangeNarrow()) {
+    vsTrendAutoWidened = true;
+    var endEl = document.getElementById('vs-end');
+    var end = endEl.value ? new Date(endEl.value + 'T00:00:00') : new Date();
+    var widened = new Date(end.getFullYear(), end.getMonth() - 5, 1);
+    var wy = widened.getFullYear(), wm = String(widened.getMonth() + 1).padStart(2, '0');
+    document.getElementById('vs-start').value = wy + '-' + wm + '-01';
+    showToast('Widened range to 6 months for trend view');
+    loadVendorSpend();
+    return;
+  }
+  renderVendorSpend();
+}
+
+function isVsRangeNarrow() {
+  var s = document.getElementById('vs-start').value, e = document.getElementById('vs-end').value;
+  if (!s || !e) return false;
+  var sd = new Date(s + 'T00:00:00'), ed = new Date(e + 'T00:00:00');
+  var months = (ed.getFullYear() - sd.getFullYear()) * 12 + (ed.getMonth() - sd.getMonth());
+  return months < 2;
+}
+
+function setVsTrendMode(mode) {
+  vsTrendMode = mode;
   renderVendorSpend();
 }
 
@@ -4804,6 +4922,15 @@ function makeVsBtn(type, label) {
     + label + '</button>';
 }
 
+function makeVsTrendModeBtn(mode, label) {
+  var active = mode === vsTrendMode;
+  var q = "'";
+  return '<button onclick="setVsTrendMode(' + q + mode + q + ')"'
+    + ' style="flex:1;border:none;border-radius:8px;padding:6px 0;font-size:12px;font-weight:600;cursor:pointer;'
+    + 'background:' + (active ? '#1F3971' : '#eef2ff') + ';color:' + (active ? '#fff' : '#1F3971') + '">'
+    + label + '</button>';
+}
+
 function renderVendorSpend() {
   if (!vsData) return;
   var r = vsData;
@@ -4811,7 +4938,7 @@ function renderVendorSpend() {
   var COLORS = ['#1F3971','#2E5CA8','#3B74D5','#5B8FE5','#7AAAF0','#A0BEF7','#C5D8FF',
                 '#0D2A57','#4E7BD0','#8AABD8','#B3C8EF','#D4E2F9','#1A4D8A','#264F87'];
   var toggleBar = '<div style="display:flex;gap:6px;margin-bottom:12px">'
-    + makeVsBtn('bar-h','Bars') + makeVsBtn('bar-v','Column') + makeVsBtn('pie','Pie')
+    + makeVsBtn('bar-h','Bars') + makeVsBtn('bar-v','Column') + makeVsBtn('pie','Pie') + makeVsBtn('trend','Trend')
     + '</div>';
   var gasVer = r.gasVersion ? ' · GAS v' + r.gasVersion : ' · GAS v? (redeploy!)';
   var summary = '<div style="background:#1F3971;color:#fff;border-radius:12px;padding:16px 20px;margin-bottom:12px">'
@@ -4851,6 +4978,58 @@ function renderVendorSpend() {
     }).join('');
     el.innerHTML = summary + toggleBar + '<div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08)">' + rows + '</div>';
     el.style.display = 'block';
+  } else if (vsChartType === 'trend') {
+    var trendModeBar = '<div style="display:flex;gap:6px;margin-bottom:12px">'
+      + makeVsTrendModeBtn('overall','Overall') + makeVsTrendModeBtn('per-vendor','Per Vendor')
+      + '</div>';
+    if (!r.trend || !r.trend.months || !r.trend.months.length) {
+      el.innerHTML = summary + toggleBar + trendModeBar
+        + '<div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08)"><p style="text-align:center;color:#888">Not enough date-stamped history in this range for a trend.</p></div>';
+      el.style.display = 'block';
+      return;
+    }
+    el.innerHTML = summary + toggleBar + trendModeBar
+      + '<div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08)"><canvas id="vs-canvas" style="max-height:340px"></canvas></div>';
+    el.style.display = 'block';
+    var trend = r.trend;
+    function drawTrendChart() {
+      var ctx = document.getElementById('vs-canvas').getContext('2d');
+      var datasets, showLegend;
+      if (vsTrendMode === 'overall') {
+        datasets = [{
+          label: 'Total Spend', data: trend.overall,
+          borderColor: '#1F3971', backgroundColor: 'rgba(31,57,113,0.08)',
+          fill: true, tension: 0.25, pointRadius: trend.months.length > 1 ? 3 : 5
+        }];
+        showLegend = false;
+      } else {
+        datasets = trend.vendors.map(function(v, i) {
+          return {
+            label: v.vendor, data: v.values,
+            borderColor: COLORS[i % COLORS.length], backgroundColor: COLORS[i % COLORS.length],
+            fill: false, tension: 0.25, pointRadius: 3
+          };
+        });
+        showLegend = true;
+      }
+      window._vsChart = new Chart(ctx, {
+        type: 'line',
+        data: { labels: trend.months, datasets: datasets },
+        options: { responsive: true, plugins: {
+          legend: showLegend ? { position: 'bottom', labels: { font: { size: 11 }, padding: 10, boxWidth: 12 } } : { display: false },
+          tooltip: { callbacks: { label: function(c) { return ' ' + (showLegend ? c.dataset.label + ': ' : '') + '$' + fmtMoney(c.raw); } } }
+        }, scales: {
+          y: { ticks: { callback: function(v) { return '$' + v.toLocaleString(); } }, grid: { color: '#f0f0f0' } },
+          x: { ticks: { font: { size: 11 } } }
+        }}
+      });
+    }
+    if (window.Chart) { drawTrendChart(); }
+    else {
+      var s2 = document.createElement('script');
+      s2.src = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js';
+      s2.onload = drawTrendChart; document.head.appendChild(s2);
+    }
   } else {
     el.innerHTML = summary + toggleBar
       + '<div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08)"><canvas id="vs-canvas" style="max-height:340px"></canvas></div>';
@@ -6637,12 +6816,10 @@ function qcJobFilter(q) {
   var drop = document.getElementById('qc-job-dropdown');
   if (!drop || !window._qcJobs) return;
   q = (q || '').toLowerCase().trim();
-  var filtered = q
-    ? window._qcJobs.filter(function(j){ return j.name.toLowerCase().indexOf(q) !== -1; })
-    : window._qcJobs;
+  var filtered = fuzzySearch(window._qcJobs, function(j){ return [{ text: (j.name || '').toLowerCase(), weight: 1 }]; }, q, { limit: 60 });
   drop.innerHTML = '';
   if (!filtered.length) { drop.style.display = 'none'; return; }
-  filtered.slice(0, 60).forEach(function(j) {
+  filtered.forEach(function(j) {
     var d = document.createElement('div');
     d.textContent = j.name;
     d.style.cssText = 'padding:11px 14px;font-size:14px;color:#222;cursor:pointer;border-bottom:1px solid #f5f5f5';

@@ -1408,6 +1408,7 @@ function getVendorSpend(payload) {
 
     var startDate = payload.startDate;
     var endDate   = payload.endDate;
+    var wantTrend = !!payload.includeTrend;
 
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
     if (!sheet) return { error: 'PO Database sheet not found' };
@@ -1416,13 +1417,15 @@ function getVendorSpend(payload) {
     var start = startDate ? new Date(startDate + 'T00:00:00') : null;
     var end   = endDate   ? new Date(endDate   + 'T23:59:59') : null;
     var vendors = {}, grandTotal = 0, vendorRows = {};
+    var monthTotals = {};
+    var vendorMonthTotals = {};
     for (var i = 0; i < data.length; i++) {
       if (!isValidPONumber((data[i][0] || '').toString().trim())) continue;
       var vendor = (data[i][4] || '').toString().trim();
       var total  = parseFloat(data[i][7]) || 0;
       if (!vendor || total === 0) continue;
+      var d = data[i][1] instanceof Date ? data[i][1] : null;
       if (start || end) {
-        var d = data[i][1] instanceof Date ? data[i][1] : null;
         if (!d || isNaN(d.getTime())) continue;
         if (start && d < start) continue;
         if (end   && d > end)   continue;
@@ -1432,12 +1435,34 @@ function getVendorSpend(payload) {
       // Track top rows per vendor for debugging
       if (!vendorRows[vendor]) vendorRows[vendor] = [];
       vendorRows[vendor].push({ poNum: data[i][0], total: total, row: i + 1 });
+
+      if (wantTrend && d && !isNaN(d.getTime())) {
+        var mk = Utilities.formatDate(d, tz, 'yyyy-MM');
+        monthTotals[mk] = (monthTotals[mk] || 0) + total;
+        if (!vendorMonthTotals[vendor]) vendorMonthTotals[vendor] = {};
+        vendorMonthTotals[vendor][mk] = (vendorMonthTotals[vendor][mk] || 0) + total;
+      }
     }
     var result = Object.keys(vendors).map(function(v) {
       var rows = (vendorRows[v] || []).sort(function(a,b){return b.total-a.total;}).slice(0,3);
       return { vendor: v, total: vendors[v], topRows: rows };
     }).sort(function(a, b) { return b.total - a.total; });
-    return { success: true, vendors: result, grandTotal: grandTotal, gasVersion: 3 };
+
+    var out = { success: true, vendors: result, grandTotal: grandTotal, gasVersion: 4 };
+
+    if (wantTrend) {
+      var months = Object.keys(monthTotals).sort();
+      out.trend = {
+        months: months,
+        overall: months.map(function(m) { return monthTotals[m] || 0; }),
+        vendors: result.slice(0, 8).map(function(v) {
+          var byMonth = vendorMonthTotals[v.vendor] || {};
+          return { vendor: v.vendor, values: months.map(function(m) { return byMonth[m] || 0; }) };
+        })
+      };
+    }
+
+    return out;
   } catch(e) { return { error: e.toString() }; }
 }
 
