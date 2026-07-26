@@ -2486,7 +2486,7 @@ function setDashTab(tabKey) {
 function secHead(t, cls) { return '<div class="sec-head '+cls+'">'+t+'</div>'; }
 function more(n) { return '<p style="text-align:center;color:#aaa;font-size:12px;padding:6px 0">+'+n+' more — use Search tab</p>'; }
 
-function poCard(po, type) {
+function poCard(po, type, tokens) {
   var amt   = po.invoiceTotal && parseFloat(po.invoiceTotal) > 0 && G.perms.canViewInvoice
               ? '<span class="po-amount">$'+fmtCurrency(po.invoiceTotal)+'</span>' : '';
   var dateStr = po.deliveryDate ? ' · '+po.deliveryDate : '';
@@ -2504,11 +2504,11 @@ function poCard(po, type) {
   return '<div class="po-item '+type+'" data-ponum="'+esc(po.poNum)+'" data-rowindex="'+po.rowIndex+'" onclick="showPODetail(\''+po.poNum+'\')" style="cursor:pointer">' +
     swipeBg +
     '<div class="row-between">' +
-      '<span class="po-num">'+po.poNum+'</span>' + amt +
+      '<span class="po-num">'+highlightText(po.poNum, tokens)+'</span>' + amt +
     '</div>' +
-    '<div class="po-main">'+(po.jobRef||'—')+'</div>' +
-    '<div class="po-sub">'+(po.vendor||'—')+(po.builder?' · '+po.builder:'')+dateStr+'</div>' +
-    (po.notes ? '<div class="po-note">'+esc(po.notes)+'</div>' : '') +
+    '<div class="po-main">'+(po.jobRef?highlightText(po.jobRef, tokens):'—')+'</div>' +
+    '<div class="po-sub">'+(po.vendor?highlightText(po.vendor, tokens):'—')+(po.builder?' · '+highlightText(po.builder, tokens):'')+dateStr+'</div>' +
+    (po.notes ? '<div class="po-note">'+highlightText(po.notes, tokens)+'</div>' : '') +
     '<div class="po-actions">' +
       statusBadge +
       (G.perms.canReceivePO ? '<button class="btn btn-sm btn-receive" onclick="event.stopPropagation();quickReceive(\''+po.poNum+'\')">Receive</button>'     : '') +
@@ -3078,7 +3078,7 @@ function fuzzySearch(list, fieldsFn, query, opts) {
   opts = opts || {};
   var q = (query || '').toLowerCase().trim();
   if (!q) return list.slice();
-  var tokens = q.split(/\s+/).filter(Boolean);
+  var tokens = searchTokens(query);
   var scored = [];
   for (var i = 0; i < list.length; i++) {
     var score = fuzzyItemScore(fieldsFn(list[i]), tokens);
@@ -3171,8 +3171,9 @@ function runSearch() {
     h = '<div class="empty">No POs match your search.</div>';
   } else {
     h += '<p style="font-size:11px;color:#aaa;margin-bottom:8px">'+results.length+' result'+(results.length!==1?'s':'')+'</p>';
+    var tokens = searchTokens(q);
     results.slice(0,60).forEach(function(po){
-      h += poCard(po, typeClass(po.status));
+      h += poCard(po, typeClass(po.status), tokens);
     });
     if (results.length > 60) h += '<div class="empty">Showing first 60 — refine your search.</div>';
   }
@@ -3493,6 +3494,23 @@ function esc(s) {
   return s.toString()
     .replace(/&/g,'&amp;').replace(/</g,'&lt;')
     .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function searchTokens(query) {
+  return (query || '').toLowerCase().trim().split(/\s+/).filter(Boolean);
+}
+
+// Escapes text, then wraps literal (case-insensitive) token matches for
+// display. Fuzzy/typo matches aren't visually marked -- only exact substrings.
+function highlightText(text, tokens) {
+  var out = esc(text);
+  if (!tokens || !tokens.length || !out) return out;
+  tokens.forEach(function(t) {
+    if (!t) return;
+    var re = new RegExp('(' + t.replace(/[.*+?^\${}()|[\]\\]/g, '\\$&') + ')', 'ig');
+    out = out.replace(re, '<mark style="background:#fff3b0;color:inherit;border-radius:2px;padding:0 1px">$1</mark>');
+  });
+  return out;
 }
 
 function today() { var d=new Date(); d.setHours(0,0,0,0); return d; }
@@ -3966,14 +3984,15 @@ function runPricingSearch() {
   }
 
   var h = '<p style="font-size:11px;color:#aaa;margin-bottom:8px">' + matches.length + ' result' + (matches.length !== 1 ? 's' : '') + '</p>';
+  var pTokens = searchTokens(q);
   matches.forEach(function(item) {
     var origIdx = G.pricing.indexOf(item);
-    h += pricingCard(item, origIdx);
+    h += pricingCard(item, origIdx, pTokens);
   });
   resultsEl.innerHTML = h;
 }
 
-function pricingCard(item, idx) {
+function pricingCard(item, idx, tokens) {
   var vendors = G.pricingVendors;
   var best = item.bestPrice;
 
@@ -3998,13 +4017,13 @@ function pricingCard(item, idx) {
 
   return '<div class="po-item">' +
     '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">' +
-      '<span style="font-size:12px;font-weight:600;color:#A2A092;text-transform:uppercase;letter-spacing:0.4px">' + esc(item.category) + '</span>' +
+      '<span style="font-size:12px;font-weight:600;color:#A2A092;text-transform:uppercase;letter-spacing:0.4px">' + highlightText(item.category, tokens) + '</span>' +
       '<div style="display:flex;gap:6px;align-items:center">' +
         '<span class="badge bd-indigo" style="font-size:11px;padding:3px 9px">' + esc(item.um) + '</span>' +
         '<button class="btn btn-sm btn-edit" onclick="openPricingEdit(' + idx + ')">Edit</button>' +
       '</div>' +
     '</div>' +
-    '<div class="po-main" style="font-size:16px;margin-bottom:10px">' + esc(item.description) + '</div>' +
+    '<div class="po-main" style="font-size:16px;margin-bottom:10px">' + highlightText(item.description, tokens) + '</div>' +
     (best > 0 ?
       '<div style="margin-bottom:12px">' +
         '<span style="font-size:26px;font-weight:800;color:#1F3971">$' + best.toFixed(2) + '</span>' +
@@ -4268,12 +4287,13 @@ function runContactSearch() {
   if (!filtered.length) { el.innerHTML = '<div class="empty">No contacts match' + (type ? ' in ' + esc(type) : '') + (q ? ' "' + esc(q) + '"' : '') + '.</div>'; return; }
 
   // Pass the index in G.contacts so the edit button knows which contact to open
+  var ctTokens = searchTokens(q);
   el.innerHTML = filtered.map(function(c) {
-    return contactCard(c, G.contacts.indexOf(c));
+    return contactCard(c, G.contacts.indexOf(c), ctTokens);
   }).join('');
 }
 
-function contactCard(c, idx) {
+function contactCard(c, idx, tokens) {
   // Try common name keys, fall back to first non-internal field
   var name = c['Name'] || c['name'] || c['Full Name'] || c['Contact'] || '';
   if (!name) {
@@ -4292,11 +4312,11 @@ function contactCard(c, idx) {
     var lk = key.toLowerCase();
     var content;
     if (lk.includes('phone') || lk.includes('cell') || lk.includes('mobile') || lk.includes('fax')) {
-      content = '<a href="tel:' + v.replace(/\s/g,'') + '">' + esc(v) + '</a>';
+      content = '<a href="tel:' + v.replace(/\s/g,'') + '">' + highlightText(v, tokens) + '</a>';
     } else if (lk.includes('email') || v.includes('@')) {
-      content = '<a href="mailto:' + esc(v) + '">' + esc(v) + '</a>';
+      content = '<a href="mailto:' + esc(v) + '">' + highlightText(v, tokens) + '</a>';
     } else {
-      content = esc(v);
+      content = highlightText(v, tokens);
     }
     fields += '<div class="contact-field"><span class="contact-key">' + esc(key) + '</span>' + content + '</div>';
   });
@@ -4307,7 +4327,7 @@ function contactCard(c, idx) {
 
   return '<div class="contact-card">' +
     '<div style="display:flex;justify-content:space-between;align-items:flex-start">' +
-      '<div class="contact-name">' + esc(name) + '</div>' +
+      '<div class="contact-name">' + highlightText(name, tokens) + '</div>' +
     '</div>' +
     fields +
     editBtn +
@@ -4582,6 +4602,7 @@ function renderSops(filter) {
   list.style.display = '';
   if (!G_sops) return;
   var q = (filter || '').toLowerCase().trim();
+  var sopTokens = searchTokens(q);
   var matches = fuzzySearch(G_sops, function(s) { return [
     { text: (s.title || '').toLowerCase(), weight: 3 },
     { text: (s.category || '').toLowerCase(), weight: 1.5 },
@@ -4603,11 +4624,11 @@ function renderSops(filter) {
     out += '<p style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin:16px 0 8px">' + esc(cat) + '</p>';
     cats[cat].forEach(function(s) {
       var pdfBtn = (s.pdfLink && s.pdfLink.indexOf('http') === 0) ? '<a href="' + s.pdfLink + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:5px;background:#1F3971;color:#fff;border-radius:7px;padding:7px 14px;font-size:12px;font-weight:600;text-decoration:none">Open PDF</a>' : '';
-      var notes = s.notes ? '<p style="font-size:12px;color:#888;margin:6px 0 0">' + esc(s.notes) + '</p>' : '';
-      var role = s.role ? '<span style="display:inline-block;font-size:11px;background:#eef1f8;color:#1F3971;border-radius:4px;padding:2px 7px;font-weight:600;margin-bottom:4px">' + esc(s.role) + '</span>' : '';
+      var notes = s.notes ? '<p style="font-size:12px;color:#888;margin:6px 0 0">' + highlightText(s.notes, sopTokens) + '</p>' : '';
+      var role = s.role ? '<span style="display:inline-block;font-size:11px;background:#eef1f8;color:#1F3971;border-radius:4px;padding:2px 7px;font-weight:600;margin-bottom:4px">' + highlightText(s.role, sopTokens) + '</span>' : '';
       out += '<div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:10px">';
       out += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">';
-      out += '<div style="flex:1"><p style="font-size:14px;font-weight:700;color:#1F3971;margin:0 0 4px">' + esc(s.title) + '</p>' + role + notes + '</div>';
+      out += '<div style="flex:1"><p style="font-size:14px;font-weight:700;color:#1F3971;margin:0 0 4px">' + highlightText(s.title, sopTokens) + '</p>' + role + notes + '</div>';
       if (pdfBtn) out += '<div style="flex-shrink:0;padding-top:2px">' + pdfBtn + '</div>';
       out += '</div></div>';
     });
