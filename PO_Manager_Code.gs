@@ -1601,7 +1601,7 @@ function getVendorSpend(payload) {
       out.trend = {
         months: months,
         overall: months.map(function(m) { return monthTotals[m] || 0; }),
-        vendors: result.slice(0, 8).map(function(v) {
+        vendors: result.map(function(v) {
           var byMonth = vendorMonthTotals[v.vendor] || {};
           return { vendor: v.vendor, values: months.map(function(m) { return byMonth[m] || 0; }) };
         })
