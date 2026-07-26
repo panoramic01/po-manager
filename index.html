@@ -669,6 +669,11 @@
           <span style="font-size:13px;font-weight:600;color:#1F3971">Material Report</span>
         </div>
 
+        <div id="other-card-inventory" onclick="showOtherPanel('inventory')" style="background:#fff;border-radius:12px;padding:22px 12px;text-align:center;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.08);display:flex;flex-direction:column;align-items:center;gap:10px">
+          <svg width="32" height="32" fill="none" stroke="#1F3971" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7l9-4 9 4-9 4-9-4zm0 0v10l9 4 9-4V7M12 11v10"/></svg>
+          <span style="font-size:13px;font-weight:600;color:#1F3971">Inventory</span>
+        </div>
+
         <div id="other-card-sop" onclick="showOtherPanel('sop')" style="background:#fff;border-radius:12px;padding:22px 12px;text-align:center;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.08);display:flex;flex-direction:column;align-items:center;gap:10px">
           <svg width="32" height="32" fill="none" stroke="#1F3971" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
           <span style="font-size:13px;font-weight:600;color:#1F3971">SOPs</span>
@@ -746,6 +751,36 @@
         <div class="loading"><div class="spinner"></div><p>Loading contacts…</p></div>
       </div>
       <div id="ct-results"><div class="empty">Loading contacts…</div></div>
+    </div>
+
+    <!-- Inventory sub-panel -->
+    <div id="other-panel-inventory" style="display:none">
+      <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #f0f0f0;background:#fff;position:sticky;top:0;z-index:1">
+      <button onclick="showOtherHome()" style="background:none;border:none;font-size:14px;font-weight:600;color:#1F3971;cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
+      <span style="font-size:15px;font-weight:700;color:#1F3971;flex:1;margin-left:2px">Inventory</span>
+      <button id="inv-add-btn" onclick="showAddAssetForm()" style="background:#1F3971;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:700;cursor:pointer">+ Add</button>
+    </div>
+      <div id="inv-add-form" style="display:none;background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin:12px 16px 0">
+        <div style="font-size:14px;font-weight:700;color:#1F3971;margin-bottom:12px">New Asset</div>
+        <div id="inv-add-fields"></div>
+        <div style="display:flex;gap:8px;margin-top:4px">
+          <button onclick="doAddAsset()" style="flex:1;background:#1F3971;color:#fff;border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:700;cursor:pointer">Save</button>
+          <button onclick="document.getElementById('inv-add-form').style.display='none'" style="flex:1;background:#f0f0f0;color:#555;border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+        </div>
+      </div>
+      <div class="search-row">
+        <div class="search-wrap">
+          <input type="text" class="search-input" id="inv-input"
+                 placeholder="Search assets…"
+                 oninput="toggleClear('inv-input','inv-clear'); runInventorySearchDebounced()">
+          <button class="search-clear" id="inv-clear" onclick="clearSearch('inv-input','inv-clear'); runInventorySearch()">✕</button>
+        </div>
+      </div>
+      <div class="chip-row" id="inv-cats" style="display:none"></div>
+      <div id="inv-loading" style="display:none">
+        <div class="loading"><div class="spinner"></div><p>Loading assets…</p></div>
+      </div>
+      <div id="inv-results"><div class="empty">Loading assets…</div></div>
     </div>
 
     <!-- Reconcile sub-panel -->
@@ -1743,6 +1778,11 @@ var G = {
   contactsLoaded:  false,
   contactType:     '',
   contactEditIdx:  null,
+  assets:          [],
+  assetsHeaders:   [],
+  assetsLoaded:    false,
+  invType:         '',
+  assetEditIdx:    null,
   sort:            'newest',
   photoUrls:       [null,null,null,null,null],
   activePhotoSlot: 0,
@@ -2170,6 +2210,7 @@ function applyRole(role) {
   sd('other-card-missing-inv', effRole === 'admin');
   sd('other-card-vendor-spend', effRole === 'admin' || effRole === 'purchaser');
   sd('other-card-material-report', effRole === 'admin');
+  sd('other-card-inventory', effRole === 'admin');
   sd('other-card-sop', true);
   sd('other-card-emp-mgr',      effRole === 'admin' || effRole === 'human_resources');
   sd('other-card-pto-overview',  effRole === 'admin' || effRole === 'human_resources');
@@ -4481,6 +4522,338 @@ function doAddContact() {
   });
 }
 
+// ── Inventory (fleet + field assets) ───────────────────────────────────────────
+var ASSET_STATUS_OPTIONS = ['In Service', 'In Maintenance', 'Retired', 'Lost/Missing'];
+var ASSET_LOG_TYPE_OPTIONS = ['Inspection', 'Oil Change', 'Maintenance', 'Repair', 'Other'];
+
+function isInvTypeHeader(h) { return h.trim().toLowerCase() === 'type'; }
+function isInvStatusHeader(h) { return h.trim().toLowerCase() === 'status'; }
+function isInvDateHeader(h) { return h.toLowerCase().indexOf('date') !== -1; }
+
+function getAssetTypeOptions() {
+  var seen = {}, types = ['Truck', 'Trailer', 'Tablet', 'Camera', 'Other'];
+  types.forEach(function(t){ seen[t] = true; });
+  (G.assets || []).forEach(function(a) {
+    var t = (a['Type'] || '').trim();
+    if (t && !seen[t]) { seen[t] = true; types.push(t); }
+  });
+  return types;
+}
+
+// Generic <select> with an "Add new..." option, reused for both Type and
+// Status fields so the widget isn't duplicated a third time in this feature.
+function genericDropdownFieldHtml(id, options, currentVal, placeholder) {
+  var opts = options.slice();
+  if (currentVal && opts.indexOf(currentVal) === -1) opts.push(currentVal);
+  var optHtml = '<option value="">' + esc(placeholder || 'Select…') + '</option>' +
+    opts.map(function(t) {
+      return '<option value="' + esc(t) + '"' + (t === currentVal ? ' selected' : '') + '>' + esc(t) + '</option>';
+    }).join('') +
+    '<option value="__new__">+ Add new…</option>';
+  return '<select id="' + id + '" onchange="handleGenericDropdownChange(this)" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px;background:#fff">' + optHtml + '</select>' +
+         '<input type="text" id="' + id + '-new" placeholder="New value" style="display:none;width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">';
+}
+
+function handleGenericDropdownChange(sel) {
+  var newInput = document.getElementById(sel.id + '-new');
+  if (!newInput) return;
+  var showNew = sel.value === '__new__';
+  newInput.style.display = showNew ? '' : 'none';
+  if (showNew) newInput.focus();
+}
+
+function readGenericDropdownValue(id) {
+  var el = document.getElementById(id);
+  if (!el) return undefined;
+  if (el.tagName === 'SELECT' && el.value === '__new__') {
+    var newEl = document.getElementById(id + '-new');
+    return newEl ? newEl.value.trim() : '';
+  }
+  return (el.value || '').trim();
+}
+
+function todayInputDate() {
+  var d = new Date();
+  return d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2);
+}
+
+function dueBadge(nextDue) {
+  if (!nextDue) return '';
+  var d = parseMMDDYYYY(nextDue);
+  if (!d) return '';
+  var diffDays = Math.round((d.getTime() - today().getTime()) / 86400000);
+  var color, label;
+  if (diffDays < 0) { color = '#c00'; label = 'Overdue'; }
+  else if (diffDays <= 14) { color = '#b8860b'; label = 'Due Soon'; }
+  else return '';
+  return '<span style="display:inline-block;font-size:11px;font-weight:700;color:#fff;background:' + color + ';border-radius:4px;padding:2px 8px;margin-top:6px">' + label + ' \u00b7 ' + esc(nextDue) + '</span>';
+}
+
+function loadInventory() {
+  if (G.assetsLoaded) { runInventorySearch(); return; }
+  document.getElementById('inv-loading').style.display = 'block';
+  document.getElementById('inv-results').style.display = 'none';
+
+  gasCall('getInventory', {}, function(data) {
+    G.assets        = data.assets  || [];
+    G.assetsHeaders = data.headers || [];
+    G.assetsLoaded  = true;
+    document.getElementById('inv-loading').style.display = 'none';
+    document.getElementById('inv-results').style.display = 'block';
+    buildInventoryTypeChips();
+    runInventorySearch();
+  }, function() {
+    document.getElementById('inv-loading').style.display = 'none';
+    document.getElementById('inv-results').innerHTML = '<div class="empty">\u26a0\ufe0f Could not load inventory.</div>';
+    document.getElementById('inv-results').style.display = 'block';
+  });
+}
+
+function buildInventoryTypeChips() {
+  var seen = {};
+  var types = [];
+  G.assets.forEach(function(a) {
+    var t = (a['Type'] || '').trim();
+    if (t && !seen[t]) { seen[t] = true; types.push(t); }
+  });
+  var el = document.getElementById('inv-cats');
+  if (!types.length) { el.style.display = 'none'; return; }
+  types.sort();
+
+  var html = '<button class="chip active" id="invcat-all" onclick="setInventoryType(\'\',this)">All</button>';
+  types.forEach(function(t) {
+    html += '<button class="chip" onclick="setInventoryType(\'' + esc(t) + '\',this)">' + esc(t) + '</button>';
+  });
+  el.innerHTML = html;
+  el.style.display = 'flex';
+}
+
+function setInventoryType(type, btn) {
+  G.invType = type;
+  document.querySelectorAll('#inv-cats .chip').forEach(function(b){ b.classList.remove('active'); });
+  if (btn) btn.classList.add('active');
+  runInventorySearch();
+}
+
+function assetCard(a, idx, tokens) {
+  var typeLabel = a['Type'] ? '<span class="badge bd-indigo" style="font-size:11px;padding:3px 9px">' + highlightText(a['Type'], tokens) + '</span>' : '';
+  var statusLabel = a['Status'] ? esc(a['Status']) : '';
+  return '<div class="po-item" onclick="openAssetEdit(' + idx + ')" style="cursor:pointer">' +
+    '<div class="row-between">' +
+      '<span class="po-num">' + highlightText(a['Asset Name'] || '(unnamed)', tokens) + '</span>' + typeLabel +
+    '</div>' +
+    '<div class="po-sub">' + (a['Assigned To'] ? highlightText(a['Assigned To'], tokens) : '\u2014') + (statusLabel ? ' \u00b7 ' + statusLabel : '') + '</div>' +
+    (a['Notes'] ? '<div class="po-note">' + highlightText(a['Notes'], tokens) + '</div>' : '') +
+    dueBadge(a['Next Due Date']) +
+  '</div>';
+}
+
+function runInventorySearch() {
+  var q = (document.getElementById('inv-input').value || '').toLowerCase().trim();
+  var type = G.invType || '';
+  var el = document.getElementById('inv-results');
+  if (!G.assets.length) { el.innerHTML = '<div class="empty">No assets yet. Tap + Add to create one.</div>'; return; }
+
+  var filtered = fuzzySearch(
+    G.assets.filter(function(a) { return !type || (a['Type'] || '').trim() === type; }),
+    function(a) { return [
+      { text: (a['Asset Name'] || '').toLowerCase(), weight: 3 },
+      { text: (a['Type'] || '').toLowerCase(), weight: 1.5 },
+      { text: (a['Assigned To'] || '').toLowerCase(), weight: 1.5 },
+      { text: (a['Status'] || '').toLowerCase(), weight: 1 },
+      { text: (a['Notes'] || '').toLowerCase(), weight: 1 }
+    ]; },
+    q
+  );
+
+  if (!filtered.length) { el.innerHTML = '<div class="empty">No assets match' + (type ? ' in ' + esc(type) : '') + (q ? ' "' + esc(q) + '"' : '') + '.</div>'; return; }
+
+  var tokens = searchTokens(q);
+  el.innerHTML = filtered.map(function(a) {
+    return assetCard(a, G.assets.indexOf(a), tokens);
+  }).join('');
+}
+var runInventorySearchDebounced = debounce(function(){ runInventorySearch(); }, 150);
+
+// ── Add Asset ─────────────────────────────────────────────────────────────────
+function inventoryAddHeaders() {
+  return G.assetsHeaders && G.assetsHeaders.length ? G.assetsHeaders : ['Asset Name', 'Type', 'Assigned To', 'Status', 'Next Due Date', 'Last Service Date', 'Notes'];
+}
+
+function showAddAssetForm() {
+  var f = document.getElementById('inv-add-form');
+  var willShow = f.style.display === 'none';
+  f.style.display = willShow ? '' : 'none';
+  if (willShow) {
+    document.getElementById('inv-add-fields').innerHTML = inventoryAddHeaders().map(function(h) {
+      var id = 'ivn-' + h.replace(/\s+/g,'-');
+      if (isInvTypeHeader(h)) return genericDropdownFieldHtml(id, getAssetTypeOptions(), '', 'Select type…');
+      if (isInvStatusHeader(h)) return genericDropdownFieldHtml(id, ASSET_STATUS_OPTIONS, '', 'Select status…');
+      if (isInvDateHeader(h)) return '<input type="date" id="' + esc(id) + '" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">';
+      return '<input type="text" id="' + esc(id) + '" placeholder="' + esc(h) + '" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">';
+    }).join('');
+  }
+}
+
+function readInvFieldValue(id, isDate) {
+  var v = readGenericDropdownValue(id);
+  if (v === undefined) return '';
+  if (isDate && v) v = fromInputDate(v);
+  return v;
+}
+
+function doAddAsset() {
+  var headers = inventoryAddHeaders();
+  var values = {};
+  var hasAny = false;
+  headers.forEach(function(h) {
+    var id = 'ivn-' + h.replace(/\s+/g,'-');
+    var v = readInvFieldValue(id, isInvDateHeader(h)) || '';
+    values[h] = v;
+    if (v) hasAny = true;
+  });
+  if (!hasAny) { showToast('Enter at least one field'); return; }
+
+  var nameKey = headers.filter(function(h) { return /name/i.test(h); })[0];
+  if (nameKey && !values[nameKey]) { showToast('Asset Name is required'); return; }
+
+  gasCall('addAsset', { values: values }, function(res) {
+    if (res.success) {
+      document.getElementById('inv-add-form').style.display = 'none';
+      showToast('Asset added!');
+      G.assetsLoaded = false;
+      loadInventory();
+    } else {
+      showToast('Error: ' + (res.error || 'Save failed'));
+    }
+  }, function() {
+    showToast('Error: Could not connect');
+  });
+}
+
+// ── Edit Asset + Maintenance Log ────────────────────────────────────────────────
+function openAssetEdit(idx) {
+  var a = G.assets[idx];
+  if (!a) return;
+  G.assetEditIdx = idx;
+
+  var fields = G.assetsHeaders.map(function(h) {
+    var val = a[h] || '';
+    var id = 'ae-' + h.replace(/\s+/g,'-');
+    if (isInvTypeHeader(h)) return fg(h, genericDropdownFieldHtml(id, getAssetTypeOptions(), val, 'Select type…'));
+    if (isInvStatusHeader(h)) return fg(h, genericDropdownFieldHtml(id, ASSET_STATUS_OPTIONS, val, 'Select status…'));
+    if (isInvDateHeader(h)) return fg(h, '<input type="date" class="form-control" id="' + esc(id) + '" value="' + esc(toInputDate(val)) + '">');
+    return fg(h, '<input type="text" class="form-control" id="' + esc(id) + '" value="' + esc(val) + '" placeholder="' + esc(h) + '">');
+  }).join('');
+
+  document.getElementById('edit-modal-title').textContent = a['Asset Name'] || 'Asset';
+  document.getElementById('edit-modal-body').innerHTML =
+    fields +
+    '<div class="modal-actions">' +
+      '<button class="btn btn-primary" style="flex:1" id="asset-save-btn" onclick="submitAssetEdit()">Save</button>' +
+      '<button class="btn btn-secondary" style="flex:0 0 auto" onclick="closeEdit()">Cancel</button>' +
+    '</div>' +
+    '<div style="margin-top:20px;border-top:1px solid #f0f0f0;padding-top:16px">' +
+      '<div style="font-size:13px;font-weight:700;color:#1F3971;margin-bottom:8px">Maintenance Log</div>' +
+      '<div id="inv-log-list"><p style="color:#888;font-size:13px">Loading…</p></div>' +
+      '<div style="margin-top:14px">' +
+        genericDropdownFieldHtml('iml-type', ASSET_LOG_TYPE_OPTIONS, '', 'Event type…') +
+        '<input type="date" id="iml-date" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px" value="' + esc(todayInputDate()) + '">' +
+        '<input type="text" id="iml-by" placeholder="Performed by" value="' + esc(G.name || '') + '" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">' +
+        '<input type="date" id="iml-nextdue" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">' +
+        '<textarea id="iml-notes" placeholder="Notes" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px;min-height:60px"></textarea>' +
+        '<button onclick="doAddMaintenanceLog()" style="width:100%;background:#1F3971;color:#fff;border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:700;cursor:pointer">Log Entry</button>' +
+      '</div>' +
+    '</div>';
+
+  document.getElementById('edit-modal').classList.add('open');
+  loadAssetMaintenanceLog(a._rowIndex);
+}
+
+function submitAssetEdit() {
+  var a = G.assets[G.assetEditIdx];
+  if (!a) return;
+
+  var values = {};
+  G.assetsHeaders.forEach(function(h) {
+    var id = 'ae-' + h.replace(/\s+/g,'-');
+    var v = readInvFieldValue(id, isInvDateHeader(h));
+    if (v !== undefined) values[h] = v;
+  });
+
+  var btn = document.getElementById('asset-save-btn');
+  if (btn) { btn.textContent = 'Saving…'; btn.disabled = true; }
+
+  gasCall('updateAsset', { rowIndex: a._rowIndex, values: values }, function(res) {
+    if (res.success) {
+      G.assetsHeaders.forEach(function(h) { if (values[h] !== undefined) a[h] = values[h]; });
+      closeEdit();
+      showToast('Asset updated!');
+      runInventorySearch();
+    } else {
+      showToast('Error:' + (res.error || 'Save failed'));
+      if (btn) { btn.textContent = 'Save'; btn.disabled = false; }
+    }
+  }, function() {
+    showToast('Error:Error saving asset');
+    if (btn) { btn.textContent = 'Save'; btn.disabled = false; }
+  });
+}
+
+function loadAssetMaintenanceLog(assetRowIndex) {
+  gasCall('getAssetMaintenanceLog', { assetRowIndex: assetRowIndex }, function(res) {
+    renderAssetLog(res.logs || []);
+  }, function() {
+    var el = document.getElementById('inv-log-list');
+    if (el) el.innerHTML = '<p style="color:#c00;font-size:13px">Could not load log.</p>';
+  });
+}
+
+function renderAssetLog(logs) {
+  var el = document.getElementById('inv-log-list');
+  if (!el) return;
+  if (!logs.length) { el.innerHTML = '<p style="color:#888;font-size:13px">No maintenance logged yet.</p>'; return; }
+  el.innerHTML = logs.map(function(l) {
+    return '<div style="background:#f7f6f2;border-radius:8px;padding:8px 10px;margin-bottom:6px">' +
+      '<div style="display:flex;justify-content:space-between;font-size:12px">' +
+        '<span style="font-weight:700;color:#1F3971">' + esc(l['Event Type'] || 'Log') + '</span>' +
+        '<span style="color:#888">' + esc(l['Date Performed'] || '') + '</span>' +
+      '</div>' +
+      (l['Performed By'] ? '<div style="font-size:11px;color:#888;margin-top:2px">by ' + esc(l['Performed By']) + '</div>' : '') +
+      (l['Notes'] ? '<div style="font-size:12px;color:#444;margin-top:4px">' + esc(l['Notes']) + '</div>' : '') +
+    '</div>';
+  }).join('');
+}
+
+function doAddMaintenanceLog() {
+  var a = G.assets[G.assetEditIdx];
+  if (!a) return;
+
+  var values = {
+    'Event Type':     readGenericDropdownValue('iml-type') || '',
+    'Date Performed':  fromInputDate(trim('iml-date')),
+    'Performed By':    trim('iml-by'),
+    'Next Due Date':   fromInputDate(trim('iml-nextdue')),
+    'Notes':           trim('iml-notes')
+  };
+  if (!values['Event Type']) { showToast('Choose an event type'); return; }
+  if (!values['Date Performed']) { showToast('Date performed is required'); return; }
+
+  gasCall('addMaintenanceLog', { assetRowIndex: a._rowIndex, assetName: a['Asset Name'] || '', values: values }, function(res) {
+    if (res.success) {
+      showToast('Maintenance logged!');
+      if (values['Date Performed']) a['Last Service Date'] = values['Date Performed'];
+      if (values['Next Due Date'])  a['Next Due Date']     = values['Next Due Date'];
+      document.getElementById('iml-notes').value = '';
+      loadAssetMaintenanceLog(a._rowIndex);
+    } else {
+      showToast('Error: ' + (res.error || 'Save failed'));
+    }
+  }, function() {
+    showToast('Error: Could not connect');
+  });
+}
+
 // ── Swipe to Receive ──────────────────────────────────────────────────────────
 (function() {
   var startX = 0, startY = 0, activeEl = null, moved = 0;
@@ -4535,12 +4908,13 @@ function doAddContact() {
 function showOtherPanel(name) {
   if (!_navPop) history.pushState({ view: 'other-panel', panel: name }, '');
   document.getElementById('other-home').style.display = 'none';
-  ['pricing', 'contacts', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project'].forEach(function(p) {
+  ['pricing', 'contacts', 'inventory', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
     if (el) el.style.display = p === name ? '' : 'none';
   });
   if (name === 'pricing')    loadPricing();
   if (name === 'contacts')   loadContacts();
+  if (name === 'inventory')  loadInventory();
   if (name === 'reconcile')  initStmtDrop();
   if (name === 'job-cost')   openJobDashboardPanel();
   if (name === 'missing-inv') loadMissingInvoices();

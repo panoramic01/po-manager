@@ -128,6 +128,11 @@ function doPost(e) {
     else if (action === 'getPTOOverview')              result = getPTOOverview(payload);
     else if (action === 'getPayrollSummary')           result = getPayrollSummary(payload);
     else if (action === 'emailPayroll')                result = emailPayroll(payload);
+    else if (action === 'getInventory')                result = getInventory(payload);
+    else if (action === 'addAsset')                    result = addAsset(payload);
+    else if (action === 'updateAsset')                 result = updateAsset(payload);
+    else if (action === 'getAssetMaintenanceLog')      result = getAssetMaintenanceLog(payload);
+    else if (action === 'addMaintenanceLog')           result = addMaintenanceLog(payload);
     else                                        result = { error: 'Unknown action: ' + action };
 
     return ContentService
@@ -1152,6 +1157,147 @@ function addContact(payload) {
     sheet.appendRow(row);
     SpreadsheetApp.flush();
     return { success: true, rowIndex: sheet.getLastRow() };
+  } catch(e) { return { success: false, error: e.toString() }; }
+}
+
+// --- Inventory (fleet + field assets) ------------------------------------------
+function ensureSheetWithHeaders_(name, headers) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+    sheet.appendRow(headers);
+  }
+  return sheet;
+}
+
+var ASSET_HEADERS = ['Asset Name', 'Type', 'Assigned To', 'Status', 'Next Due Date', 'Last Service Date', 'Notes'];
+var ASSET_LOG_HEADERS = ['Asset Row', 'Asset Name', 'Event Type', 'Date Performed', 'Performed By', 'Next Due Date', 'Notes'];
+
+function getInventory(payload) {
+  try {
+    var auth = authorizeCaller(payload, ['admin']);
+    if (!auth.ok) return { headers: [], assets: [], error: auth.error, code: auth.code };
+
+    var sheet = ensureSheetWithHeaders_('Assets', ASSET_HEADERS);
+    var data = sheet.getDataRange().getValues();
+    if (data.length < 2) return { headers: ASSET_HEADERS, assets: [] };
+    var headers = data[0].map(function(h){ return h.toString().trim(); }).filter(Boolean);
+    var assets = [];
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      var obj = { _rowIndex: i + 1 }; var hasData = false;
+      headers.forEach(function(h, j) {
+        obj[h] = (row[j] || '').toString().trim();
+        if (obj[h]) hasData = true;
+      });
+      if (hasData) assets.push(obj);
+    }
+    return { headers: headers, assets: assets };
+  } catch(e) { return { headers: [], assets: [], error: e.toString() }; }
+}
+
+function addAsset(payload) {
+  try {
+    var auth = authorizeCaller(payload, ['admin']);
+    if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
+
+    var values = payload.values || {};
+    var sheet = ensureSheetWithHeaders_('Assets', ASSET_HEADERS);
+    var lastCol = Math.max(sheet.getLastColumn(), 1);
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    var row = headers.map(function(h) {
+      var key = h.toString().trim();
+      return key && values[key] !== undefined ? values[key] : '';
+    });
+    if (!row.some(function(v) { return v !== '' && v !== null; })) {
+      return { success: false, error: 'No asset data provided' };
+    }
+
+    sheet.appendRow(row);
+    SpreadsheetApp.flush();
+    return { success: true, rowIndex: sheet.getLastRow() };
+  } catch(e) { return { success: false, error: e.toString() }; }
+}
+
+function updateAsset(payload) {
+  try {
+    var auth = authorizeCaller(payload, ['admin']);
+    if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
+
+    var rowIndex = payload.rowIndex;
+    var values   = payload.values || {};
+
+    var sheet = ensureSheetWithHeaders_('Assets', ASSET_HEADERS);
+    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    headers.forEach(function(h, i) {
+      var key = h.toString().trim();
+      if (key && values[key] !== undefined) {
+        sheet.getRange(rowIndex, i + 1).setValue(values[key]);
+      }
+    });
+    SpreadsheetApp.flush();
+    return { success: true };
+  } catch(e) { return { success: false, error: e.toString() }; }
+}
+
+function getAssetMaintenanceLog(payload) {
+  try {
+    var auth = authorizeCaller(payload, ['admin']);
+    if (!auth.ok) return { logs: [], error: auth.error, code: auth.code };
+
+    var assetRowIndex = payload.assetRowIndex;
+    var sheet = ensureSheetWithHeaders_('Asset Maintenance Log', ASSET_LOG_HEADERS);
+    var data = sheet.getDataRange().getValues();
+    if (data.length < 2) return { logs: [] };
+    var headers = data[0].map(function(h){ return h.toString().trim(); }).filter(Boolean);
+    var logs = [];
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      if (String(row[0]) !== String(assetRowIndex)) continue;
+      var obj = { _rowIndex: i + 1 };
+      headers.forEach(function(h, j) { obj[h] = (row[j] || '').toString().trim(); });
+      logs.push(obj);
+    }
+    logs.sort(function(a, b) { return (b['Date Performed'] || '').localeCompare(a['Date Performed'] || ''); });
+    return { logs: logs };
+  } catch(e) { return { logs: [], error: e.toString() }; }
+}
+
+function addMaintenanceLog(payload) {
+  try {
+    var auth = authorizeCaller(payload, ['admin']);
+    if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
+
+    var assetRowIndex = payload.assetRowIndex;
+    var assetName = payload.assetName || '';
+    var values = payload.values || {};
+    if (!assetRowIndex) return { success: false, error: 'Missing assetRowIndex' };
+
+    var logSheet = ensureSheetWithHeaders_('Asset Maintenance Log', ASSET_LOG_HEADERS);
+    var row = ASSET_LOG_HEADERS.map(function(h) {
+      if (h === 'Asset Row') return assetRowIndex;
+      if (h === 'Asset Name') return assetName;
+      return values[h] !== undefined ? values[h] : '';
+    });
+    logSheet.appendRow(row);
+
+    var assetUpdates = {};
+    if (values['Date Performed']) assetUpdates['Last Service Date'] = values['Date Performed'];
+    if (values['Next Due Date'])  assetUpdates['Next Due Date']     = values['Next Due Date'];
+    if (Object.keys(assetUpdates).length) {
+      var assetSheet = ensureSheetWithHeaders_('Assets', ASSET_HEADERS);
+      var assetHeaders = assetSheet.getRange(1, 1, 1, assetSheet.getLastColumn()).getValues()[0];
+      assetHeaders.forEach(function(h, i) {
+        var key = h.toString().trim();
+        if (key && assetUpdates[key] !== undefined) {
+          assetSheet.getRange(assetRowIndex, i + 1).setValue(assetUpdates[key]);
+        }
+      });
+    }
+
+    SpreadsheetApp.flush();
+    return { success: true };
   } catch(e) { return { success: false, error: e.toString() }; }
 }
 
