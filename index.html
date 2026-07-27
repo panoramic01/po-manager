@@ -1318,14 +1318,14 @@
           <input id="emp-new-email"    type="email" placeholder="Email *"         style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px"/>
           <input id="emp-new-phone"    type="tel"   placeholder="Phone"           style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px"/>
           <input id="emp-new-password" type="text"  placeholder="Password *"      style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px"/>
-          <select id="emp-new-role" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px;background:#fff">
-            <option value="runner">Runner</option>
-            <option value="site_manager">Site Manager</option>
-            <option value="purchaser">Purchaser</option>
-            <option value="human_resources">Human Resources</option>
-            <option value="admin">Admin</option>
-            <option value="aidan">Aidan (Owner)</option>
-          </select>
+          <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:6px">Roles</div>
+          <div id="emp-new-roles" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+            <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:#333;background:#f5f5f5;border-radius:8px;padding:6px 10px"><input type="checkbox" value="runner" checked/> Runner</label>
+            <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:#333;background:#f5f5f5;border-radius:8px;padding:6px 10px"><input type="checkbox" value="site_manager"/> Site Manager</label>
+            <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:#333;background:#f5f5f5;border-radius:8px;padding:6px 10px"><input type="checkbox" value="purchaser"/> Purchaser</label>
+            <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:#333;background:#f5f5f5;border-radius:8px;padding:6px 10px"><input type="checkbox" value="human_resources"/> Human Resources</label>
+            <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:#333;background:#f5f5f5;border-radius:8px;padding:6px 10px"><input type="checkbox" value="admin"/> Admin</label>
+          </div>
           <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
             <label style="font-size:12px;color:#555;font-weight:600;white-space:nowrap">PTO Days:</label>
             <input id="emp-new-allotted" type="number" min="0" value="0" style="width:80px;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px"/>
@@ -2218,27 +2218,64 @@ function forceUpdate() {
 }
 
 // ── Role-Based Access ─────────────────────────────────────────────────────────
+// An account's role can be a single token ("admin") or several comma-separated
+// roles ("admin,human_resources"). Permissions are the union across all
+// assigned roles: having any one role that grants a capability grants it.
+var ROLE_LABELS = { aidan:'Aidan', admin:'Admin', purchaser:'Purchaser', site_manager:'Site Manager', runner:'Runner', human_resources:'Human Resources' };
+
+function roleTokens(roleStr) {
+  return (roleStr || '').split(',').map(function(r) { return r.trim().toLowerCase(); }).filter(Boolean);
+}
+
+// 'aidan' is the owner-only login label; it carries identical permissions to
+// 'admin' everywhere in this app - effRoleTokens is what every check below uses.
+function effRoleTokens(roleStr) {
+  var seen = {}, out = [];
+  roleTokens(roleStr).forEach(function(r) {
+    var n = r === 'aidan' ? 'admin' : r;
+    if (!seen[n]) { seen[n] = true; out.push(n); }
+  });
+  return out;
+}
+
+function hasAnyRole(roleStr, allowed) {
+  var effRoles = effRoleTokens(roleStr);
+  return allowed.some(function(r) { return effRoles.indexOf(r) !== -1; });
+}
+
 // True for aidan/admin/human_resources - the roles that can see all-employee
 // PTO and Time Clock data, not just their own.
 function canManageHR(role) {
-  return role === 'admin' || role === 'aidan' || role === 'human_resources';
+  return hasAnyRole(role, ['admin', 'human_resources']);
+}
+
+// Renders a role string (single or comma-separated) as a display label,
+// e.g. "admin,human_resources" -> "Admin + Human Resources".
+function formatRoleLabel(roleStr) {
+  var seen = {}, labels = [];
+  roleTokens(roleStr).forEach(function(r) {
+    if (seen[r]) return;
+    seen[r] = true;
+    labels.push(ROLE_LABELS[r] || (r.charAt(0).toUpperCase() + r.slice(1).replace(/_/g, ' ')));
+  });
+  return labels.join(' + ') || 'Runner';
 }
 
 function applyRole(role) {
   hideSplash();
-  // 'aidan' is the owner-only login label; it carries identical permissions
-  // to 'admin' everywhere in this app - effRole is what every check below uses.
-  var effRole = (role === 'aidan') ? 'admin' : role;
+  var effRoles = effRoleTokens(role);
+  function has(arr) { return arr.some(function(r) { return effRoles.indexOf(r) !== -1; }); }
+  var isHrOnly = effRoles.length > 0 && effRoles.every(function(r) { return r === 'human_resources'; });
   var p = {
-    canDash:        effRole === 'admin' || effRole === 'purchaser' || effRole === 'site_manager',
-    canCreate:      effRole === 'admin' || effRole === 'purchaser' || effRole === 'site_manager',
-    canReceive:     effRole !== 'human_resources',                   // controls Log tab visibility
-    canReceivePO:   effRole !== 'human_resources',                   // controls Receive PO form + actions
-    canSearch:      effRole === 'admin' || effRole === 'purchaser' || effRole === 'site_manager',
-    canPricing:     effRole === 'admin' || effRole === 'purchaser',
-    canEdit:        effRole === 'admin' || effRole === 'purchaser' || effRole === 'site_manager',
-    canViewInvoice: effRole === 'admin' || effRole === 'purchaser',
-    canContacts:    effRole === 'admin' || effRole === 'purchaser',
+    canDash:        has(['admin', 'purchaser', 'site_manager']),
+    canCreate:      has(['admin', 'purchaser', 'site_manager']),
+    canReceive:     !isHrOnly,                                       // controls Log tab visibility
+    canReceivePO:   !isHrOnly,                                       // controls Receive PO form + actions
+    canSearch:      has(['admin', 'purchaser', 'site_manager']),
+    canPricing:     has(['admin', 'purchaser']),
+    canEdit:        has(['admin', 'purchaser', 'site_manager']),
+    canViewInvoice: has(['admin', 'purchaser']),
+    canContacts:    has(['admin', 'purchaser']),
     canOther:       true,
     canAccount:     true
   };
@@ -2254,31 +2291,30 @@ function applyRole(role) {
   sd('other-card-pricing',   p.canPricing);
   sd('other-card-contacts',  p.canContacts);
   sd('ct-add-btn',           p.canContacts);
-  sd('other-card-reconcile', effRole === 'admin');
-  sd('other-card-job-cost',   effRole === 'admin');
-  sd('other-card-missing-inv', effRole === 'admin');
-  sd('other-card-vendor-spend', effRole === 'admin' || effRole === 'purchaser');
-  sd('other-card-material-report', effRole === 'admin');
-  sd('other-card-inventory', effRole === 'admin');
+  sd('other-card-reconcile', has(['admin']));
+  sd('other-card-job-cost',   has(['admin']));
+  sd('other-card-missing-inv', has(['admin']));
+  sd('other-card-vendor-spend', has(['admin', 'purchaser']));
+  sd('other-card-material-report', has(['admin']));
+  sd('other-card-inventory', has(['admin']));
   sd('other-card-sop', true);
-  sd('other-card-emp-mgr',      effRole === 'admin' || effRole === 'human_resources');
-  sd('other-card-pto-overview',  effRole === 'admin' || effRole === 'human_resources');
-  sd('other-card-payroll',       effRole === 'admin' || effRole === 'human_resources');
+  sd('other-card-emp-mgr',      has(['admin', 'human_resources']));
+  sd('other-card-pto-overview',  has(['admin', 'human_resources']));
+  sd('other-card-payroll',       has(['admin', 'human_resources']));
   sd('other-card-new-project',   p.canCreate);
   sd('receive-po-card', p.canReceivePO);
 
   // Show role badge in header
-  var labels = { aidan:'Aidan', admin:'Admin', purchaser:'Purchaser', site_manager:'Site Manager', runner:'Runner', human_resources:'HR' };
   var headerP = document.querySelector('.app-header p');
-  if (headerP && labels[role]) {
+  if (headerP && role) {
     headerP.innerHTML = 'Panoramic Building' +
-      ' &nbsp;<span onclick="switchAccount()" style="cursor:pointer;font-size:11px;background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:6px" title="Switch account">' + labels[role] + '</span>';
+      ' &nbsp;<span onclick="switchAccount()" style="cursor:pointer;font-size:11px;background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:6px" title="Switch account">' + esc(formatRoleLabel(role)) + '</span>';
   }
 
   // Navigate to the correct default tab
-  if (role === 'runner') {
+  if (!p.canDash && p.canReceive) {
     showTabDirect('receive', document.getElementById('nav-receive'));
-  } else if (role === 'human_resources') {
+  } else if (!p.canDash && !p.canReceive) {
     showTabDirect('account', document.getElementById('nav-account'));
   } else {
     showTabDirect('dashboard', document.getElementById('nav-dashboard'));
@@ -7878,15 +7914,19 @@ function updateLiveClock() {
  * permission is denied, it times out, or the API isn't available.
  */
 function captureLocationThen_(callback) {
-  if (!navigator.geolocation) { callback({}); return; }
+  if (!navigator.geolocation) { console.warn('captureLocationThen_: navigator.geolocation unavailable'); callback({}); return; }
   var done = false;
   var finish = function(coords) { if (done) return; done = true; callback(coords); };
   navigator.geolocation.getCurrentPosition(
     function(pos) { finish({ lat: pos.coords.latitude, lng: pos.coords.longitude }); },
-    function() { finish({}); },
-    { timeout: 5000, maximumAge: 60000 }
+    function(err) {
+      // err.code: 1 = PERMISSION_DENIED, 2 = POSITION_UNAVAILABLE, 3 = TIMEOUT
+      console.warn('captureLocationThen_ failed: code=' + (err && err.code) + ' message=' + (err && err.message));
+      finish({});
+    },
+    { timeout: 8000, maximumAge: 60000 }
   );
-  setTimeout(function() { finish({}); }, 6000); // safety net if getCurrentPosition never calls back
+  setTimeout(function() { finish({}); }, 9000); // safety net if getCurrentPosition never calls back
 }
 
 function doPunch() {
@@ -7899,7 +7939,7 @@ function doPunch() {
       gasCall('clockOut', Object.assign({ email: G.userEmail }, loc), function(r) {
         btn.disabled = false;
         if (r && r.success) {
-          showToast('Clocked out - ' + r.hours + ' hrs logged');
+          showToast('Clocked out - ' + r.hours + ' hrs logged' + (loc.lat ? '' : ' (location off)'));
           updateClockUI(false, null);
           loadTimeClock();
         } else {
@@ -7911,7 +7951,7 @@ function doPunch() {
       gasCall('clockIn', Object.assign({ email: G.userEmail, name: G.config.userName || G.userEmail }, loc), function(r) {
         btn.disabled = false;
         if (r && r.success) {
-          showToast('Clocked in at ' + r.clockIn);
+          showToast('Clocked in at ' + r.clockIn + (loc.lat ? '' : ' (location off)'));
           updateClockUI(true, r.clockIn);
           startClockTick();
         } else {
@@ -7978,7 +8018,7 @@ function loadAccount() {
   var initial = name ? name.charAt(0).toUpperCase() : email.charAt(0).toUpperCase();
   document.getElementById('acct-avatar').textContent        = initial;
   document.getElementById('acct-display-name').textContent  = name || email;
-  document.getElementById('acct-role-badge').textContent    = role.charAt(0).toUpperCase() + role.slice(1).replace('_', ' ');
+  document.getElementById('acct-role-badge').textContent    = formatRoleLabel(role);
   document.getElementById('acct-email-label').textContent   = email;
   document.getElementById('acct-name-input').value          = name;
   document.getElementById('acct-phone-input').value         = phone;
@@ -8148,24 +8188,29 @@ function loadEmpMgr() {
 
 function renderEmpList() {
   var roleColors = { aidan: '#b71c1c', admin: '#1F3971', purchaser: '#0277bd', site_manager: '#558b2f', runner: '#6d4c41', human_resources: '#6a1b9a' };
-  var roleLabels = { aidan: 'Aidan (Owner)', admin: 'Admin', purchaser: 'Purchaser', site_manager: 'Site Manager', runner: 'Runner', human_resources: 'Human Resources' };
+  var ROLE_OPTIONS = ['runner','site_manager','purchaser','human_resources','admin','aidan'];
   document.getElementById('emp-list').innerHTML = _empData.map(function(e, i) {
     var initial = e.name ? e.name.charAt(0).toUpperCase() : '?';
-    var roleColor = roleColors[e.role] || '#888';
-    var roleLabel = roleLabels[e.role] || e.role;
+    var empRoles = roleTokens(e.role);
+    var primaryRole = empRoles[0] || 'runner';
+    var roleColor = roleColors[primaryRole] || '#888';
+    var roleLabel = formatRoleLabel(e.role);
     return '<div style="background:#fff;border-radius:12px;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,0.07);overflow:hidden">'
       + '<div onclick="toggleEmpEdit(' + i + ')" style="display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer">'
       + '<div style="width:40px;height:40px;border-radius:50%;background:' + roleColor + ';display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;font-size:16px;flex-shrink:0">' + initial + '</div>'
       + '<div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:700;color:#222">' + esc(e.name) + '</div>'
       + '<div style="font-size:12px;color:#888;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(e.email) + '</div></div>'
-      + '<span style="font-size:11px;font-weight:700;color:' + roleColor + ';background:' + roleColor + '18;padding:3px 8px;border-radius:10px;white-space:nowrap">' + roleLabel + '</span>'
+      + '<span style="font-size:11px;font-weight:700;color:' + roleColor + ';background:' + roleColor + '18;padding:3px 8px;border-radius:10px;white-space:nowrap">' + esc(roleLabel) + '</span>'
       + '</div>'
       + '<div id="emp-edit-' + i + '" style="display:none;padding:0 16px 16px;border-top:1px solid #f5f5f5">'
       + '<input id="emp-edit-name-' + i + '" type="text" value="' + esc(e.name) + '" placeholder="Name" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-top:10px;margin-bottom:8px"/>'
       + '<input id="emp-edit-phone-' + i + '" type="tel" value="' + esc(e.phone) + '" placeholder="Phone" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px"/>'
-      + '<select id="emp-edit-role-' + i + '" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px;background:#fff">'
-      + ['runner','site_manager','purchaser','human_resources','admin','aidan'].map(function(r_) { return '<option value="' + r_ + '"' + (e.role===r_?' selected':'') + '>' + (roleLabels[r_]||r_) + '</option>'; }).join('')
-      + '</select>'
+      + '<div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:6px">Roles</div>'
+      + '<div id="emp-edit-roles-' + i + '" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">'
+      + ROLE_OPTIONS.map(function(r_) {
+          return '<label style="display:flex;align-items:center;gap:5px;font-size:13px;color:#333;background:#f5f5f5;border-radius:8px;padding:6px 10px"><input type="checkbox" value="' + r_ + '"' + (empRoles.indexOf(r_) !== -1 ? ' checked' : '') + '/> ' + (ROLE_LABELS[r_] || r_) + '</label>';
+        }).join('')
+      + '</div>'
       + '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><label style="font-size:12px;color:#555;font-weight:600;white-space:nowrap">PTO Days:</label>'
       + '<input id="emp-edit-allotted-' + i + '" type="number" min="0" value="' + e.allotted + '" style="width:80px;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px"/></div>'
       + '<input id="emp-edit-pw-' + i + '" type="text" placeholder="New password (leave blank to keep)" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:10px"/>'
@@ -8187,7 +8232,7 @@ function showAddEmpForm() {
   if (f.style.display !== 'none') {
     ['emp-new-name','emp-new-email','emp-new-phone','emp-new-password'].forEach(function(id) { document.getElementById(id).value = ''; });
     document.getElementById('emp-new-allotted').value = '0';
-    document.getElementById('emp-new-role').value = 'runner';
+    document.querySelectorAll('#emp-new-roles input[type=checkbox]').forEach(function(cb) { cb.checked = cb.value === 'runner'; });
   }
 }
 
@@ -8196,7 +8241,7 @@ function doAddEmployee() {
   var email    = document.getElementById('emp-new-email').value.trim();
   var phone    = document.getElementById('emp-new-phone').value.trim();
   var password = document.getElementById('emp-new-password').value.trim();
-  var role     = document.getElementById('emp-new-role').value;
+  var role     = Array.prototype.map.call(document.querySelectorAll('#emp-new-roles input[type=checkbox]:checked'), function(cb) { return cb.value; }).join(',') || 'runner';
   var allotted = document.getElementById('emp-new-allotted').value;
   if (!name || !email || !password) { showToast('Name, email and password are required'); return; }
   gasCall('addEmployee', { name: name, email: email, phone: phone, password: password, role: role, allotted: parseFloat(allotted) || 0, callerEmail: G.userEmail }, function(r) {
@@ -8209,11 +8254,15 @@ function doAddEmployee() {
 
 function doUpdateEmployee(i) {
   var e = _empData[i];
+  var selectedRoles = Array.prototype.map.call(
+    document.querySelectorAll('#emp-edit-roles-' + i + ' input[type=checkbox]:checked'),
+    function(cb) { return cb.value; }
+  ).join(',') || 'runner';
   var payload = {
     email:    e.email,
     name:     document.getElementById('emp-edit-name-' + i).value.trim(),
     phone:    document.getElementById('emp-edit-phone-' + i).value.trim(),
-    role:     document.getElementById('emp-edit-role-' + i).value,
+    role:     selectedRoles,
     allotted: parseFloat(document.getElementById('emp-edit-allotted-' + i).value) || 0,
     password: document.getElementById('emp-edit-pw-' + i).value.trim(),
     callerEmail: G.userEmail

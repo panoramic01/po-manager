@@ -31,6 +31,52 @@ function normalizeRole_(role) {
   return role === 'aidan' ? 'admin' : role;
 }
 
+// ── Multi-role support ───────────────────────────────────────────────────────
+// An employee's HR sheet role cell (column D) can hold one role ("admin") or
+// several comma-separated roles ("admin,human_resources"). Every place that
+// used to compare a single role string now works with these list helpers so
+// an account can carry multiple roles and gets the union of their permissions.
+
+/** Parses a raw role cell into a deduped, lowercase, trimmed array of role tokens. */
+function parseRoleList_(raw) {
+  var seen = {};
+  var out = [];
+  (raw || '').toString().split(',').forEach(function(tok) {
+    var r = tok.toLowerCase().trim();
+    if (!r || seen[r]) return;
+    seen[r] = true;
+    out.push(r);
+  });
+  return out;
+}
+
+/** Normalizes each role in a list (via normalizeRole_) and dedupes the result. */
+function normalizeRoleList_(rawList) {
+  var seen = {};
+  var out = [];
+  rawList.forEach(function(r) {
+    var n = normalizeRole_(r);
+    if (!seen[n]) { seen[n] = true; out.push(n); }
+  });
+  return out;
+}
+
+/** True if any role in effRoles (already normalized) appears in the allowed list. */
+function hasAnyRole_(effRoles, allowed) {
+  for (var i = 0; i < allowed.length; i++) {
+    if (effRoles.indexOf(allowed[i]) !== -1) return true;
+  }
+  return false;
+}
+
+// The only role tokens the app understands. Anything else in a client-supplied
+// role list is dropped rather than written to the HR sheet - keeps garbage or
+// script-like text out of a cell that gets echoed back into the UI verbatim.
+var VALID_EMPLOYEE_ROLES = ['runner', 'site_manager', 'purchaser', 'human_resources', 'admin', 'aidan'];
+function filterValidRoles_(roleList) {
+  return roleList.filter(function(r) { return VALID_EMPLOYEE_ROLES.indexOf(r) !== -1; });
+}
+
 var STATUS_OPTIONS = [
   "Pending Pickup",
   "Pending Delivery",
@@ -171,8 +217,8 @@ function doPost(e) {
  */
 function getSheetData(payload) {
   var callerEmail = ((payload && payload.callerEmail) || '').toString().toLowerCase().trim();
-  var callerRole  = normalizeRole_(getRoleByEmail(callerEmail).role);
-  var canViewInvoice = callerRole === 'admin' || callerRole === 'purchaser';
+  var callerRoles = getRoleByEmail(callerEmail).effRoles;
+  var canViewInvoice = hasAnyRole_(callerRoles, ['admin', 'purchaser']);
 
   var sheet = getSheet();
   var lastRow = sheet.getLastRow();
@@ -405,7 +451,10 @@ function verifyLogin(email, password) {
       var rowPhone = (data[i][2] || '').toString().trim();               // Column C
       if (rowEmail === email) {
         if (rowPass && rowPass === password) {
-          if (isOwnerEmail(email)) rowRole = 'aidan';
+          var loginRoleList = parseRoleList_(rowRole);
+          if (isOwnerEmail(email) && loginRoleList.indexOf('aidan') === -1) loginRoleList.push('aidan');
+          if (!loginRoleList.length) loginRoleList = ['runner'];
+          rowRole = loginRoleList.join(',');
           return {
             success: true, role: rowRole, email: email, sessionToken: issueSessionToken_(email),
             config: { statusOptions: STATUS_OPTIONS, vendorOptions: VENDOR_OPTIONS, userRole: rowRole, userEmail: email, userName: rowName, userPhone: rowPhone }
@@ -461,7 +510,10 @@ function verifyGoogleLogin(idToken) {
         var rowRole  = (data[i][3] || '').toString().toLowerCase().trim(); // Column D
         var rowName  = (data[i][0] || '').toString().trim();               // Column A
         var rowPhone = (data[i][2] || '').toString().trim();               // Column C
-        if (isOwnerEmail(email)) rowRole = 'aidan';
+        var googleRoleList = parseRoleList_(rowRole);
+        if (isOwnerEmail(email) && googleRoleList.indexOf('aidan') === -1) googleRoleList.push('aidan');
+        if (!googleRoleList.length) googleRoleList = ['runner'];
+        rowRole = googleRoleList.join(',');
         return {
           success: true, role: rowRole, email: email, sessionToken: issueSessionToken_(email),
           config: { statusOptions: STATUS_OPTIONS, vendorOptions: VENDOR_OPTIONS, userRole: rowRole, userEmail: email, userName: rowName, userPhone: rowPhone }
@@ -646,17 +698,24 @@ function updateProfile(payload) {
 }
 
 /**
- * Looks up a role by a caller-supplied email address.
- * Returns { role, email }. Falls back to 'runner' if not found.
+ * Looks up an employee's role(s) by a caller-supplied email address.
+ * Returns { role, roles, effRoles, email, name, phone }:
+ *   - role:     raw comma-joined role string (e.g. "admin,human_resources")
+ *   - roles:    the same, as an array
+ *   - effRoles: roles with 'aidan' normalized to 'admin' - use this for permission checks
+ * Falls back to 'runner' if not found.
  */
 function getRoleByEmail(email) {
   try {
-    if (!email) return { role: 'runner', email: '' };
+    if (!email) return { role: 'runner', roles: ['runner'], effRoles: ['runner'], email: '' };
     email = email.toLowerCase().trim();
 
     var ss    = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName(ROLES_SHEET);
-    if (!sheet) return { role: isOwnerEmail(email) ? 'aidan' : 'runner', email: email };
+    if (!sheet) {
+      var fallbackRoles = isOwnerEmail(email) ? ['aidan'] : ['runner'];
+      return { role: fallbackRoles.join(','), roles: fallbackRoles, effRoles: normalizeRoleList_(fallbackRoles), email: email };
+    }
 
     var data = sheet.getDataRange().getValues();
     for (var i = 1; i < data.length; i++) {
@@ -665,13 +724,17 @@ function getRoleByEmail(email) {
       var rowName  = (data[i][0] || '').toString().trim();               // Column A
       var rowPhone = (data[i][2] || '').toString().trim();               // Column C
       if (rowEmail === email) {
-        if (isOwnerEmail(email)) rowRole = 'aidan';
-        return { role: rowRole, email: email, name: rowName, phone: rowPhone };
+        var roleList = parseRoleList_(rowRole);
+        if (isOwnerEmail(email) && roleList.indexOf('aidan') === -1) roleList.push('aidan');
+        if (!roleList.length) roleList = ['runner'];
+        return { role: roleList.join(','), roles: roleList, effRoles: normalizeRoleList_(roleList), email: email, name: rowName, phone: rowPhone };
       }
     }
-    return { role: isOwnerEmail(email) ? 'aidan' : 'runner', email: email, name: '', phone: '' };
+    var notFoundRoles = isOwnerEmail(email) ? ['aidan'] : ['runner'];
+    return { role: notFoundRoles.join(','), roles: notFoundRoles, effRoles: normalizeRoleList_(notFoundRoles), email: email, name: '', phone: '' };
   } catch(e) {
-    return { role: isOwnerEmail(email) ? 'aidan' : 'runner', email: email, name: '', phone: '' };
+    var errRoles = isOwnerEmail(email) ? ['aidan'] : ['runner'];
+    return { role: errRoles.join(','), roles: errRoles, effRoles: normalizeRoleList_(errRoles), email: email, name: '', phone: '' };
   }
 }
 
@@ -747,18 +810,19 @@ function requireVerifiedEmail_(payload) {
 function authorizeCaller(payload, allowedRoles) {
   var callerEmail = verifySessionEmail_(payload && payload.sessionToken);
   if (!callerEmail) return { ok: false, code: 'AUTH_REQUIRED', error: 'Your session has expired. Please sign in again.' };
-  var role = normalizeRole_(getRoleByEmail(callerEmail).role);
-  if (allowedRoles.indexOf(role) === -1) {
+  var effRoles = getRoleByEmail(callerEmail).effRoles;
+  if (!hasAnyRole_(effRoles, allowedRoles)) {
     return { ok: false, code: 'FORBIDDEN', error: 'You do not have permission to do this.' };
   }
-  return { ok: true, role: role, email: callerEmail };
+  return { ok: true, role: effRoles[0], roles: effRoles, email: callerEmail };
 }
 
-/** Counts rows whose role (column D, index 3) normalizes to 'admin' (covers both 'admin' and 'aidan'). */
+/** Counts rows whose role list (column D, index 3) includes 'admin' after normalizing (covers both 'admin' and 'aidan'). */
 function countAdminRows(data) {
   var n = 0;
   for (var i = 0; i < data.length; i++) {
-    if (normalizeRole_((data[i][3] || '').toString().toLowerCase().trim()) === 'admin') n++;
+    var rowEffRoles = normalizeRoleList_(parseRoleList_(data[i][3]));
+    if (rowEffRoles.indexOf('admin') !== -1) n++;
   }
   return n;
 }
@@ -2445,8 +2509,8 @@ function createProjectAndTask(payload) {
 function getPTOData(payload) {
   try {
     var email = (payload.email || '').toString();
-    var callerRole = normalizeRole_(getRoleByEmail((payload.callerEmail || email)).role);
-    var canSeeQueue = (callerRole === 'admin' || callerRole === 'human_resources');
+    var callerRoles = getRoleByEmail(payload.callerEmail || email).effRoles;
+    var canSeeQueue = hasAnyRole_(callerRoles, ['admin', 'human_resources']);
 
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var hrSheet = ss.getSheetByName(ROLES_SHEET);
@@ -2922,8 +2986,8 @@ function getTimesheet(payload) {
     var auth = requireVerifiedEmail_(payload);
     if (auth.error) return auth;
     var email      = auth.email;
-    var callerRole = normalizeRole_(getRoleByEmail(email).role);
-    var canSeeAll  = (callerRole === 'admin' || callerRole === 'human_resources');
+    var callerRoles = getRoleByEmail(email).effRoles;
+    var canSeeAll  = hasAnyRole_(callerRoles, ['admin', 'human_resources']);
     var sh     = getTimeSheet_();
     var tz     = Session.getScriptTimeZone();
     var now    = new Date();
@@ -3049,7 +3113,9 @@ function addEmployee(payload) {
     if (!sh) return { error: 'HR sheet not found' };
     var email = (payload.email || '').toLowerCase().trim();
     if (!email || !payload.name) return { error: 'Name and email are required' };
-    if (isOwnerEmail(email) && (payload.role || '').toLowerCase().trim() !== 'aidan') {
+    var newRoleList = filterValidRoles_(parseRoleList_(payload.role));
+    if (!newRoleList.length) newRoleList = ['runner'];
+    if (isOwnerEmail(email) && newRoleList.indexOf('aidan') === -1) {
       return { error: 'This account is protected and must be added as aidan.', code: 'OWNER_PROTECTED' };
     }
     var lastRow = sh.getLastRow();
@@ -3065,7 +3131,7 @@ function addEmployee(payload) {
       payload.name.trim(),
       email,
       (payload.phone || '').trim(),
-      (payload.role  || 'runner').trim(),
+      newRoleList.join(','),
       (payload.password || '').trim(),
       parseFloat(payload.allotted) || 0,
       0
@@ -3087,20 +3153,22 @@ function updateEmployee(payload) {
     var data = sh.getRange(2, 1, lastRow - 1, 7).getValues();
     for (var i = 0; i < data.length; i++) {
       if ((data[i][1] || '').toLowerCase().trim() === email) {
-        var newRole = payload.role !== undefined ? payload.role.toString().toLowerCase().trim() : undefined;
-        if (newRole !== undefined && newRole !== 'aidan') {
-          if (isOwnerEmail(email)) {
+        var newRoleList = payload.role !== undefined ? filterValidRoles_(parseRoleList_(payload.role)) : undefined;
+        if (newRoleList !== undefined) {
+          if (isOwnerEmail(email) && newRoleList.indexOf('aidan') === -1) {
             return { error: 'This account is protected and must remain aidan.', code: 'OWNER_PROTECTED' };
           }
-          var currentRole = (data[i][3] || '').toString().toLowerCase().trim();
-          if (normalizeRole_(currentRole) === 'admin' && countAdminRows(data) <= 1) {
+          var currentEffRoles = normalizeRoleList_(parseRoleList_(data[i][3]));
+          var newEffRoles     = normalizeRoleList_(newRoleList);
+          if (currentEffRoles.indexOf('admin') !== -1 && newEffRoles.indexOf('admin') === -1 && countAdminRows(data) <= 1) {
             return { error: 'Cannot demote the last remaining admin.', code: 'LAST_ADMIN_PROTECTED' };
           }
+          if (!newRoleList.length) newRoleList = ['runner'];
         }
         var row = i + 2;
         if (payload.name     !== undefined) sh.getRange(row, 1).setValue(payload.name);
         if (payload.phone    !== undefined) sh.getRange(row, 3).setValue(payload.phone);
-        if (payload.role     !== undefined) sh.getRange(row, 4).setValue(payload.role);
+        if (newRoleList      !== undefined) sh.getRange(row, 4).setValue(newRoleList.join(','));
         if (payload.password !== undefined && payload.password !== '') sh.getRange(row, 5).setValue(payload.password);
         if (payload.allotted !== undefined) sh.getRange(row, 6).setValue(parseFloat(payload.allotted) || 0);
         return { success: true };
@@ -3126,8 +3194,8 @@ function removeEmployee(payload) {
         if (isOwnerEmail(email)) {
           return { error: 'This account is protected and cannot be removed.', code: 'OWNER_PROTECTED' };
         }
-        var currentRole = (data[i][3] || '').toString().toLowerCase().trim();
-        if (normalizeRole_(currentRole) === 'admin' && countAdminRows(data) <= 1) {
+        var currentEffRoles = normalizeRoleList_(parseRoleList_(data[i][3]));
+        if (currentEffRoles.indexOf('admin') !== -1 && countAdminRows(data) <= 1) {
           return { error: 'Cannot remove the last remaining admin.', code: 'LAST_ADMIN_PROTECTED' };
         }
         sh.deleteRow(i + 2);
