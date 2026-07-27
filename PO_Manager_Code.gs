@@ -85,7 +85,7 @@ function doPost(e) {
     else if (action === 'verifyGoogleLogin') result = verifyGoogleLogin(payload.credential);
     else if (action === 'getSheetData')      result = getSheetData(payload);
     else if (action === 'createPO')          result = createPO(payload);
-    else if (action === 'updatePO')          result = updatePO(payload.rowIndex, payload.updates);
+    else if (action === 'updatePO')          result = updatePO(payload);
     else if (action === 'findPOByNumber')    result = findPOByNumber(payload.poNum);
     else if (action === 'savePhotoToDrive')  result = savePhotoToDrive(payload.base64Data, payload.mimeType, payload.filename, payload.builder, payload.jobRef, payload.docType, payload.poNum);
     else if (action === 'createProject')       result = createProjectAndTask(payload);
@@ -239,7 +239,7 @@ function getFirstName(fullName) {
  */
 function createPO(data) {
   try {
-    var auth = authorizeCaller(data, ['admin', 'purchaser']);
+    var auth = authorizeCaller(data, ['admin', 'purchaser', 'site_manager']);
     if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
 
     if (!data.jobRef || !data.vendor) {
@@ -285,8 +285,17 @@ function createPO(data) {
  * Updates specific fields on an existing PO row.
  * Only fields present in `updates` are written.
  */
-function updatePO(rowIndex, updates) {
+function updatePO(payload) {
   try {
+    // Every role except human_resources can reach this via the Receive flow
+    // (canReceivePO in index.html), which only ever writes status/receivedNote/
+    // notes — so runner is included here even though it can't open the full
+    // Edit form (canEdit).
+    var auth = authorizeCaller(payload, ['admin', 'purchaser', 'site_manager', 'runner']);
+    if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
+
+    var rowIndex = payload.rowIndex;
+    var updates  = payload.updates || {};
     var sheet = getSheet();
 
     if (updates.builder       !== undefined) sheet.getRange(rowIndex, 3).setValue(updates.builder);

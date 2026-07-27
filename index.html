@@ -2183,12 +2183,12 @@ function applyRole(role) {
   var effRole = (role === 'aidan') ? 'admin' : role;
   var p = {
     canDash:        effRole === 'admin' || effRole === 'purchaser' || effRole === 'site_manager',
-    canCreate:      effRole === 'admin' || effRole === 'purchaser',
+    canCreate:      effRole === 'admin' || effRole === 'purchaser' || effRole === 'site_manager',
     canReceive:     effRole !== 'human_resources',                   // controls Log tab visibility
     canReceivePO:   effRole !== 'human_resources',                   // controls Receive PO form + actions
     canSearch:      effRole === 'admin' || effRole === 'purchaser' || effRole === 'site_manager',
     canPricing:     effRole === 'admin' || effRole === 'purchaser',
-    canEdit:        effRole === 'admin' || effRole === 'purchaser',
+    canEdit:        effRole === 'admin' || effRole === 'purchaser' || effRole === 'site_manager',
     canViewInvoice: effRole === 'admin' || effRole === 'purchaser',
     canContacts:    effRole === 'admin' || effRole === 'purchaser',
     canOther:       true,
