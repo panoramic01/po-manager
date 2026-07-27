@@ -8147,7 +8147,7 @@ function doPunchAcct() {
     gasCall('clockOut', Object.assign({ email: G.userEmail }, loc), function(r) {
       btn.disabled = false;
       if (r && r.success) {
-        showToast('Clocked out - ' + r.hours + ' hrs logged');
+        showToast('Clocked out - ' + r.hours + ' hrs logged' + (loc.lat ? '' : ' (location off)'));
         updateAcctClockUI(false, null);
         // Sync the Other tab clock too if it's loaded
         if (typeof updateClockUI === 'function') updateClockUI(false, null);
@@ -8160,7 +8160,7 @@ function doPunchAcct() {
     gasCall('clockIn', Object.assign({ email: G.userEmail, name: G.config.userName || G.userEmail }, loc), function(r) {
       btn.disabled = false;
       if (r && r.success) {
-        showToast('Clocked in at ' + r.clockIn);
+        showToast('Clocked in at ' + r.clockIn + (loc.lat ? '' : ' (location off)'));
         updateAcctClockUI(true, r.clockIn);
         startAcctTick();
         if (typeof updateClockUI === 'function') updateClockUI(true, r.clockIn);
