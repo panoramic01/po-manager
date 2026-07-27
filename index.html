@@ -1858,26 +1858,54 @@ function handleGoogleCredential(response) {
   });
 }
 
-function gasCall(action, payload, onSuccess, onFailure) {
+function gasCall(action, payload, onSuccess, onFailure, opts) {
+  opts = opts || {};
   var fullPayload = Object.assign({ callerEmail: G.userEmail }, payload || {});
-  fetch(GAS_URL, {
-    method: 'POST',
-    body: JSON.stringify({ action: action, payload: fullPayload }),
-    redirect: 'follow'
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(data) {
-    if (!onSuccess) return;
-    try { onSuccess(data); }
-    catch(ex) {
-      console.error('gasCall [' + action + '] onSuccess threw:', ex);
-      if (onFailure) onFailure(ex);
-    }
-  })
-  .catch(function(err) {
-    console.error('gasCall [' + action + '] fetch/parse error:', err);
-    if (onFailure) onFailure(err);
-  });
+  var maxAttempts = opts.retry ? 2 : 1;
+  var attempt = 0;
+  function tryFetch() {
+    attempt++;
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var timer = setTimeout(function() { if (ctrl) ctrl.abort(); }, opts.timeoutMs || 30000);
+    fetch(GAS_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action: action, payload: fullPayload }),
+      redirect: 'follow',
+      signal: ctrl ? ctrl.signal : undefined
+    })
+    .then(function(r) { clearTimeout(timer); return r.json(); })
+    .then(function(data) {
+      if (!onSuccess) return;
+      try { onSuccess(data); }
+      catch(ex) {
+        console.error('gasCall [' + action + '] onSuccess threw:', ex);
+        if (onFailure) onFailure(ex);
+      }
+    })
+    .catch(function(err) {
+      clearTimeout(timer);
+      var isTransient = err.name === 'AbortError' || err instanceof TypeError;
+      if (isTransient && attempt < maxAttempts) {
+        setTimeout(tryFetch, 1500 * attempt);
+        return;
+      }
+      console.error('gasCall [' + action + '] fetch/parse error:', err);
+      if (onFailure) onFailure(err);
+    });
+  }
+  tryFetch();
+}
+function friendlyUploadError(err) {
+  if (err && err.name === 'AbortError') return 'Upload timed out - check your connection and try again.';
+  if (err instanceof TypeError) return 'Cannot reach the server - check your connection and try again.';
+  return 'Something went wrong - try again, and tell the office if it keeps happening.';
+}
+function friendlyServerError(errText) {
+  var t = (errText || '').toLowerCase();
+  if (t.indexOf('too many times') !== -1 || t.indexOf('rate limit') !== -1 || t.indexOf('exceeded maximum execution') !== -1 || t.indexOf('quota') !== -1) {
+    return 'Server is busy - wait a few seconds and try again.';
+  }
+  return errText || 'Something went wrong.';
 }
 
 function empErrorMessage(r) {
@@ -2139,6 +2167,10 @@ function loadData() {
     hideSplash();
     document.getElementById('dash-loading').style.display = 'none';
     document.getElementById('dash-content').style.display  = 'block';
+    if (G.detailMode === 'view' && G.detailPO) {
+      var overlay = document.getElementById('po-detail-overlay');
+      if (overlay && overlay.style.display === 'flex') { showPODetail(G.detailPO); }
+    }
   }, function(e) {
     console.error(e);
     hideSplash();
@@ -2735,13 +2767,14 @@ function uploadHomePlansFile(file) {
         statusEl.textContent = res.duplicate ? 'Already in Drive — using existing file' : 'Uploaded';
         statusEl.className   = 'photo-status done';
       } else {
-        statusEl.textContent = 'Upload failed:' + res.error;
+        console.error('savePhotoToDrive/saveFileToFolderById failed:', res.error);
+        statusEl.textContent = friendlyServerError(res.error);
         statusEl.className   = 'photo-status error';
       }
-    }, function() {
+    }, function(err) {
       G.newProjectHomePlansUploading = false;
       setBtnState('new-project-btn', 'Submit Project', false);
-      statusEl.textContent = 'Upload error — check connection';
+      statusEl.textContent = friendlyUploadError(err);
       statusEl.className   = 'photo-status error';
     });
   }, function() {
@@ -3002,7 +3035,7 @@ function showReceiveInfo(po) {
     (po.notes ? '<div class="po-note">'+esc(po.notes)+'</div>' : '');
 
   document.getElementById('r-note').value   = po.receivedNote || '';
-  var existingUrls = (po.receivedNote || '').split('\n').filter(function(u){ return /^https?:\/\//.test(u.trim()); });
+  var existingUrls = splitPhotoUrls(po.receivedNote);
   initPhotoSlots(existingUrls);
   document.getElementById('r-notes').value  = '';
   document.getElementById('r-info').style.display = 'block';
@@ -3245,6 +3278,7 @@ function showPODetail(poNum) {
   var po = G.pos.find(function(p){ return p.poNum === poNum; });
   if (!po) return;
   G.detailPO = poNum;
+  G.detailMode = 'view';
 
   document.getElementById('po-detail-title').textContent = po.poNum;
   var editBtn = document.getElementById('po-detail-edit-btn');
@@ -3272,6 +3306,7 @@ function showPODetail(poNum) {
 
 function closePODetail() {
   document.getElementById('po-detail-overlay').style.display = 'none';
+  G.detailMode = null;
 }
 
 function editFromPODetail() {
@@ -3284,6 +3319,7 @@ function openEdit(poNum) {
   var po = G.pos.find(function(p){ return p.poNum === poNum; });
   if (!po) return;
   G.editRow = po.rowIndex;
+  G.detailMode = 'edit';
 
   var isCustomStatus = po.status && G.config.statusOptions.indexOf(po.status) === -1;
   var statusOpts = G.config.statusOptions.map(function(s){
@@ -3404,9 +3440,13 @@ function driveThumb(url) {
   return { thumb: 'https://drive.google.com/thumbnail?id=' + m[1] + '&sz=w400', full: 'https://drive.google.com/thumbnail?id=' + m[1] + '&sz=w1600', open: url };
 }
 
+function splitPhotoUrls(note) {
+  return (note || '').split(/[\n,]+/).map(function(u) { return u.trim(); })
+    .filter(function(u) { return /^https?:\/\//.test(u); });
+}
 function buildPhotoSection(note) {
   if (!note) return '';
-  var urls = note.split(/[\n,]+/).map(function(u){ return u.trim(); }).filter(function(u){ return u.indexOf('http') === 0; });
+  var urls = splitPhotoUrls(note);
   if (!urls.length) return '';
   G.lastPhotoUrls = urls;
   var thumbs = urls.map(function(url, i) {
@@ -3655,7 +3695,53 @@ function setReceiveBtnUploadState() {
  * success; onError(err) on read/decode failure. Caller owns any UI state
  * and timeouts around this call.
  */
+function isHeicFile(file) {
+  var type = (file.type || '').toLowerCase();
+  var name = (file.name || '').toLowerCase();
+  return type === 'image/heic' || type === 'image/heif' ||
+    name.slice(-5) === '.heic' || name.slice(-5) === '.heif';
+}
+function loadHeic2Any(cb) {
+  if (window.heic2any) { cb(); return; }
+  var s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js';
+  s.onload = function() { cb(); };
+  s.onerror = function() { cb(); };
+  document.head.appendChild(s);
+}
+function compressDataUrlToJpeg(dataUrl, onDone, onError) {
+  var img = new Image();
+  img.onerror = function() { onError(new Error('decode-failed')); };
+  img.onload = function() {
+    var w = img.width, h = img.height;
+    if (w > UPLOAD_IMG_MAX_DIM) { h = Math.round(h * UPLOAD_IMG_MAX_DIM / w); w = UPLOAD_IMG_MAX_DIM; }
+    if (h > UPLOAD_IMG_MAX_DIM) { w = Math.round(w * UPLOAD_IMG_MAX_DIM / h); h = UPLOAD_IMG_MAX_DIM; }
+    var canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+    onDone(canvas.toDataURL('image/jpeg', UPLOAD_IMG_QUALITY), 'image/jpeg');
+  };
+  img.src = dataUrl;
+}
+function compressImageBlob(blob, onDone, onError) {
+  var reader2 = new FileReader();
+  reader2.onerror = function() { onError(new Error('read-failed')); };
+  reader2.onload = function(e2) { compressDataUrlToJpeg(e2.target.result, onDone, onError); };
+  reader2.readAsDataURL(blob);
+}
 function readAndCompressFile(file, onDone, onError) {
+  if (isHeicFile(file)) {
+    loadHeic2Any(function() {
+      if (!window.heic2any) { onError(new Error('heic-convert-failed')); return; }
+      window.heic2any({ blob: file, toType: 'image/jpeg', quality: UPLOAD_IMG_QUALITY })
+        .then(function(converted) {
+          var jpegBlob = Array.isArray(converted) ? converted[0] : converted;
+          compressImageBlob(jpegBlob, onDone, onError);
+        })
+        .catch(function() { onError(new Error('heic-convert-failed')); });
+    });
+    return;
+  }
   var reader = new FileReader();
   reader.onerror = function() { onError(new Error('read-failed')); };
   reader.onload = function(e) {
@@ -3664,18 +3750,7 @@ function readAndCompressFile(file, onDone, onError) {
       onDone(dataUrl, file.type || 'application/octet-stream');
       return;
     }
-    var img = new Image();
-    img.onerror = function() { onError(new Error('decode-failed')); };
-    img.onload = function() {
-      var w = img.width, h = img.height;
-      if (w > UPLOAD_IMG_MAX_DIM) { h = Math.round(h * UPLOAD_IMG_MAX_DIM / w); w = UPLOAD_IMG_MAX_DIM; }
-      if (h > UPLOAD_IMG_MAX_DIM) { w = Math.round(w * UPLOAD_IMG_MAX_DIM / h); h = UPLOAD_IMG_MAX_DIM; }
-      var canvas = document.createElement('canvas');
-      canvas.width = w; canvas.height = h;
-      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-      onDone(canvas.toDataURL('image/jpeg', UPLOAD_IMG_QUALITY), 'image/jpeg');
-    };
-    img.src = dataUrl;
+    compressDataUrlToJpeg(dataUrl, onDone, onError);
   };
   reader.readAsDataURL(file);
 }
@@ -3700,21 +3775,22 @@ function handlePhotoSlot(input) {
       slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">Timed out — tap to retry</span></div>';
     }
   }, 45000);
-  // Timeout if read/canvas decode hangs (e.g. HEIC format on some devices)
+  // Timeout if read/canvas decode hangs, or HEIC conversion takes too long on a slow connection
   var _imgTimeout = setTimeout(function() {
     G.uploadsInProgress = Math.max(0, G.uploadsInProgress - 1);
     setReceiveBtnUploadState();
     slot.className = 'photo-slot';
     slot.onclick = function() { openPhotoSlot(idx); };
-    slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">Format not supported — take a screenshot of the photo and upload that</span></div>';
-  }, 15000);
+    slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">Taking too long — tap to retry</span></div>';
+  }, 30000);
   if (DEBUG_UPLOAD_TIMING) console.time('photoSlot' + idx + ':compress');
   readAndCompressFile(file, function(dataUrl, mimeType) {
     if (DEBUG_UPLOAD_TIMING) console.timeEnd('photoSlot' + idx + ':compress');
     clearTimeout(_uploadTimeout);
     clearTimeout(_imgTimeout);
     var base64  = dataUrl.split(',')[1];
-    var filename = 'PO-' + (G.receivePO ? G.receivePO.poNum : 'received') + '-' + (idx+1) + '-' + new Date().toISOString().slice(0,10) + '.jpg';
+    var ext = mimeType === 'image/jpeg' ? 'jpg' : (file.name.split('.').pop() || 'bin');
+    var filename = 'PO-' + (G.receivePO ? G.receivePO.poNum : 'received') + '-' + (idx+1) + '-' + new Date().toISOString().slice(0,10) + '.' + ext;
     slot.className = 'photo-slot ps-filled ps-uploading';
     slot.innerHTML = '<img src="' + dataUrl + '" alt="photo"><div class="ps-status uploading">Uploading…</div>';
     // Timeout if Drive upload hangs >90s
@@ -3747,16 +3823,16 @@ function handlePhotoSlot(input) {
       } else {
         slot.className = 'photo-slot';
         slot.onclick = function() { openPhotoSlot(idx); };
-        var failMsg = res.noDriveId ? 'No Drive ID — add one or contact Purchaser' : 'Failed — retry';
+        console.error('savePhotoToDrive failed:', res.error); var failMsg = res.noDriveId ? 'No Drive ID — add one or contact Purchaser' : friendlyServerError(res.error);
         slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">' + failMsg + '</span></div>';
       }
-    }, function() {
+    }, function(err) {
       clearTimeout(_driveTimeout);
       G.uploadsInProgress = Math.max(0, G.uploadsInProgress - 1);
       setReceiveBtnUploadState();
       slot.className = 'photo-slot';
       slot.onclick = function() { openPhotoSlot(idx); };
-      slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">Error — retry</span></div>';
+      slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">' + friendlyUploadError(err) + '</span></div>';
     });
   }, function(err) {
     clearTimeout(_uploadTimeout);
@@ -3765,7 +3841,9 @@ function handlePhotoSlot(input) {
     setReceiveBtnUploadState();
     slot.className = 'photo-slot';
     slot.onclick = function() { openPhotoSlot(idx); };
-    var msg = (err && err.message === 'decode-failed')
+    var msg = (err && err.message === 'heic-convert-failed')
+      ? 'Could not convert this photo — try again or take a screenshot and upload that'
+      : (err && err.message === 'decode-failed')
       ? 'Format not supported — take a screenshot of the photo and upload that'
       : 'Could not read file — try a different photo';
     slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:#c0392b">' + msg + '</span></div>';
@@ -3807,11 +3885,12 @@ function handleIssuedFile(input) {
         statusEl.textContent = 'Uploaded — link filled in above';
         statusEl.className   = 'photo-status done';
       } else {
-        statusEl.textContent = 'Upload failed:' + res.error;
+        console.error('savePhotoToDrive/saveFileToFolderById failed:', res.error);
+        statusEl.textContent = friendlyServerError(res.error);
         statusEl.className   = 'photo-status error';
       }
     }, function(err) {
-      statusEl.textContent = 'Upload error — check connection';
+      statusEl.textContent = friendlyUploadError(err);
       statusEl.className   = 'photo-status error';
     });
   }, function(err) {
@@ -3851,11 +3930,12 @@ function handleInvoiceFile(input) {
         statusEl.textContent = 'Uploaded — link filled in above';
         statusEl.className   = 'photo-status done';
       } else {
-        statusEl.textContent = 'Upload failed:' + res.error;
+        console.error('savePhotoToDrive/saveFileToFolderById failed:', res.error);
+        statusEl.textContent = friendlyServerError(res.error);
         statusEl.className   = 'photo-status error';
       }
     }, function(err) {
-      statusEl.textContent = 'Upload error — check connection';
+      statusEl.textContent = friendlyUploadError(err);
       statusEl.className   = 'photo-status error';
     });
   }, function(err) {
@@ -3896,11 +3976,12 @@ function handleSuccessIssuedFile(input) {
       if (res.success) {
         saveIssuedPOForLastCreated(res.url, statusEl);
       } else {
-        statusEl.textContent = 'Upload failed:' + res.error;
+        console.error('savePhotoToDrive/saveFileToFolderById failed:', res.error);
+        statusEl.textContent = friendlyServerError(res.error);
         statusEl.className   = 'photo-status error';
       }
     }, function(err) {
-      statusEl.textContent = 'Upload error — check connection';
+      statusEl.textContent = friendlyUploadError(err);
       statusEl.className   = 'photo-status error';
     });
   }, function(err) {

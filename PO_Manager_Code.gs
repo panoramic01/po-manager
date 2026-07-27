@@ -138,10 +138,15 @@ function doPost(e) {
     else if (action === 'addMaintenanceLog')           result = addMaintenanceLog(payload);
     else                                        result = { error: 'Unknown action: ' + action };
 
+    if (result && result.success === false) {
+      logError_(action, result.error, payload);
+    }
+
     return ContentService
       .createTextOutput(JSON.stringify(result))
       .setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
+    try { logError_(action || 'doPost:parse', err.toString(), payload || null); } catch (e2) {}
     return ContentService
       .createTextOutput(JSON.stringify({ error: err.toString() }))
       .setMimeType(ContentService.MimeType.JSON);
@@ -246,36 +251,44 @@ function createPO(data) {
       return { success: false, error: "Job Reference and Vendor are required." };
     }
 
-    var sheet = getSheet();
-    var now   = new Date();
-    var tz    = Session.getScriptTimeZone();
-    var year  = Utilities.formatDate(now, tz, "yy");
-    var qtr   = Math.ceil((now.getMonth() + 1) / 3);
-    var paddedQtr = ("0" + qtr).slice(-2);
-
-    var nextRow  = sheet.getLastRow() + 1;
-    var poNumber = year + "-" + paddedQtr + "-" + Utilities.formatString("%03d", nextRow);
-    var today    = Utilities.formatDate(now, tz, "MM/dd/yyyy");
-    var status   = data.status || "Pending Pickup";
-
-    sheet.getRange(nextRow, 1).setValue(poNumber);
-    sheet.getRange(nextRow, 2).setValue(today);
-    sheet.getRange(nextRow, 3).setValue(data.builder       || "");
-    sheet.getRange(nextRow, 4).setValue(data.jobRef        || "");
-    sheet.getRange(nextRow, 5).setValue(data.vendor        || "");
-    sheet.getRange(nextRow, 6).setValue(data.vendorInvoice || "");
-    sheet.getRange(nextRow, 7).setValue(status);
-    sheet.getRange(nextRow, 8).setValue(data.invoiceTotal  || "");
-    sheet.getRange(nextRow, 12).setValue(data.notes        || "");
-    sheet.getRange(nextRow, 13).setValue(getFirstName(data.orderedBy));
-
-    // Pending Pickup POs are picked up the same day they're created, so
-    // default the pickup/delivery date to today rather than leaving it blank.
-    if (status === "Pending Pickup") {
-      sheet.getRange(nextRow, 9).setValue(today);
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(10000)) {
+      return { success: false, error: "Server is busy - try again in a moment." };
     }
+    try {
+      var sheet = getSheet();
+      var now   = new Date();
+      var tz    = Session.getScriptTimeZone();
+      var year  = Utilities.formatDate(now, tz, "yy");
+      var qtr   = Math.ceil((now.getMonth() + 1) / 3);
+      var paddedQtr = ("0" + qtr).slice(-2);
 
-    return { success: true, poNumber: poNumber, rowIndex: nextRow };
+      var nextRow  = sheet.getLastRow() + 1;
+      var poNumber = year + "-" + paddedQtr + "-" + Utilities.formatString("%03d", nextRow);
+      var today    = Utilities.formatDate(now, tz, "MM/dd/yyyy");
+      var status   = data.status || "Pending Pickup";
+
+      sheet.getRange(nextRow, 1).setValue(poNumber);
+      sheet.getRange(nextRow, 2).setValue(today);
+      sheet.getRange(nextRow, 3).setValue(data.builder       || "");
+      sheet.getRange(nextRow, 4).setValue(data.jobRef        || "");
+      sheet.getRange(nextRow, 5).setValue(data.vendor        || "");
+      sheet.getRange(nextRow, 6).setValue(data.vendorInvoice || "");
+      sheet.getRange(nextRow, 7).setValue(status);
+      sheet.getRange(nextRow, 8).setValue(data.invoiceTotal  || "");
+      sheet.getRange(nextRow, 12).setValue(data.notes        || "");
+      sheet.getRange(nextRow, 13).setValue(getFirstName(data.orderedBy));
+
+      // Pending Pickup POs are picked up the same day they're created, so
+      // default the pickup/delivery date to today rather than leaving it blank.
+      if (status === "Pending Pickup") {
+        sheet.getRange(nextRow, 9).setValue(today);
+      }
+
+      return { success: true, poNumber: poNumber, rowIndex: nextRow };
+    } finally {
+      lock.releaseLock();
+    }
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -807,6 +820,49 @@ function updatePricing(payload) {
 }
 
 // ─── Private Helpers ─────────────────────────────────────────────────────────
+
+function getOrCreateErrorLogSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('ErrorLog');
+  if (!sheet) {
+    sheet = ss.insertSheet('ErrorLog');
+    sheet.appendRow(['Timestamp', 'Action', 'CallerEmail', 'Error', 'PayloadSummary']);
+  }
+  return sheet;
+}
+
+function sanitizePayloadForLog_(payload) {
+  var clone = {};
+  var keys = Object.keys(payload || {});
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i];
+    if (k === 'base64Data') {
+      clone[k] = '[omitted, ' + ((payload[k] || '').length) + ' chars]';
+    } else {
+      clone[k] = payload[k];
+    }
+  }
+  try {
+    return JSON.stringify(clone).slice(0, 500);
+  } catch (e) {
+    return '[unserializable]';
+  }
+}
+
+function logError_(action, errorText, payload) {
+  try {
+    var sheet = getOrCreateErrorLogSheet_();
+    sheet.appendRow([
+      new Date(),
+      action,
+      (payload && payload.callerEmail) || '',
+      errorText,
+      sanitizePayloadForLog_(payload)
+    ]);
+  } catch (e) {
+    // never let logging break the response
+  }
+}
 
 function getSheet() {
   var ss    = SpreadsheetApp.getActiveSpreadsheet();
