@@ -130,6 +130,8 @@ function doPost(e) {
     else if (action === 'getPTOOverview')              result = getPTOOverview(payload);
     else if (action === 'getPayrollSummary')           result = getPayrollSummary(payload);
     else if (action === 'emailPayroll')                result = emailPayroll(payload);
+    else if (action === 'approveTimesheet')            result = approveTimesheet(payload);
+    else if (action === 'unapproveTimesheet')          result = unapproveTimesheet(payload);
     else if (action === 'getInventory')                result = getInventory(payload);
     else if (action === 'addAsset')                    result = addAsset(payload);
     else if (action === 'updateAsset')                 result = updateAsset(payload);
@@ -405,7 +407,7 @@ function verifyLogin(email, password) {
         if (rowPass && rowPass === password) {
           if (isOwnerEmail(email)) rowRole = 'aidan';
           return {
-            success: true, role: rowRole, email: email,
+            success: true, role: rowRole, email: email, sessionToken: issueSessionToken_(email),
             config: { statusOptions: STATUS_OPTIONS, vendorOptions: VENDOR_OPTIONS, userRole: rowRole, userEmail: email, userName: rowName, userPhone: rowPhone }
           };
         } else {
@@ -461,7 +463,7 @@ function verifyGoogleLogin(idToken) {
         var rowPhone = (data[i][2] || '').toString().trim();               // Column C
         if (isOwnerEmail(email)) rowRole = 'aidan';
         return {
-          success: true, role: rowRole, email: email,
+          success: true, role: rowRole, email: email, sessionToken: issueSessionToken_(email),
           config: { statusOptions: STATUS_OPTIONS, vendorOptions: VENDOR_OPTIONS, userRole: rowRole, userEmail: email, userName: rowName, userPhone: rowPhone }
         };
       }
@@ -673,14 +675,78 @@ function getRoleByEmail(email) {
   }
 }
 
+// ─── Session Tokens ──────────────────────────────────────────────────────────
+// Signed at login so server-side code never has to trust a client-supplied
+// email for identity -- closes buddy-punching / payroll-spoofing since a
+// token can't be forged without SESSION_SECRET, which never leaves the
+// server. Same PropertiesService-backed-secret pattern as CLAUDE_API_KEY.
+
+var SESSION_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+function getSessionSecret_() {
+  var props  = PropertiesService.getScriptProperties();
+  var secret = props.getProperty('SESSION_SECRET');
+  if (!secret) {
+    secret = Utilities.getUuid() + Utilities.getUuid();
+    props.setProperty('SESSION_SECRET', secret);
+  }
+  return secret;
+}
+
+/** Issues a signed session token for email, to be stored client-side and sent back on every call. */
+function issueSessionToken_(email) {
+  email = (email || '').toString().toLowerCase().trim();
+  var body = email + '|' + (Date.now() + SESSION_TOKEN_TTL_MS);
+  var sig  = Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(body, getSessionSecret_()));
+  return Utilities.base64EncodeWebSafe(body) + '.' + sig;
+}
+
 /**
- * Server-side authorization gate for privileged actions. Requires payload.callerEmail
- * to resolve (via getRoleByEmail, which applies the owner override above) to one of
- * allowedRoles. Callers must check .ok before proceeding.
+ * Verifies a session token's signature and expiry and returns the email it
+ * was issued for, or null if the token is missing, malformed, expired, or
+ * doesn't match its signature (forged / tampered / signed with a stale secret).
+ */
+function verifySessionEmail_(token) {
+  try {
+    if (!token || token.indexOf('.') === -1) return null;
+    var dot  = token.indexOf('.');
+    var body = Utilities.newBlob(Utilities.base64DecodeWebSafe(token.substring(0, dot))).getDataAsString();
+    var sig  = token.substring(dot + 1);
+    var expectedSig = Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(body, getSessionSecret_()));
+    if (sig !== expectedSig) return null;
+
+    var pipe    = body.lastIndexOf('|');
+    var email   = body.substring(0, pipe).toLowerCase().trim();
+    var expires = parseInt(body.substring(pipe + 1), 10);
+    if (!email || !expires || Date.now() > expires) return null;
+    return email;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Requires a valid session token on payload.sessionToken and returns the
+ * verified email, or an { error, code: 'AUTH_REQUIRED' } object if missing/
+ * invalid. Use for actions any logged-in user may take on their own behalf
+ * (no role restriction) where the identity itself must still be genuine --
+ * e.g. clocking in/out as yourself.
+ */
+function requireVerifiedEmail_(payload) {
+  var email = verifySessionEmail_(payload && payload.sessionToken);
+  if (!email) return { error: 'Your session has expired. Please sign in again.', code: 'AUTH_REQUIRED' };
+  return { email: email };
+}
+
+/**
+ * Server-side authorization gate for privileged actions. Requires
+ * payload.sessionToken to verify (see verifySessionEmail_ above) to an email
+ * that resolves (via getRoleByEmail, which applies the owner override above)
+ * to one of allowedRoles. Callers must check .ok before proceeding.
  */
 function authorizeCaller(payload, allowedRoles) {
-  var callerEmail = ((payload && payload.callerEmail) || '').toString().toLowerCase().trim();
-  if (!callerEmail) return { ok: false, code: 'AUTH_REQUIRED', error: 'You must be signed in to do this.' };
+  var callerEmail = verifySessionEmail_(payload && payload.sessionToken);
+  if (!callerEmail) return { ok: false, code: 'AUTH_REQUIRED', error: 'Your session has expired. Please sign in again.' };
   var role = normalizeRole_(getRoleByEmail(callerEmail).role);
   if (allowedRoles.indexOf(role) === -1) {
     return { ok: false, code: 'FORBIDDEN', error: 'You do not have permission to do this.' };
@@ -1025,13 +1091,32 @@ function savePhotoToDrive(base64Data, mimeType, filename, builder, jobRef, docTy
   try {
     var base = resolveBaseFolder(builder, jobRef);
     if (base.blocked) {
-      return { success: false, noDriveId: true, error: 'No Drive ID found for this job — please add one to the Projects sheet or contact Purchaser.' };
+      return { success: false, noDriveId: true, error: 'No Drive ID found for this job - please add one to the Projects sheet or contact Purchaser.' };
     }
-    var folder = getTypedUploadFolder(base.folder, docType, poNum);
 
-    var bytes = Utilities.base64Decode(base64Data);
-    var blob  = Utilities.newBlob(bytes, mimeType, filename);
-    var file  = folder.createFile(blob);
+    // A project's Drive ID can be syntactically valid (resolveBaseFolder's
+    // DriveApp.getFolderById call succeeds) but still not fully writable --
+    // wrong folder pasted in, or shared read-only. That failure surfaces
+    // later, inside getTypedUploadFolder/createFile, not at the ID-lookup
+    // step above. Treat any Drive failure while writing into a *project*
+    // folder the same as a missing Drive ID, so the caller always gets the
+    // actionable "contact Purchaser" message instead of a raw exception.
+    // The generic Purchasing-root fallback (isProjectFolder false) is
+    // owned by the script itself and isn't subject to this per-job
+    // misconfiguration, so failures there still fall through to the
+    // generic catch below.
+    var folder, file;
+    try {
+      folder = getTypedUploadFolder(base.folder, docType, poNum);
+      var bytes = Utilities.base64Decode(base64Data);
+      var blob  = Utilities.newBlob(bytes, mimeType, filename);
+      file = folder.createFile(blob);
+    } catch (driveErr) {
+      if (base.isProjectFolder) {
+        return { success: false, noDriveId: true, error: 'The Drive folder for this job is not accessible - please check the link in the Projects sheet or contact Purchaser.' };
+      }
+      throw driveErr;
+    }
 
     if (!base.isProjectFolder) {
       // New files inherit ANYONE_WITH_LINK from the folder (set once via
@@ -2656,78 +2741,174 @@ function getPeriodBounds(d) {
   return { start: start, end: end };
 }
 
+var MONTH_ABBRS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+/** Formats a period's bounds as e.g. "Jul 1 - Jul 15". */
+function formatPeriodLabel_(pStart, pEnd) {
+  return MONTH_ABBRS[pStart.getMonth()] + ' ' + pStart.getDate() + ' - ' + MONTH_ABBRS[pEnd.getMonth()] + ' ' + pEnd.getDate();
+}
+
+// Overtime thresholds. This split is advisory (for admin visibility before
+// payroll runs), not a certified payroll engine -- a week that straddles a
+// pay-period boundary is only evaluated against the days present in the
+// current period, same simplification as the documented pay-period-boundary
+// limitation for hour bucketing.
+var OT_DAILY_THRESHOLD  = 8;
+var OT_WEEKLY_THRESHOLD = 40;
+
+function getWeekKey_(date) {
+  var d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  d.setDate(d.getDate() - d.getDay()); // back up to the Sunday that starts this week
+  return d.getTime();
+}
+
+/**
+ * Splits an array of { date, hours } day-entries (one period, any order)
+ * into { regular, overtime } using daily (>8h/day) then weekly (>40h/week)
+ * thresholds, applied chronologically so weekly accumulation makes sense.
+ */
+function splitRegularOvertime_(dayEntries) {
+  var sorted = dayEntries.slice().sort(function(a, b) { return a.date - b.date; });
+  var weekTotals = {};
+  var regular = 0, overtime = 0;
+  sorted.forEach(function(entry) {
+    var dayRegular = Math.min(entry.hours, OT_DAILY_THRESHOLD);
+    var dayOT      = Math.max(0, entry.hours - OT_DAILY_THRESHOLD);
+
+    var weekKey       = getWeekKey_(entry.date);
+    var weekSoFar      = weekTotals[weekKey] || 0;
+    var roomLeftInWeek = Math.max(0, OT_WEEKLY_THRESHOLD - weekSoFar);
+    var weeklyRegular   = Math.min(dayRegular, roomLeftInWeek);
+    var pushedToWeeklyOT = dayRegular - weeklyRegular;
+
+    regular  += weeklyRegular;
+    overtime += pushedToWeeklyOT + dayOT;
+    weekTotals[weekKey] = weekSoFar + dayRegular;
+  });
+  return { regular: Math.round(regular * 100) / 100, overtime: Math.round(overtime * 100) / 100 };
+}
+
+var TIME_SHEET_HEADERS = ['Employee Name','Email','Date','Clock In','Clock Out','Hours','Clock In Location','Clock Out Location'];
+
 function getTimeSheet_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName(TIME_SHEET);
   if (!sh) {
     sh = ss.insertSheet(TIME_SHEET);
-    sh.getRange(1, 1, 1, 6).setValues([['Employee Name','Email','Date','Clock In','Clock Out','Hours']]);
-    sh.getRange(1, 1, 1, 6).setFontWeight('bold').setBackground('#1F3971').setFontColor('#ffffff');
+    sh.getRange(1, 1, 1, TIME_SHEET_HEADERS.length).setValues([TIME_SHEET_HEADERS]);
+    sh.getRange(1, 1, 1, TIME_SHEET_HEADERS.length).setFontWeight('bold').setBackground('#1F3971').setFontColor('#ffffff');
+  } else if (sh.getLastColumn() < TIME_SHEET_HEADERS.length) {
+    // Additive migration for sheets created before the location columns existed --
+    // never touches/reorders the existing A-F columns or their data.
+    var startCol   = sh.getLastColumn() + 1;
+    var newHeaders = TIME_SHEET_HEADERS.slice(sh.getLastColumn());
+    sh.getRange(1, startCol, 1, newHeaders.length).setValues([newHeaders]);
+    sh.getRange(1, startCol, 1, newHeaders.length).setFontWeight('bold').setBackground('#1F3971').setFontColor('#ffffff');
   }
   return sh;
 }
 
+/** Formats lat/lng into a Google Maps link, or '' if either is missing/invalid. */
+function formatLocation_(lat, lng) {
+  var la = parseFloat(lat), lo = parseFloat(lng);
+  if (isNaN(la) || isNaN(lo)) return '';
+  return 'https://maps.google.com/?q=' + la + ',' + lo;
+}
+
 function clockIn(payload) {
   try {
-    var email = payload.email;
-    var name  = payload.name || email;
+    var auth = requireVerifiedEmail_(payload);
+    if (auth.error) return auth;
+    var email = auth.email;
+    var name  = (payload.name || email).toString();
     var sh    = getTimeSheet_();
     var tz    = Session.getScriptTimeZone();
     var now   = new Date();
+    var loc   = formatLocation_(payload.lat, payload.lng);
 
-    // Check for open record
-    var lastRow = sh.getLastRow();
-    if (lastRow >= 2) {
-      var data = sh.getRange(2, 1, lastRow - 1, 6).getValues();
-      for (var i = data.length - 1; i >= 0; i--) {
-        if ((data[i][1] || '').toString().toLowerCase() === email.toLowerCase() && !data[i][4]) {
-          return { error: 'Already clocked in at ' + Utilities.formatDate(new Date(data[i][3]), tz, 'h:mm a') };
-        }
-      }
+    if (isPeriodApprovedForEmail_(email, formatPeriodLabel_(getPeriodBounds(now).start, getPeriodBounds(now).end))) {
+      return { error: 'Your timesheet for this period has already been approved. Contact your manager if you need to log more time.' };
     }
 
-    var today = Utilities.formatDate(now, tz, 'MM/dd/yyyy');
-    sh.appendRow([name, email, today, now, '', '']);
-    return { success: true, clockIn: Utilities.formatDate(now, tz, 'h:mm a') };
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(10000)) return { error: 'Server is busy - try again in a moment.' };
+    try {
+      // Check for open record
+      var lastRow = sh.getLastRow();
+      if (lastRow >= 2) {
+        var data = sh.getRange(2, 1, lastRow - 1, 5).getValues();
+        for (var i = data.length - 1; i >= 0; i--) {
+          if ((data[i][1] || '').toString().toLowerCase() === email && !data[i][4]) {
+            return { error: 'Already clocked in at ' + Utilities.formatDate(new Date(data[i][3]), tz, 'h:mm a') };
+          }
+        }
+      }
+
+      var today = Utilities.formatDate(now, tz, 'MM/dd/yyyy');
+      sh.appendRow([name, email, today, now, '', '', loc, '']);
+      return { success: true, clockIn: Utilities.formatDate(now, tz, 'h:mm a') };
+    } finally {
+      lock.releaseLock();
+    }
   } catch(e) { return { error: e.toString() }; }
 }
 
 function clockOut(payload) {
   try {
-    var email = payload.email;
+    var auth = requireVerifiedEmail_(payload);
+    if (auth.error) return auth;
+    var email = auth.email;
     var sh    = getTimeSheet_();
     var tz    = Session.getScriptTimeZone();
     var now   = new Date();
+    var loc   = formatLocation_(payload.lat, payload.lng);
 
-    var lastRow = sh.getLastRow();
-    if (lastRow < 2) return { error: 'No clock-in record found' };
-
-    var data = sh.getRange(2, 1, lastRow - 1, 6).getValues();
-    for (var i = data.length - 1; i >= 0; i--) {
-      if ((data[i][1] || '').toString().toLowerCase() === email.toLowerCase() && !data[i][4]) {
-        var clockInTime = new Date(data[i][3]);
-        var hours = Math.round((now - clockInTime) / 3600000 * 100) / 100;
-        var rowNum = i + 2;
-        sh.getRange(rowNum, 5).setValue(now);
-        sh.getRange(rowNum, 6).setValue(hours);
-        return { success: true, clockOut: Utilities.formatDate(now, tz, 'h:mm a'), hours: hours };
-      }
+    if (isPeriodApprovedForEmail_(email, formatPeriodLabel_(getPeriodBounds(now).start, getPeriodBounds(now).end))) {
+      return { error: 'Your timesheet for this period has already been approved. Contact your manager to reopen it if you need to log more time.' };
     }
-    return { error: 'No open clock-in found' };
+
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(10000)) return { error: 'Server is busy - try again in a moment.' };
+    try {
+      var lastRow = sh.getLastRow();
+      if (lastRow < 2) return { error: 'No clock-in record found' };
+
+      var data = sh.getRange(2, 1, lastRow - 1, 5).getValues();
+      for (var i = data.length - 1; i >= 0; i--) {
+        if ((data[i][1] || '').toString().toLowerCase() === email && !data[i][4]) {
+          var clockInTime = new Date(data[i][3]);
+          var rawHours = (now - clockInTime) / 3600000;
+          // Clamp a negative duration (clock skew / bad manual edit) to 0 rather than
+          // writing a bad value into payroll totals -- Clock In > Clock Out is still
+          // visible in the raw D/E cells, so findFlaggableShifts_ still catches it.
+          var hours = Math.round(Math.max(0, rawHours) * 100) / 100;
+          var rowNum = i + 2;
+          sh.getRange(rowNum, 5).setValue(now);
+          sh.getRange(rowNum, 6).setValue(hours);
+          sh.getRange(rowNum, 8).setValue(loc);
+          return { success: true, clockOut: Utilities.formatDate(now, tz, 'h:mm a'), hours: hours };
+        }
+      }
+      return { error: 'No open clock-in found' };
+    } finally {
+      lock.releaseLock();
+    }
   } catch(e) { return { error: e.toString() }; }
 }
 
 function getClockStatus(payload) {
   try {
-    var email = payload.email;
+    var auth = requireVerifiedEmail_(payload);
+    if (auth.error) return auth;
+    var email = auth.email;
     var sh    = getTimeSheet_();
     var tz    = Session.getScriptTimeZone();
     var lastRow = sh.getLastRow();
 
     if (lastRow >= 2) {
-      var data = sh.getRange(2, 1, lastRow - 1, 6).getValues();
+      var data = sh.getRange(2, 1, lastRow - 1, 5).getValues();
       for (var i = data.length - 1; i >= 0; i--) {
-        if ((data[i][1] || '').toString().toLowerCase() === email.toLowerCase() && !data[i][4]) {
+        if ((data[i][1] || '').toString().toLowerCase() === email && !data[i][4]) {
           return { clockedIn: true, since: Utilities.formatDate(new Date(data[i][3]), tz, 'h:mm a') };
         }
       }
@@ -2738,8 +2919,10 @@ function getClockStatus(payload) {
 
 function getTimesheet(payload) {
   try {
-    var email  = payload.email;
-    var callerRole = normalizeRole_(getRoleByEmail((payload.callerEmail || email)).role);
+    var auth = requireVerifiedEmail_(payload);
+    if (auth.error) return auth;
+    var email      = auth.email;
+    var callerRole = normalizeRole_(getRoleByEmail(email).role);
     var canSeeAll  = (callerRole === 'admin' || callerRole === 'human_resources');
     var sh     = getTimeSheet_();
     var tz     = Session.getScriptTimeZone();
@@ -2747,16 +2930,12 @@ function getTimesheet(payload) {
     var bounds = getPeriodBounds(now);
     var pStart = bounds.start;
     var pEnd   = bounds.end;
+    var periodLabel = formatPeriodLabel_(pStart, pEnd);
 
-    // Format label: "Jul 1 - Jul 15" or "Jul 16 - Jul 31"
-    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    var sm = months[pStart.getMonth()];
-    var em = months[pEnd.getMonth()];
-    var periodLabel = sm + ' ' + pStart.getDate() + ' - ' + em + ' ' + pEnd.getDate();
-
-    var myHours   = 0;
-    var myDays    = {};
-    var empMap    = {}; // email -> { name, hours }
+    var myHours      = 0;
+    var myDays       = {};
+    var myDayEntries = []; // [{ date, hours }] for regular/OT split
+    var empMap       = {}; // email -> { name, hours }
 
     var lastRow = sh.getLastRow();
     if (lastRow >= 2) {
@@ -2771,10 +2950,13 @@ function getTimesheet(payload) {
         if (rd < pStart || rd > pEnd) continue;
 
         // My rows
-        if (rowEmail === email.toLowerCase().trim()) {
+        if (rowEmail === email) {
           myHours += rowHours;
-          var dayLabel = months[rd.getMonth()] + ' ' + rd.getDate();
+          var dayLabel = MONTH_ABBRS[rd.getMonth()] + ' ' + rd.getDate();
           myDays[dayLabel] = Math.round(((myDays[dayLabel] || 0) + rowHours) * 100) / 100;
+          var existingEntry = myDayEntries.filter(function(e) { return e.date.getTime() === rd.getTime(); })[0];
+          if (existingEntry) { existingEntry.hours += rowHours; }
+          else { myDayEntries.push({ date: rd, hours: rowHours }); }
         }
 
         // All employees (admin / HR)
@@ -2792,8 +2974,12 @@ function getTimesheet(payload) {
       }).sort(function(a, b) { return b.hours - a.hours; });
     }
 
+    var otSplit = splitRegularOvertime_(myDayEntries);
+
     return {
       myHours:      Math.round(myHours * 100) / 100,
+      myRegularHours:  otSplit.regular,
+      myOvertimeHours: otSplit.overtime,
       myDays:       myDays,
       periodLabel:  periodLabel,
       allEmployees: allEmployees
@@ -2991,19 +3177,191 @@ function getPTOOverview(payload) {
   } catch(e) { return { error: e.toString() }; }
 }
 
+// ── Payroll: shift flagging ───────────────────────────────────────────────────
+// A shift that shouldn't be silently summed into payroll totals: still-open
+// (forgot to clock out) or closed with an abnormal/negative duration.
+var FLAG_OPEN_SHIFT_HOURS = 16; // an unclosed shift open this long needs review
+var FLAG_LONG_SHIFT_HOURS = 16; // a closed shift this long needs review
+
+/**
+ * Scans the full Time Tracking sheet and returns flaggable rows, each with
+ * rowIndex so callers can exclude that exact row from totals. Open shifts
+ * are checked sheet-wide (not just the current period) so a forgotten
+ * clock-out from an earlier period doesn't quietly disappear once its
+ * period rolls off getPayrollSummary's date filter. Closed-shift anomalies
+ * are scoped to [pStart, pEnd] to match the totals view.
+ */
+function findFlaggableShifts_(sh, pStart, pEnd) {
+  var flagged = [];
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) return flagged;
+  var tz  = Session.getScriptTimeZone();
+  var now = new Date();
+  var data = sh.getRange(2, 1, lastRow - 1, 6).getValues();
+  for (var i = 0; i < data.length; i++) {
+    var rowIndex = i + 2;
+    var name     = (data[i][0] || '').toString().trim();
+    var email    = (data[i][1] || '').toString().trim();
+    var rowDate  = data[i][2] ? new Date(data[i][2]) : null;
+    var clockIn  = data[i][3] ? new Date(data[i][3]) : null;
+    var clockOut = data[i][4] ? new Date(data[i][4]) : null;
+    if (!email || !clockIn) continue;
+
+    if (!clockOut) {
+      var hoursOpen = (now - clockIn) / 3600000;
+      if (hoursOpen > FLAG_OPEN_SHIFT_HOURS) {
+        flagged.push({
+          rowIndex: rowIndex, name: name, email: email,
+          date: rowDate ? Utilities.formatDate(rowDate, tz, 'MM/dd/yyyy') : '',
+          clockIn: Utilities.formatDate(clockIn, tz, 'MM/dd/yyyy h:mm a'),
+          reason: 'Still clocked in - forgot to clock out?'
+        });
+      }
+      continue;
+    }
+
+    if (!rowDate) continue;
+    var rd = new Date(rowDate.getFullYear(), rowDate.getMonth(), rowDate.getDate());
+    if (rd < pStart || rd > pEnd) continue;
+
+    if (clockOut < clockIn) {
+      flagged.push({
+        rowIndex: rowIndex, name: name, email: email,
+        date: Utilities.formatDate(rd, tz, 'MM/dd/yyyy'), clockIn: Utilities.formatDate(clockIn, tz, 'h:mm a'),
+        reason: 'Clock out is before clock in - check for a bad edit'
+      });
+      continue;
+    }
+
+    var hours = (clockOut - clockIn) / 3600000;
+    if (hours > FLAG_LONG_SHIFT_HOURS) {
+      flagged.push({
+        rowIndex: rowIndex, name: name, email: email,
+        date: Utilities.formatDate(rd, tz, 'MM/dd/yyyy'), clockIn: Utilities.formatDate(clockIn, tz, 'h:mm a'),
+        reason: 'Shift over ' + FLAG_LONG_SHIFT_HOURS + ' hours - verify'
+      });
+    }
+  }
+  return flagged;
+}
+
+// ── Payroll: period approval/lock ─────────────────────────────────────────────
+var PAYROLL_APPROVALS_SHEET  = 'Payroll Approvals';
+var PAYROLL_APPROVALS_HEADERS = ['Period Label', 'Employee Email', 'Approved By', 'Approved At'];
+
+function isPeriodApprovedForEmail_(email, periodLabel) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(PAYROLL_APPROVALS_SHEET);
+  if (!sheet) return false;
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return false;
+  email = (email || '').toString().toLowerCase().trim();
+  var data = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+  for (var i = 0; i < data.length; i++) {
+    if ((data[i][0] || '') === periodLabel && (data[i][1] || '').toString().toLowerCase().trim() === email) return true;
+  }
+  return false;
+}
+
+/** email(lowercase) -> { approvedBy, approvedAt } for every approval on file for periodLabel. */
+function getApprovalMap_(periodLabel) {
+  var map = {};
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(PAYROLL_APPROVALS_SHEET);
+  if (!sheet) return map;
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return map;
+  var tz = Session.getScriptTimeZone();
+  var data = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
+  for (var i = 0; i < data.length; i++) {
+    if ((data[i][0] || '') !== periodLabel) continue;
+    var email = (data[i][1] || '').toString().toLowerCase().trim();
+    if (!email) continue;
+    map[email] = {
+      approvedBy: (data[i][2] || '').toString(),
+      approvedAt: data[i][3] ? Utilities.formatDate(new Date(data[i][3]), tz, 'MM/dd/yyyy h:mm a') : ''
+    };
+  }
+  return map;
+}
+
+/** Approves (or re-approves) the current pay period for one employee. Idempotent per period+employee. */
+function approveTimesheet(payload) {
+  try {
+    var auth = authorizeCaller(payload, ['admin', 'human_resources']);
+    if (!auth.ok) return { error: auth.error, code: auth.code };
+    var employeeEmail = (payload.employeeEmail || '').toString().toLowerCase().trim();
+    if (!employeeEmail) return { error: 'Missing employeeEmail.' };
+
+    var periodLabel = formatPeriodLabel_(getPeriodBounds(new Date()).start, getPeriodBounds(new Date()).end);
+    var sheet = ensureSheetWithHeaders_(PAYROLL_APPROVALS_SHEET, PAYROLL_APPROVALS_HEADERS);
+
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(10000)) return { error: 'Server is busy - try again in a moment.' };
+    try {
+      var now = new Date();
+      var lastRow = sheet.getLastRow();
+      if (lastRow >= 2) {
+        var data = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+        for (var i = 0; i < data.length; i++) {
+          if ((data[i][0] || '') === periodLabel && (data[i][1] || '').toString().toLowerCase().trim() === employeeEmail) {
+            sheet.getRange(i + 2, 3).setValue(auth.email);
+            sheet.getRange(i + 2, 4).setValue(now);
+            return { success: true, approvedBy: auth.email, approvedAt: Utilities.formatDate(now, Session.getScriptTimeZone(), 'MM/dd/yyyy h:mm a') };
+          }
+        }
+      }
+      sheet.appendRow([periodLabel, employeeEmail, auth.email, now]);
+      return { success: true, approvedBy: auth.email, approvedAt: Utilities.formatDate(now, Session.getScriptTimeZone(), 'MM/dd/yyyy h:mm a') };
+    } finally {
+      lock.releaseLock();
+    }
+  } catch(e) { return { error: e.toString() }; }
+}
+
+/** Reopens the current pay period for one employee, letting them clock in/out again and admins re-approve later. */
+function unapproveTimesheet(payload) {
+  try {
+    var auth = authorizeCaller(payload, ['admin', 'human_resources']);
+    if (!auth.ok) return { error: auth.error, code: auth.code };
+    var employeeEmail = (payload.employeeEmail || '').toString().toLowerCase().trim();
+    if (!employeeEmail) return { error: 'Missing employeeEmail.' };
+
+    var periodLabel = formatPeriodLabel_(getPeriodBounds(new Date()).start, getPeriodBounds(new Date()).end);
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PAYROLL_APPROVALS_SHEET);
+    if (!sheet) return { success: true };
+
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(10000)) return { error: 'Server is busy - try again in a moment.' };
+    try {
+      var lastRow = sheet.getLastRow();
+      if (lastRow >= 2) {
+        var data = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+        for (var i = data.length - 1; i >= 0; i--) {
+          if ((data[i][0] || '') === periodLabel && (data[i][1] || '').toString().toLowerCase().trim() === employeeEmail) {
+            sheet.deleteRow(i + 2);
+          }
+        }
+      }
+      return { success: true };
+    } finally {
+      lock.releaseLock();
+    }
+  } catch(e) { return { error: e.toString() }; }
+}
+
 // ── Admin: Payroll Summary ────────────────────────────────────────────────────
 function getPayrollSummary(payload) {
   try {
     var auth = authorizeCaller(payload, ['admin', 'human_resources']);
     if (!auth.ok) return { error: auth.error, code: auth.code };
     var sh  = getTimeSheet_();
-    var tz  = Session.getScriptTimeZone();
     var now = new Date();
     var bounds = getPeriodBounds(now);
     var pStart = bounds.start;
     var pEnd   = bounds.end;
-    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    var periodLabel = months[pStart.getMonth()] + ' ' + pStart.getDate() + ' - ' + months[pEnd.getMonth()] + ' ' + pEnd.getDate();
+    var periodLabel = formatPeriodLabel_(pStart, pEnd);
+
     // Build email->name lookup from HR sheet (authoritative source)
     var hrNameMap = {};
     var hrSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('HR');
@@ -3015,11 +3373,18 @@ function getPayrollSummary(payload) {
         if (hrEmail) hrNameMap[hrEmail] = hrName;
       }
     }
+
+    var flagged = findFlaggableShifts_(sh, pStart, pEnd);
+    var flaggedRowSet = {};
+    flagged.forEach(function(f) { flaggedRowSet[f.rowIndex] = true; });
+
     var empMap = {};
     var lastRow = sh.getLastRow();
     if (lastRow >= 2) {
-      var data = sh.getRange(2, 1, lastRow - 1, 6).getValues();
+      var tz = Session.getScriptTimeZone();
+      var data = sh.getRange(2, 1, lastRow - 1, 8).getValues();
       for (var i = 0; i < data.length; i++) {
+        if (flaggedRowSet[i + 2]) continue; // excluded from totals until resolved -- see needsReview
         var rowEmail = (data[i][1] || '').toString().toLowerCase().trim();
         var rowDate  = data[i][2] ? new Date(data[i][2]) : null;
         var rowHours = parseFloat(data[i][5]) || 0;
@@ -3028,17 +3393,38 @@ function getPayrollSummary(payload) {
         if (rd < pStart || rd > pEnd) continue;
         if (!empMap[rowEmail]) {
           var resolvedName = hrNameMap[rowEmail] || (data[i][0] || '').toString().trim() || rowEmail;
-          empMap[rowEmail] = { name: resolvedName, total: 0, days: {} };
+          empMap[rowEmail] = { name: resolvedName, total: 0, days: {}, dayEntries: [], shifts: [] };
         }
         empMap[rowEmail].total = Math.round((empMap[rowEmail].total + rowHours) * 100) / 100;
-        var dayLabel = months[rd.getMonth()] + ' ' + rd.getDate();
+        var dayLabel = MONTH_ABBRS[rd.getMonth()] + ' ' + rd.getDate();
         empMap[rowEmail].days[dayLabel] = Math.round(((empMap[rowEmail].days[dayLabel] || 0) + rowHours) * 100) / 100;
+        var existingEntry = empMap[rowEmail].dayEntries.filter(function(e) { return e.date.getTime() === rd.getTime(); })[0];
+        if (existingEntry) { existingEntry.hours += rowHours; }
+        else { empMap[rowEmail].dayEntries.push({ date: rd, hours: rowHours }); }
+        empMap[rowEmail].shifts.push({
+          date: dayLabel,
+          clockIn:    data[i][3] ? Utilities.formatDate(new Date(data[i][3]), tz, 'h:mm a') : '',
+          clockOut:   data[i][4] ? Utilities.formatDate(new Date(data[i][4]), tz, 'h:mm a') : '',
+          hours:      rowHours,
+          clockInLoc:  (data[i][6] || '').toString(),
+          clockOutLoc: (data[i][7] || '').toString()
+        });
       }
     }
+
+    var approvalMap = getApprovalMap_(periodLabel);
     var employees = Object.keys(empMap).map(function(e) {
-      return { email: e, name: empMap[e].name, total: empMap[e].total, days: empMap[e].days };
+      var otSplit = splitRegularOvertime_(empMap[e].dayEntries);
+      var approval = approvalMap[e];
+      return {
+        email: e, name: empMap[e].name, total: empMap[e].total,
+        regularHours: otSplit.regular, overtimeHours: otSplit.overtime,
+        days: empMap[e].days, shifts: empMap[e].shifts,
+        approved: !!approval, approvedBy: approval ? approval.approvedBy : '', approvedAt: approval ? approval.approvedAt : ''
+      };
     }).sort(function(a, b) { return a.name.localeCompare(b.name); });
-    return { employees: employees, periodLabel: periodLabel };
+
+    return { employees: employees, periodLabel: periodLabel, needsReview: flagged };
   } catch(e) { return { error: e.toString() }; }
 }
 
@@ -3052,7 +3438,8 @@ function emailPayroll(payload) {
     var lines = ['Payroll Summary - ' + summary.periodLabel, '===========================', ''];
     var grandTotal = 0;
     summary.employees.forEach(function(e) {
-      lines.push(e.name + ': ' + e.total + ' hrs');
+      var approvalNote = e.approved ? ' [Approved by ' + e.approvedBy + ']' : ' [PENDING APPROVAL]';
+      lines.push(e.name + ': ' + e.total + ' hrs (' + e.regularHours + ' reg / ' + e.overtimeHours + ' OT)' + approvalNote);
       var dayKeys = Object.keys(e.days);
       dayKeys.forEach(function(d) { lines.push('  ' + d + ': ' + e.days[d] + ' hrs'); });
       lines.push('');
@@ -3060,6 +3447,13 @@ function emailPayroll(payload) {
     });
     lines.push('---------------------------');
     lines.push('Grand Total: ' + Math.round(grandTotal * 100) / 100 + ' hrs');
+    if (summary.needsReview && summary.needsReview.length) {
+      lines.push('');
+      lines.push('NEEDS REVIEW (excluded from totals above):');
+      summary.needsReview.forEach(function(r) {
+        lines.push('  ' + r.name + ' (' + r.email + ') - ' + r.date + ' - ' + r.reason);
+      });
+    }
     GmailApp.sendEmail(to, 'Payroll Summary - ' + summary.periodLabel, lines.join('\n'));
     return { success: true };
   } catch(e) { return { error: e.toString() }; }
