@@ -95,6 +95,7 @@ function doPost(e) {
     else if (action === 'getContacts')         result = getContacts(payload);
     else if (action === 'updateContact')       result = updateContact(payload);
     else if (action === 'addContact')          result = addContact(payload);
+    else if (action === 'deleteContact')       result = deleteContact(payload);
     else if (action === 'reconcileStatement')  result = reconcileStatement(payload);
     else if (action === 'getJobList')          result = getJobList();
     else if (action === 'getJobCostSummary')   result = getJobCostSummary(payload);
@@ -116,6 +117,7 @@ function doPost(e) {
     else if (action === 'getPTOQueue')                  result = getPTOQueue(payload);
     else if (action === 'approvePTO')                   result = approvePTO(payload);
     else if (action === 'denyPTO')                      result = denyPTO(payload);
+    else if (action === 'cancelPTORequest')             result = cancelPTORequest(payload);
     else if (action === 'clockIn')                      result = clockIn(payload);
     else if (action === 'clockOut')                     result = clockOut(payload);
     else if (action === 'getClockStatus')               result = getClockStatus(payload);
@@ -1158,6 +1160,28 @@ function addContact(payload) {
     sheet.appendRow(row);
     SpreadsheetApp.flush();
     return { success: true, rowIndex: sheet.getLastRow() };
+  } catch(e) { return { success: false, error: e.toString() }; }
+}
+
+/**
+ * Deletes a single contact row.
+ */
+function deleteContact(payload) {
+  try {
+    var auth = authorizeCaller(payload, ['admin', 'purchaser']);
+    if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
+
+    var rowIndex = payload.rowIndex;
+    if (!rowIndex) return { success: false, error: 'Missing rowIndex' };
+
+    var ss    = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('Contacts');
+    if (!sheet) return { success: false, error: 'Contacts sheet not found' };
+    if (rowIndex < 2 || rowIndex > sheet.getLastRow()) return { success: false, error: 'Contact not found' };
+
+    sheet.deleteRow(rowIndex);
+    SpreadsheetApp.flush();
+    return { success: true };
   } catch(e) { return { success: false, error: e.toString() }; }
 }
 
@@ -2465,6 +2489,39 @@ function denyPTO(payload) {
     if (!deniedGid) return { error: 'Denied section not found in Asana project' };
     var moved = asanaRequest('post', '/sections/' + deniedGid + '/addTask', { task: taskGid });
     if (moved.errors) return { error: moved.errors[0].message };
+    return { success: true };
+  } catch(e) { return { error: e.toString() }; }
+}
+
+/**
+ * Cancels/withdraws a PTO request the caller submitted themselves, as long as
+ * it hasn't already been approved or denied.
+ */
+function cancelPTORequest(payload) {
+  try {
+    var email = (payload.callerEmail || '').toString().toLowerCase().trim();
+    if (!email) return { error: 'You must be signed in to do this.', code: 'AUTH_REQUIRED' };
+    var taskGid = payload.taskGid;
+    if (!taskGid) return { error: 'Missing taskGid' };
+
+    var result = asanaRequest('get', '/tasks/' + taskGid + '?opt_fields=notes,memberships.section.name');
+    if (result.errors) return { error: result.errors[0].message };
+
+    var notes = (result.data && result.data.notes) || '';
+    var m = notes.match(/Requester:\s*([^\n]+)/);
+    var requester = m ? m[1].trim().toLowerCase() : '';
+    if (requester !== email) return { error: 'You can only cancel your own requests.', code: 'FORBIDDEN' };
+
+    var section = '';
+    if (result.data && result.data.memberships && result.data.memberships[0] && result.data.memberships[0].section) {
+      section = result.data.memberships[0].section.name || '';
+    }
+    if (section === 'Approved' || section === 'Denied') {
+      return { error: 'This request has already been decided and can no longer be cancelled.' };
+    }
+
+    var del = asanaRequest('delete', '/tasks/' + taskGid);
+    if (del.errors) return { error: del.errors[0].message };
     return { success: true };
   } catch(e) { return { error: e.toString() }; }
 }
