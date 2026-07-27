@@ -4754,6 +4754,7 @@ function openAssetEdit(idx) {
       '<button class="btn btn-primary" style="flex:1" id="asset-save-btn" onclick="submitAssetEdit()">Save</button>' +
       '<button class="btn btn-secondary" style="flex:0 0 auto" onclick="closeEdit()">Cancel</button>' +
     '</div>' +
+    '<button id="asset-delete-btn" onclick="doDeleteAsset(' + idx + ')" style="width:100%;margin-top:8px;background:none;border:none;color:#E74C3C;font-size:13px;font-weight:600;cursor:pointer;padding:8px">Delete Asset</button>' +
     '<div style="margin-top:20px;border-top:1px solid #f0f0f0;padding-top:16px">' +
       '<div style="font-size:13px;font-weight:700;color:#1F3971;margin-bottom:8px">Maintenance Log</div>' +
       '<div id="inv-log-list"><p style="color:#888;font-size:13px">Loading…</p></div>' +
@@ -4800,6 +4801,30 @@ function submitAssetEdit() {
   }, function() {
     showToast('Error:Error saving asset');
     if (btn) { btn.textContent = 'Save'; btn.disabled = false; }
+  });
+}
+
+function doDeleteAsset(idx) {
+  var a = G.assets[idx];
+  if (!a) return;
+  if (!confirm('Are you sure you want to delete this asset?')) return;
+
+  var btn = document.getElementById('asset-delete-btn');
+  if (btn) { btn.textContent = 'Deleting…'; btn.disabled = true; }
+
+  gasCall('deleteAsset', { rowIndex: a._rowIndex }, function(res) {
+    if (res.success) {
+      closeEdit();
+      showToast('Asset deleted');
+      G.assetsLoaded = false;
+      loadInventory();
+    } else {
+      showToast('Error: ' + (res.error || 'Delete failed'));
+      if (btn) { btn.textContent = 'Delete Asset'; btn.disabled = false; }
+    }
+  }, function() {
+    showToast('Error: Could not connect');
+    if (btn) { btn.textContent = 'Delete Asset'; btn.disabled = false; }
   });
 }
 

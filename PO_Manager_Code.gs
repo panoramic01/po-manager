@@ -131,6 +131,7 @@ function doPost(e) {
     else if (action === 'getInventory')                result = getInventory(payload);
     else if (action === 'addAsset')                    result = addAsset(payload);
     else if (action === 'updateAsset')                 result = updateAsset(payload);
+    else if (action === 'deleteAsset')                 result = deleteAsset(payload);
     else if (action === 'getAssetMaintenanceLog')      result = getAssetMaintenanceLog(payload);
     else if (action === 'addMaintenanceLog')           result = addMaintenanceLog(payload);
     else                                        result = { error: 'Unknown action: ' + action };
@@ -1236,6 +1237,22 @@ function updateAsset(payload) {
         sheet.getRange(rowIndex, i + 1).setValue(values[key]);
       }
     });
+    SpreadsheetApp.flush();
+    return { success: true };
+  } catch(e) { return { success: false, error: e.toString() }; }
+}
+
+function deleteAsset(payload) {
+  try {
+    var auth = authorizeCaller(payload, ['admin']);
+    if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
+
+    var rowIndex = payload.rowIndex;
+    if (!rowIndex) return { success: false, error: 'Missing rowIndex' };
+
+    var sheet = ensureSheetWithHeaders_('Assets', ASSET_HEADERS);
+    if (rowIndex < 2 || rowIndex > sheet.getLastRow()) return { success: false, error: 'Asset not found' };
+    sheet.deleteRow(rowIndex);
     SpreadsheetApp.flush();
     return { success: true };
   } catch(e) { return { success: false, error: e.toString() }; }
