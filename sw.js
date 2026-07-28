@@ -1,4 +1,4 @@
-var CACHE = 'po-manager-v178';
+var CACHE = 'po-manager-v179';
 var SHELL = ['/', '/index.html', '/manifest.json', '/icon-192.png?v=126', '/icon-512.png?v=126', '/apple-touch-icon.png?v=126', '/panoramic-logo.png', '/panoramic-roofline.png'];
 
 self.addEventListener('install', function(e) {
@@ -20,6 +20,34 @@ self.addEventListener('activate', function(e) {
             });
           }
         });
+    })
+  );
+});
+
+self.addEventListener('push', function(e) {
+  var data = {};
+  try { data = e.data ? e.data.json() : {}; } catch (err) {}
+  var payload = data.data || data; // FCM v1 data-only payload is nested under "data"
+  var title = payload.title || 'Panoramic Ops';
+  var body  = payload.body  || '';
+  var url   = payload.url   || './';
+  e.waitUntil(self.registration.showNotification(title, {
+    body: body,
+    icon: '/icon-192.png?v=126',
+    badge: '/icon-192.png?v=126',
+    data: { url: url }
+  }));
+});
+
+self.addEventListener('notificationclick', function(e) {
+  e.notification.close();
+  var url = (e.notification.data && e.notification.data.url) || './';
+  e.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(cls) {
+      for (var i = 0; i < cls.length; i++) {
+        if ('focus' in cls[i]) { cls[i].navigate(url); return cls[i].focus(); }
+      }
+      return clients.openWindow(url);
     })
   );
 });

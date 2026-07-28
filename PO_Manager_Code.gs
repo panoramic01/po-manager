@@ -185,6 +185,8 @@ function doPost(e) {
     else if (action === 'deleteAsset')                 result = deleteAsset(payload);
     else if (action === 'getAssetMaintenanceLog')      result = getAssetMaintenanceLog(payload);
     else if (action === 'addMaintenanceLog')           result = addMaintenanceLog(payload);
+    else if (action === 'registerPushToken')           result = registerPushToken(payload);
+    else if (action === 'unregisterPushToken')         result = unregisterPushToken(payload);
     else                                        result = { error: 'Unknown action: ' + action };
 
     if (result && result.success === false) {

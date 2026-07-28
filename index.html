@@ -1255,6 +1255,17 @@
       <button onclick="saveProfile()" style="width:100%;background:#1F3971;color:#fff;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer">Save Changes</button>
     </div>
 
+    <!-- Push Notifications card (aidan role only -- test rollout) -->
+    <div id="acct-push-card" style="background:#fff;border-radius:14px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <div>
+          <div style="font-size:14px;font-weight:700;color:#1F3971">Push Notifications</div>
+          <div id="acct-push-status" style="font-size:12px;color:#888;margin-top:2px">Off</div>
+        </div>
+        <button id="acct-push-btn" onclick="togglePush()" style="background:#1F3971;color:#fff;border:none;border-radius:9px;padding:10px 18px;font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0">Enable</button>
+      </div>
+    </div>
+
     <!-- Time Clock widget -->
     <div style="background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:16px">
       <div style="padding:14px 16px 10px;font-size:14px;font-weight:700;color:#1F3971;border-bottom:1px solid #f0f0f0">Time Clock</div>
@@ -2304,6 +2315,7 @@ function applyRole(role) {
   sd('other-card-payroll',       has(['admin', 'human_resources']));
   sd('other-card-new-project',   p.canCreate);
   sd('receive-po-card', p.canReceivePO);
+  sd('acct-push-card', roleTokens(role).indexOf('aidan') !== -1);
 
   // Show role badge in header
   var headerP = document.querySelector('.app-header p');
@@ -8102,6 +8114,7 @@ function loadAccount() {
   document.getElementById('acct-email-label').textContent   = email;
   document.getElementById('acct-name-input').value          = name;
   document.getElementById('acct-phone-input').value         = phone;
+  renderPushUI();
 
   // Load clock status
   gasCall('getClockStatus', { email: email }, function(s) {
@@ -8177,6 +8190,78 @@ function saveProfile() {
       showToast('Error: ' + ((r && r.error) || 'Could not save'));
     }
   }, function() { btn.disabled = false; btn.textContent = 'Save Changes'; showToast('Could not connect'); });
+}
+
+// -- Push Notifications (aidan role only -- test rollout) ----------------------
+var PUSH_TOKEN_KEY = 'pushFcmToken';
+
+function renderPushUI() {
+  var btn = document.getElementById('acct-push-btn');
+  var status = document.getElementById('acct-push-status');
+  if (!btn || !status) return;
+  if (!('Notification' in window) || !('serviceWorker' in navigator) || !(window.PushSetup && window.PushSetup.supported)) {
+    status.textContent = 'Not supported on this browser';
+    btn.style.display = 'none';
+    return;
+  }
+  var hasToken = !!localStorage.getItem(PUSH_TOKEN_KEY);
+  if (Notification.permission === 'granted' && hasToken) {
+    status.textContent = 'On for this device';
+    btn.textContent = 'Disable';
+  } else {
+    status.textContent = Notification.permission === 'denied' ? 'Blocked in browser settings' : 'Off';
+    btn.textContent = 'Enable';
+  }
+}
+
+function togglePush() {
+  if (localStorage.getItem(PUSH_TOKEN_KEY)) disablePush(); else enablePush();
+}
+
+function enablePush() {
+  if (!window.PushSetup || !window.PushSetup.supported) { showToast('Push not supported on this browser'); return; }
+  var btn = document.getElementById('acct-push-btn');
+  btn.disabled = true; btn.textContent = 'Enabling...';
+  Notification.requestPermission().then(function(perm) {
+    if (perm !== 'granted') {
+      btn.disabled = false;
+      showToast('Notifications permission was not granted');
+      renderPushUI();
+      return;
+    }
+    window.PushSetup.enable().then(function(token) {
+      if (!token) { btn.disabled = false; showToast('Could not get a push token'); renderPushUI(); return; }
+      gasCall('registerPushToken', { fcmToken: token, deviceInfo: navigator.userAgent }, function(r) {
+        btn.disabled = false;
+        if (r && r.success) {
+          localStorage.setItem(PUSH_TOKEN_KEY, token);
+          showToast('Push notifications enabled');
+        } else {
+          showToast('Error: ' + ((r && r.error) || 'Could not save subscription'));
+        }
+        renderPushUI();
+      }, function() { btn.disabled = false; showToast('Could not connect'); renderPushUI(); });
+    }, function() {
+      btn.disabled = false;
+      showToast('Could not enable push notifications');
+      renderPushUI();
+    });
+  });
+}
+
+function disablePush() {
+  var token = localStorage.getItem(PUSH_TOKEN_KEY);
+  var btn = document.getElementById('acct-push-btn');
+  btn.disabled = true; btn.textContent = 'Disabling...';
+  var finish = function() {
+    localStorage.removeItem(PUSH_TOKEN_KEY);
+    if (window.PushSetup) window.PushSetup.deleteToken();
+    btn.disabled = false;
+    showToast('Push notifications disabled');
+    renderPushUI();
+  };
+  if (!token) { finish(); return; }
+  gasCall('unregisterPushToken', { fcmToken: token }, finish, finish);
 }
 
 function updateAcctClockUI(clockedIn, since) {
@@ -8531,6 +8616,52 @@ function doEmailPayroll() {
   }, function() { if (btn) { btn.disabled = false; btn.textContent = 'Email'; } showToast('Could not connect'); });
 }
 
+</script>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
+import { getMessaging, getToken, deleteToken, onMessage } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-messaging.js";
+
+var firebaseConfig = {
+  apiKey: "AIzaSyBDV3Cq7br46TkqsKIeYlEbAdNEckHpSDM",
+  authDomain: "panoramic-ops-push.firebaseapp.com",
+  projectId: "panoramic-ops-push",
+  storageBucket: "panoramic-ops-push.firebasestorage.app",
+  messagingSenderId: "1068031463671",
+  appId: "1:1068031463671:web:59538d5eaed9e5ba6483f2"
+};
+var VAPID_KEY = "BNqb7HioDix_j6N1bg6rCQvOw3zS7WJz7zgxPKlYgP6oiPuQuv0H5uoPUb5XyDTm-1QRuNm5gBFf5G12chhA500";
+
+var messaging = null;
+try {
+  var fbApp = initializeApp(firebaseConfig);
+  messaging = getMessaging(fbApp);
+} catch (e) {
+  messaging = null;
+}
+
+if (messaging) {
+  onMessage(messaging, function(payload) {
+    var d = payload.data || {};
+    if (typeof window.showToast === 'function') {
+      window.showToast((d.title || 'Notification') + ': ' + (d.body || ''));
+    }
+  });
+}
+
+window.PushSetup = {
+  supported: !!messaging,
+  enable: function() {
+    if (!messaging) return Promise.reject(new Error('Push not supported'));
+    return navigator.serviceWorker.ready.then(function(reg) {
+      return getToken(messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
+    });
+  },
+  deleteToken: function() {
+    if (!messaging) return Promise.resolve();
+    return deleteToken(messaging).catch(function() {});
+  }
+};
 </script>
 </body>
 </html>

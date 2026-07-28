@@ -83,6 +83,7 @@ function onFormSubmitReceived(e) {
           "PO Number: " + poInput + "\n" +
           "Status: " + finalStatus
         );
+        sendPushNotification(adminEmail, "PO Updated: " + poInput, "Status: " + finalStatus, "/");
         return;
       }
     }
@@ -134,4 +135,5 @@ function onFormSubmitReceived(e) {
     "Vendor: " + vendor + "\n" +
     "Status: " + finalStatus
   );
+  sendPushNotification(adminEmail, "New PO Created: " + poNumber, job + " - " + vendor, "/");
 }
