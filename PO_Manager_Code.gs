@@ -338,6 +338,9 @@ function createPO(data) {
         sheet.getRange(nextRow, 9).setValue(today);
       }
 
+      sendPushNotification(OWNER_EMAILS, 'New PO Created: ' + poNumber,
+        'By ' + (data.orderedBy || auth.email) + ' - ' + (data.jobRef || '') + ' / ' + (data.vendor || ''), '/');
+
       return { success: true, poNumber: poNumber, rowIndex: nextRow };
     } finally {
       lock.releaseLock();
@@ -421,6 +424,9 @@ function createSubPO(data) {
       if (status === "Pending Pickup") {
         sheet.getRange(nextRow, 9).setValue(today);
       }
+
+      sendPushNotification(OWNER_EMAILS, 'Sub-PO Created: ' + subPoNumber,
+        'By ' + (data.orderedBy || auth.email) + ' - ' + (jobRef || '') + ' / ' + (data.vendor || ''), '/');
 
       return { success: true, poNumber: subPoNumber, rowIndex: nextRow };
     } finally {
