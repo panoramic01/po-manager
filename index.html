@@ -3110,7 +3110,7 @@ function submitReceive() {
     updates: {
       status:       'Ready to Reconcile',
       receivedNote: G.photoUrls.filter(Boolean).join('\n') || trim('r-note'),
-      notes:        trim('r-notes') || G.receivePO.notes
+      additionalNotes: trim('r-notes') || G.receivePO.additionalNotes
     }
   }, function(res) {
     setBtnState('receive-btn', '✓ Update PO', false);
@@ -3350,6 +3350,7 @@ function showPODetail(poNum) {
       amtRow +
       poDetailRow('Delivery / Pickup Date', po.deliveryDate) +
       poDetailRow('Notes', po.notes) +
+      poDetailRow('Additional Notes', po.additionalNotes) +
     '</div>' +
     buildPhotoSection(po.receivedNote);
 

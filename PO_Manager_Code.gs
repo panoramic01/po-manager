@@ -225,7 +225,7 @@ function getSheetData(payload) {
   if (lastRow < 2) return [];
 
   var numRows = lastRow - 1;
-  var data     = sheet.getRange(2, 1, numRows, 14).getValues();
+  var data     = sheet.getRange(2, 1, numRows, 15).getValues();
   var tz       = Session.getScriptTimeZone();
   var pos      = [];
 
@@ -252,7 +252,7 @@ function getSheetData(payload) {
     // Column J may also just contain a plain-text URL
     if (!issuedPOLink) issuedPOLink = str(row[9]);
 
-    var invoiceFile = canViewInvoice ? str(row[13]) : "";
+    var invoiceFile = canViewInvoice ? str(row[14]) : "";
 
     pos.push({
       rowIndex:     i + 2,
@@ -271,7 +271,8 @@ function getSheetData(payload) {
       invoiceLink:  canViewInvoice ? (invoiceFile || legacyInvoiceLink) : "",
       receivedNote: str(row[10]),
       notes:        str(row[11]),
-      orderedBy:    str(row[12])
+      additionalNotes: str(row[12]),
+      orderedBy:    str(row[13])
     });
   });
 
@@ -324,8 +325,9 @@ function createPO(data) {
       sheet.getRange(nextRow, 6).setValue(data.vendorInvoice || "");
       sheet.getRange(nextRow, 7).setValue(status);
       sheet.getRange(nextRow, 8).setValue(data.invoiceTotal  || "");
-      sheet.getRange(nextRow, 12).setValue(data.notes        || "");
-      sheet.getRange(nextRow, 13).setValue(getFirstName(data.orderedBy));
+      sheet.getRange(nextRow, 12).setValue(data.notes           || "");
+      sheet.getRange(nextRow, 13).setValue(data.additionalNotes || "");
+      sheet.getRange(nextRow, 14).setValue(getFirstName(data.orderedBy));
 
       // Pending Pickup POs are picked up the same day they're created, so
       // default the pickup/delivery date to today rather than leaving it blank.
@@ -367,10 +369,11 @@ function updatePO(payload) {
     if (updates.invoiceTotal  !== undefined) sheet.getRange(rowIndex, 8).setValue(updates.invoiceTotal);
     if (updates.deliveryDate  !== undefined) sheet.getRange(rowIndex, 9).setValue(updates.deliveryDate);
     if (updates.issuedPO      !== undefined) sheet.getRange(rowIndex, 10).setValue(updates.issuedPO);
-    if (updates.receivedNote  !== undefined) sheet.getRange(rowIndex, 11).setValue(updates.receivedNote);
-    if (updates.notes         !== undefined) sheet.getRange(rowIndex, 12).setValue(updates.notes);
-    if (updates.orderedBy     !== undefined) sheet.getRange(rowIndex, 13).setValue(updates.orderedBy);
-    if (updates.invoiceFile   !== undefined) sheet.getRange(rowIndex, 14).setValue(updates.invoiceFile);
+    if (updates.receivedNote     !== undefined) sheet.getRange(rowIndex, 11).setValue(updates.receivedNote);
+    if (updates.notes            !== undefined) sheet.getRange(rowIndex, 12).setValue(updates.notes);
+    if (updates.additionalNotes  !== undefined) sheet.getRange(rowIndex, 13).setValue(updates.additionalNotes);
+    if (updates.orderedBy        !== undefined) sheet.getRange(rowIndex, 14).setValue(updates.orderedBy);
+    if (updates.invoiceFile      !== undefined) sheet.getRange(rowIndex, 15).setValue(updates.invoiceFile);
 
     return { success: true };
   } catch (e) {
@@ -396,12 +399,12 @@ function findPOByNumber(poNum) {
       // Found - load just this single row
       var rowIndex = i + 2;
       var tz  = Session.getScriptTimeZone();
-      var row = sheet.getRange(rowIndex, 1, 1, 14).getValues()[0];
+      var row = sheet.getRange(rowIndex, 1, 1, 15).getValues()[0];
       var legacyInvoiceLink = '', issuedPOLink = '';
       try { legacyInvoiceLink = sheet.getRange(rowIndex, 1,  1, 1).getRichTextValues()[0][0].getLinkUrl() || ''; } catch(e2) {}
       try { issuedPOLink      = sheet.getRange(rowIndex, 10, 1, 1).getRichTextValues()[0][0].getLinkUrl() || ''; } catch(e2) {}
       if (!issuedPOLink) issuedPOLink = str(row[9]);
-      var invoiceFile = str(row[13]);
+      var invoiceFile = str(row[14]);
       return {
         rowIndex:      rowIndex,
         poNum:         (row[0] || '').toString().trim(),
@@ -419,7 +422,8 @@ function findPOByNumber(poNum) {
         invoiceLink:   invoiceFile || legacyInvoiceLink,
         receivedNote:  str(row[10]),
         notes:         str(row[11]),
-        orderedBy:     str(row[12])
+        additionalNotes: str(row[12]),
+        orderedBy:     str(row[13])
       };
     }
     return null;
