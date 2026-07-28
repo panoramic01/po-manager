@@ -669,6 +669,11 @@
           <span style="font-size:13px;font-weight:600;color:#1F3971">Material Report</span>
         </div>
 
+        <div id="other-card-material-inventory" onclick="showOtherPanel('material-inventory')" style="background:#fff;border-radius:12px;padding:22px 12px;text-align:center;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.08);display:flex;flex-direction:column;align-items:center;gap:10px">
+          <svg width="32" height="32" fill="none" stroke="#1F3971" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+          <span style="font-size:13px;font-weight:600;color:#1F3971">Material Inventory</span>
+        </div>
+
         <div id="other-card-inventory" onclick="showOtherPanel('inventory')" style="background:#fff;border-radius:12px;padding:22px 12px;text-align:center;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.08);display:flex;flex-direction:column;align-items:center;gap:10px">
           <svg width="32" height="32" fill="none" stroke="#1F3971" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7l9-4 9 4-9 4-9-4zm0 0v10l9 4 9-4V7M12 11v10"/></svg>
           <span style="font-size:13px;font-weight:600;color:#1F3971">Inventory</span>
@@ -751,6 +756,50 @@
         <div class="loading"><div class="spinner"></div><p>Loading contacts…</p></div>
       </div>
       <div id="ct-results"><div class="empty">Loading contacts…</div></div>
+    </div>
+
+    <!-- Material Inventory sub-panel -->
+    <div id="other-panel-material-inventory" style="display:none">
+      <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #f0f0f0;background:#fff;position:sticky;top:0;z-index:1">
+        <button onclick="showOtherHome()" style="background:none;border:none;font-size:14px;font-weight:600;color:#1F3971;cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
+        <span style="font-size:15px;font-weight:700;color:#1F3971;flex:1;margin-left:2px">Material Inventory</span>
+      </div>
+
+      <div style="padding:16px 16px 0">
+        <div style="display:flex;gap:8px">
+          <button onclick="showMaterialLogForm('In')" style="flex:1;background:#1F3971;color:#fff;border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">Log Material In</button>
+          <button onclick="showMaterialLogForm('Out')" style="flex:1;background:#E74C3C;color:#fff;border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">Take Material Out</button>
+        </div>
+      </div>
+
+      <div id="mi-form" style="display:none;background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin:12px 16px 0">
+        <div id="mi-form-title" style="font-size:14px;font-weight:700;color:#1F3971;margin-bottom:12px">Log Material In</div>
+        <label style="font-size:11px;font-weight:600;color:#888;display:block;margin-bottom:4px">Material</label>
+        <input type="text" id="mi-material" list="mi-material-list" placeholder="Start typing a material name..." style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px" oninput="onMaterialFieldInput()">
+        <datalist id="mi-material-list"></datalist>
+        <label style="font-size:11px;font-weight:600;color:#888;display:block;margin-bottom:4px">Quantity</label>
+        <input type="number" id="mi-qty" min="0" step="any" placeholder="Qty" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">
+        <label style="font-size:11px;font-weight:600;color:#888;display:block;margin-bottom:4px">Unit</label>
+        <input type="text" id="mi-unit" placeholder="e.g. EA, BOX, SQ" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">
+        <label style="font-size:11px;font-weight:600;color:#888;display:block;margin-bottom:4px">Job / Reference (optional)</label>
+        <input type="text" id="mi-jobref" placeholder="Job name or PO#" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">
+        <label style="font-size:11px;font-weight:600;color:#888;display:block;margin-bottom:4px">Notes (optional)</label>
+        <input type="text" id="mi-notes" placeholder="Notes" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">
+        <div style="display:flex;gap:8px;margin-top:4px">
+          <button onclick="submitMaterialLog()" style="flex:1;background:#1F3971;color:#fff;border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:700;cursor:pointer">Save</button>
+          <button onclick="document.getElementById('mi-form').style.display='none'" style="flex:1;background:#f0f0f0;color:#555;border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+        </div>
+      </div>
+
+      <div id="mi-loading" style="display:none"><div class="loading"><div class="spinner"></div><p>Loading inventory...</p></div></div>
+
+      <div style="padding:16px">
+        <div style="font-size:13px;font-weight:700;color:#1F3971;margin-bottom:8px">On Hand</div>
+        <div id="mi-onhand-list"></div>
+
+        <div style="font-size:13px;font-weight:700;color:#1F3971;margin:20px 0 8px">Recent Activity</div>
+        <div id="mi-log-list"></div>
+      </div>
     </div>
 
     <!-- Inventory sub-panel -->
@@ -2308,6 +2357,7 @@ function applyRole(role) {
   sd('other-card-missing-inv', has(['admin']));
   sd('other-card-vendor-spend', has(['admin', 'purchaser']));
   sd('other-card-material-report', has(['admin']));
+  sd('other-card-material-inventory', has(['admin', 'purchaser', 'site_manager', 'runner']));
   sd('other-card-inventory', has(['admin']));
   sd('other-card-sop', true);
   sd('other-card-emp-mgr',      has(['admin', 'human_resources']));
@@ -5186,7 +5236,7 @@ function doAddMaintenanceLog() {
 function showOtherPanel(name) {
   if (!_navPop) history.pushState({ view: 'other-panel', panel: name }, '');
   document.getElementById('other-home').style.display = 'none';
-  ['pricing', 'contacts', 'inventory', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project'].forEach(function(p) {
+  ['pricing', 'contacts', 'inventory', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'material-inventory', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
     if (el) el.style.display = p === name ? '' : 'none';
   });
@@ -5198,6 +5248,7 @@ function showOtherPanel(name) {
   if (name === 'missing-inv') loadMissingInvoices();
   if (name === 'vendor-spend') openVendorSpendPanel();
   if (name === 'material-report') openMaterialReportPanel();
+  if (name === 'material-inventory') openMaterialInventoryPanel();
   if (name === 'sop') loadSops();
   if (name === 'pto') loadPTOPanel();
   if (name === 'timeclock') loadTimeClock();
@@ -5214,7 +5265,7 @@ function showOtherPanel(name) {
 // returning to its home grid.
 function resetOtherPanels() {
   document.getElementById('other-home').style.display = '';
-  ['pricing', 'contacts', 'inventory', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project'].forEach(function(p) {
+  ['pricing', 'contacts', 'inventory', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'material-inventory', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
     if (el) el.style.display = 'none';
   });
@@ -5223,6 +5274,133 @@ function resetOtherPanels() {
 function showOtherHome() {
   if (!_navPop) history.pushState({ view: 'tab', tab: 'other' }, '');
   resetOtherPanels();
+}
+
+
+// ── Material Inventory ────────────────────────────────────────────────────────
+function openMaterialInventoryPanel() {
+  document.getElementById('mi-form').style.display = 'none';
+  loadMaterialCatalog();
+  loadMaterialInventory();
+}
+
+function loadMaterialCatalog() {
+  if (G.materialCatalogLoaded) return;
+  gasCall('getMaterialCatalog', {}, function(data) {
+    G.materialCatalog = data.items || [];
+    G.materialCatalogLoaded = true;
+    var dl = document.getElementById('mi-material-list');
+    dl.innerHTML = G.materialCatalog.map(function(it) {
+      return '<option value="' + esc(it.description) + '">';
+    }).join('');
+  });
+}
+
+function onMaterialFieldInput() {
+  var name = document.getElementById('mi-material').value.trim();
+  var match = (G.materialCatalog || []).filter(function(it) { return it.description === name; })[0];
+  if (match && !document.getElementById('mi-unit').value) {
+    document.getElementById('mi-unit').value = match.um;
+  }
+}
+
+function fmtMatQty(n) {
+  return (Math.round((n || 0) * 100) / 100).toString();
+}
+
+function loadMaterialInventory() {
+  document.getElementById('mi-loading').style.display = 'block';
+  gasCall('getMaterialInventory', {}, function(data) {
+    document.getElementById('mi-loading').style.display = 'none';
+    renderMaterialOnHand(data.materials || []);
+    renderMaterialLog(data.recentLog || []);
+  }, function() {
+    document.getElementById('mi-loading').style.display = 'none';
+    document.getElementById('mi-onhand-list').innerHTML = '<div class="empty">\u26a0\ufe0f Could not load inventory.</div>';
+  });
+}
+
+function renderMaterialOnHand(materials) {
+  var el = document.getElementById('mi-onhand-list');
+  if (!materials.length) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">\ud83d\udce6</div><p>No materials logged yet.</p></div>';
+    return;
+  }
+  el.innerHTML = materials.map(function(m) {
+    var color = m.onHand <= 0 ? '#E74C3C' : '#1F3971';
+    return '<div class="po-item">' +
+      '<div class="row-between">' +
+        '<span class="po-num">' + esc(m.name) + '</span>' +
+        '<span style="font-weight:700;color:' + color + '">' + fmtMatQty(m.onHand) + (m.unit ? ' ' + esc(m.unit) : '') + '</span>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function renderMaterialLog(log) {
+  var el = document.getElementById('mi-log-list');
+  if (!log.length) {
+    el.innerHTML = '<div class="empty">No activity yet.</div>';
+    return;
+  }
+  var isAdmin = effRoleTokens(G.role || '').indexOf('admin') !== -1;
+  el.innerHTML = log.map(function(r) {
+    var badgeClass = r.type === 'In' ? 'badge-approved' : 'badge-denied';
+    var dateStr = r.date ? new Date(r.date).toLocaleDateString() : '';
+    var delBtn = isAdmin ? '<button onclick="deleteMaterialLog(' + r._rowIndex + ')" style="background:none;border:none;cursor:pointer;font-size:13px;padding:0 0 0 8px">\ud83d\uddd1\ufe0f</button>' : '';
+    return '<div class="po-item">' +
+      '<div class="row-between">' +
+        '<span class="po-num">' + esc(r.material) + '</span>' +
+        '<span class="badge ' + badgeClass + '">' + esc(r.type) + '</span>' +
+      '</div>' +
+      '<div class="po-sub">' + fmtMatQty(r.qty) + (r.unit ? ' ' + esc(r.unit) : '') + (r.jobRef ? ' \u00b7 ' + esc(r.jobRef) : '') + ' \u00b7 ' + dateStr + ' \u00b7 ' + esc(r.loggedBy) + delBtn + '</div>' +
+      (r.notes ? '<div class="po-note">' + esc(r.notes) + '</div>' : '') +
+    '</div>';
+  }).join('');
+}
+
+function showMaterialLogForm(type) {
+  G.miPendingType = type;
+  document.getElementById('mi-form-title').textContent = type === 'In' ? 'Log Material In' : 'Take Material Out';
+  document.getElementById('mi-material').value = '';
+  document.getElementById('mi-qty').value = '';
+  document.getElementById('mi-unit').value = '';
+  document.getElementById('mi-jobref').value = '';
+  document.getElementById('mi-notes').value = '';
+  document.getElementById('mi-form').style.display = '';
+  document.getElementById('mi-material').focus();
+}
+
+function submitMaterialLog() {
+  var material = document.getElementById('mi-material').value.trim();
+  var qty = parseFloat(document.getElementById('mi-qty').value);
+  var unit = document.getElementById('mi-unit').value.trim();
+  var jobRef = document.getElementById('mi-jobref').value.trim();
+  var notes = document.getElementById('mi-notes').value.trim();
+  var type = G.miPendingType;
+
+  if (!material) { showToast('Enter a material name'); return; }
+  if (!qty || qty <= 0) { showToast('Enter a quantity greater than 0'); return; }
+
+  gasCall('logMaterialTransaction', { material: material, unit: unit, type: type, qty: qty, jobRef: jobRef, notes: notes }, function(res) {
+    if (res.success) {
+      document.getElementById('mi-form').style.display = 'none';
+      showToast(type === 'In' ? 'Material logged in!' : 'Material taken out!');
+      loadMaterialInventory();
+    } else {
+      showToast('Error: ' + (res.error || 'Save failed'));
+    }
+  }, function() {
+    showToast('Error: Could not connect');
+  });
+}
+
+function deleteMaterialLog(rowIndex) {
+  if (!confirm('Delete this log entry?')) return;
+  gasCall('deleteMaterialLogEntry', { rowIndex: rowIndex }, function(res) {
+    if (res.success) { showToast('Entry deleted'); loadMaterialInventory(); }
+    else { showToast('Error: ' + (res.error || 'Delete failed')); }
+  }, function() { showToast('Error: Could not connect'); });
 }
 
 

@@ -187,6 +187,10 @@ function doPost(e) {
     else if (action === 'addMaintenanceLog')           result = addMaintenanceLog(payload);
     else if (action === 'registerPushToken')           result = registerPushToken(payload);
     else if (action === 'unregisterPushToken')         result = unregisterPushToken(payload);
+    else if (action === 'getMaterialCatalog')          result = getMaterialCatalog(payload);
+    else if (action === 'getMaterialInventory')        result = getMaterialInventory(payload);
+    else if (action === 'logMaterialTransaction')      result = logMaterialTransaction(payload);
+    else if (action === 'deleteMaterialLogEntry')      result = deleteMaterialLogEntry(payload);
     else                                        result = { error: 'Unknown action: ' + action };
 
     if (result && result.success === false) {
@@ -642,6 +646,19 @@ function getConfig(email) {
 }
 
 /**
+ * Collapses a Builder or Job string to a loose dedup key: lowercased, with
+ * every run of non-alphanumeric characters (spaces, hyphens, underscores)
+ * folded to a single space. "BRIO_HOMES" / "Brio-Homes" / "brio homes" all
+ * map to the same key. Free-typed Builder+Job combos drift in separator
+ * and casing between entry points (Projects sheet vs. a typed PO combo),
+ * which otherwise produces near-duplicate entries in the New PO picker for
+ * what's really the same job -- see the duplicate-job-names investigation.
+ */
+function normJobKey_(s) {
+  return (s || '').toString().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+/**
  * Builds the searchable Builder+Job list that powers the New Purchase
  * Order form's combined lookup field. Order matters -- it's the suggestion
  * order in the datalist:
@@ -650,8 +667,12 @@ function getConfig(email) {
  *      thing someone is about to create a first PO for.
  *   2. Distinct Builder+Job pairs from "PO Database", most recent Date
  *      Issued first, capped at MAX_PO_ENTRIES so the payload stays small.
- * De-duplicated case-insensitively; a pair already covered by a Projects
- * row is not repeated from PO Database.
+ * De-duplicated via normJobKey_ (case- and separator-insensitive). A pair
+ * already covered by a Projects row is not repeated from PO Database --
+ * this also means that when a job has both a Projects row and inconsistent
+ * PO-side spellings, the Projects row's exact spelling always wins as the
+ * one shown/returned, since getProjectFolderId (Drive folder resolution)
+ * and the Asana Task GID column key off that exact Projects-sheet text.
  */
 function getRecentJobs() {
   try {
@@ -669,7 +690,7 @@ function getRecentJobs() {
           var b = (pData[i][0] || '').toString().trim();
           var j = (pData[i][1] || '').toString().trim();
           if (!b || !j) continue;
-          var pKey = b.toLowerCase() + '|' + j.toLowerCase();
+          var pKey = normJobKey_(b) + '|' + normJobKey_(j);
           if (seen[pKey]) continue;
           seen[pKey] = true;
           result.push({ builder: b, job: j });
@@ -687,7 +708,7 @@ function getRecentJobs() {
           var builder = (poData[k][1] || '').toString().trim();
           var jobRef  = (poData[k][2] || '').toString().trim();
           if (!builder || !jobRef) continue;
-          var dKey = builder.toLowerCase() + '|' + jobRef.toLowerCase();
+          var dKey = normJobKey_(builder) + '|' + normJobKey_(jobRef);
           if (seen[dKey]) continue; // already covered by a Projects row
           var dateVal = poData[k][0];
           var ts = (dateVal instanceof Date) ? dateVal.getTime() : 0;
@@ -712,22 +733,25 @@ function getRecentJobs() {
 }
 
 /**
- * Builds a de-duplicated (case-insensitive), alphabetically sorted list of
- * builder/company names already in use, pulled from the "Projects" sheet
- * (Contractor, col A) and the "PO Database" sheet (Builder, col C). Powers
- * the New Project form's company dropdown so names stay consistent instead
- * of drifting across free-text entries. Always ends with "Other" so a
- * genuinely new company can still be typed in.
+ * Builds a de-duplicated (case- and separator-insensitive, via normJobKey_),
+ * alphabetically sorted list of builder/company names already in use,
+ * pulled from the "Projects" sheet (Contractor, col A) and the "PO
+ * Database" sheet (Builder, col C). Powers the New Project form's company
+ * dropdown so names stay consistent instead of drifting across free-text
+ * entries. Always ends with "Other" so a genuinely new company can still
+ * be typed in. Projects-sheet spelling wins ties (same reasoning as
+ * getRecentJobs -- it's read first, and it's what getProjectFolderId
+ * matches against for Drive folder resolution).
  */
 function getBuilderNames() {
   try {
-    var seen  = {}; // lowercase-trimmed name -> canonical display value
+    var seen  = {}; // normJobKey_(name) -> canonical display value
     var names = [];
 
     function addName(raw) {
       var s = (raw || '').toString().trim();
       if (!s) return;
-      var key = s.toLowerCase();
+      var key = normJobKey_(s);
       if (!seen[key]) {
         seen[key] = true;
         names.push(s);
@@ -1648,6 +1672,132 @@ function addMaintenanceLog(payload) {
       });
     }
 
+    SpreadsheetApp.flush();
+    return { success: true };
+  } catch(e) { return { success: false, error: e.toString() }; }
+}
+
+// ── Material Inventory (log material in / take material out) ─────────────────
+// On-hand quantity is not stored -- it's computed by summing In/Out rows from
+// the log sheet on every read (same aggregate-on-read approach as
+// getJobCostSummary_). Material names are drawn from the existing Pricing
+// sheet catalog rather than a separate item list, per Aidan's call.
+
+var MATERIAL_LOG_HEADERS = ['Date', 'Material', 'Unit', 'Type', 'Qty', 'Job / Reference', 'Notes', 'Logged By'];
+
+/** Material-name/unit picklist for the log-in/out form, sourced from the Pricing sheet (no vendor prices exposed). */
+function getMaterialCatalog(payload) {
+  try {
+    var auth = authorizeCaller(payload, ['admin', 'purchaser', 'site_manager', 'runner']);
+    if (!auth.ok) return { items: [], error: auth.error, code: auth.code };
+
+    var ss    = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(PRICING_SHEET);
+    if (!sheet) return { items: [] };
+
+    var lastRow = sheet.getLastRow();
+    var lastCol = sheet.getLastColumn();
+    if (lastRow < 2 || lastCol < 2) return { items: [] };
+
+    var data = sheet.getRange(2, 1, lastRow - 1, 2).getValues(); // A=Description, B=U/M
+    var items = [];
+    data.forEach(function(row) {
+      var desc = (row[0] || '').toString().trim();
+      var um   = (row[1] || '').toString().trim();
+      if (!desc || !um) return; // blank rows and category headers (no U/M) are skipped
+      items.push({ description: desc, um: um });
+    });
+    return { items: items };
+  } catch(e) { return { items: [], error: e.toString() }; }
+}
+
+/** On-hand balances per material plus the most recent log activity. */
+function getMaterialInventory(payload) {
+  try {
+    var auth = authorizeCaller(payload, ['admin', 'purchaser', 'site_manager', 'runner']);
+    if (!auth.ok) return { materials: [], recentLog: [], error: auth.error, code: auth.code };
+
+    var sheet = ensureSheetWithHeaders_('Material Inventory Log', MATERIAL_LOG_HEADERS);
+    var data = sheet.getDataRange().getValues();
+    if (data.length < 2) return { materials: [], recentLog: [] };
+
+    var totals = {}; // material name -> { name, unit, qtyIn, qtyOut }
+    var log = [];
+    for (var i = 1; i < data.length; i++) {
+      var row  = data[i];
+      var name = (row[1] || '').toString().trim();
+      if (!name) continue;
+      var unit = (row[2] || '').toString().trim();
+      var type = (row[3] || '').toString().trim();
+      var qty  = parseFloat(row[4]) || 0;
+
+      if (!totals[name]) totals[name] = { name: name, unit: unit, qtyIn: 0, qtyOut: 0 };
+      if (!totals[name].unit && unit) totals[name].unit = unit;
+      if (type === 'In') totals[name].qtyIn += qty;
+      else if (type === 'Out') totals[name].qtyOut += qty;
+
+      log.push({
+        _rowIndex: i + 1,
+        date:      row[0] instanceof Date ? row[0].toISOString() : (row[0] || '').toString(),
+        material:  name,
+        unit:      unit,
+        type:      type,
+        qty:       qty,
+        jobRef:    (row[5] || '').toString(),
+        notes:     (row[6] || '').toString(),
+        loggedBy:  (row[7] || '').toString()
+      });
+    }
+
+    var materials = Object.keys(totals).sort().map(function(name) {
+      var t = totals[name];
+      return { name: t.name, unit: t.unit, qtyIn: t.qtyIn, qtyOut: t.qtyOut, onHand: t.qtyIn - t.qtyOut };
+    });
+
+    log.sort(function(a, b) { return b._rowIndex - a._rowIndex; });
+
+    return { materials: materials, recentLog: log.slice(0, 50) };
+  } catch(e) { return { materials: [], recentLog: [], error: e.toString() }; }
+}
+
+/** Appends one In or Out row to the material log. */
+function logMaterialTransaction(payload) {
+  try {
+    var auth = authorizeCaller(payload, ['admin', 'purchaser', 'site_manager', 'runner']);
+    if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
+
+    var material = (payload.material || '').toString().trim();
+    var unit     = (payload.unit || '').toString().trim();
+    var type     = (payload.type || '').toString().trim();
+    var qty      = parseFloat(payload.qty);
+    var jobRef   = (payload.jobRef || '').toString().trim();
+    var notes    = (payload.notes || '').toString().trim();
+
+    if (!material) return { success: false, error: 'Material name is required' };
+    if (type !== 'In' && type !== 'Out') return { success: false, error: 'Type must be In or Out' };
+    if (!qty || qty <= 0) return { success: false, error: 'Quantity must be greater than 0' };
+
+    var callerName = getRoleByEmail(auth.email).name || auth.email;
+
+    var sheet = ensureSheetWithHeaders_('Material Inventory Log', MATERIAL_LOG_HEADERS);
+    sheet.appendRow([new Date(), material, unit, type, qty, jobRef, notes, callerName]);
+    SpreadsheetApp.flush();
+    return { success: true, rowIndex: sheet.getLastRow() };
+  } catch(e) { return { success: false, error: e.toString() }; }
+}
+
+/** Removes a mistaken log entry. Admin-only -- deleting alters historical on-hand math. */
+function deleteMaterialLogEntry(payload) {
+  try {
+    var auth = authorizeCaller(payload, ['admin']);
+    if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
+
+    var rowIndex = payload.rowIndex;
+    if (!rowIndex) return { success: false, error: 'Missing rowIndex' };
+
+    var sheet = ensureSheetWithHeaders_('Material Inventory Log', MATERIAL_LOG_HEADERS);
+    if (rowIndex < 2 || rowIndex > sheet.getLastRow()) return { success: false, error: 'Log entry not found' };
+    sheet.deleteRow(rowIndex);
     SpreadsheetApp.flush();
     return { success: true };
   } catch(e) { return { success: false, error: e.toString() }; }
