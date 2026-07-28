@@ -131,6 +131,7 @@ function doPost(e) {
     else if (action === 'verifyGoogleLogin') result = verifyGoogleLogin(payload.credential);
     else if (action === 'getSheetData')      result = getSheetData(payload);
     else if (action === 'createPO')          result = createPO(payload);
+    else if (action === 'createSubPO')       result = createSubPO(payload);
     else if (action === 'updatePO')          result = updatePO(payload);
     else if (action === 'findPOByNumber')    result = findPOByNumber(payload.poNum);
     else if (action === 'savePhotoToDrive')  result = savePhotoToDrive(payload.base64Data, payload.mimeType, payload.filename, payload.builder, payload.jobRef, payload.docType, payload.poNum);
@@ -336,6 +337,90 @@ function createPO(data) {
       }
 
       return { success: true, poNumber: poNumber, rowIndex: nextRow };
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+/**
+ * Creates a "sub-PO" that shares an existing PO's base number with a letter
+ * suffix (e.g. 25-04-132 -> 25-04-132B -> 25-04-132C ...), for splitting one
+ * job/vendor order into several. Builder/Job are inherited from the parent
+ * row; everything else comes from `data` just like createPO.
+ * Returns { success, poNumber, rowIndex } or { success: false, error }.
+ */
+function createSubPO(data) {
+  try {
+    var auth = authorizeCaller(data, ['admin', 'purchaser', 'site_manager']);
+    if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
+
+    if (!data.parentPoNumber || !data.vendor) {
+      return { success: false, error: "Parent PO number and Vendor are required." };
+    }
+
+    var baseMatch = data.parentPoNumber.toString().trim().match(/^(\d{2}-\d{2}-\d{3,4})([A-Z])?$/);
+    if (!baseMatch) return { success: false, error: "Invalid parent PO number." };
+    var basePoNumber = baseMatch[1];
+
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(10000)) {
+      return { success: false, error: "Server is busy - try again in a moment." };
+    }
+    try {
+      var sheet   = getSheet();
+      var lastRow = sheet.getLastRow();
+      var numRows = lastRow - 1;
+      var poCol   = numRows > 0 ? sheet.getRange(2, 1, numRows, 1).getValues() : [];
+
+      var parentRow    = null;
+      var maxLetterCode = 64; // 'A' - 1, so first sub-PO is 'B'
+      for (var i = 0; i < poCol.length; i++) {
+        var v = (poCol[i][0] || "").toString().trim();
+        var m = v.match(/^(\d{2}-\d{2}-\d{3,4})([A-Z])?$/);
+        if (!m || m[1] !== basePoNumber) continue;
+        if (!m[2]) {
+          parentRow = i + 2;
+        } else if (m[2].charCodeAt(0) > maxLetterCode) {
+          maxLetterCode = m[2].charCodeAt(0);
+        }
+      }
+      if (!parentRow) {
+        return { success: false, error: "Original PO " + basePoNumber + " not found." };
+      }
+
+      var nextLetter  = String.fromCharCode(maxLetterCode + 1);
+      var subPoNumber = basePoNumber + nextLetter;
+
+      var parentVals = sheet.getRange(parentRow, 1, 1, 4).getValues()[0];
+      var builder    = parentVals[2];
+      var jobRef     = parentVals[3];
+
+      var nextRow = lastRow + 1;
+      var now     = new Date();
+      var tz      = Session.getScriptTimeZone();
+      var today   = Utilities.formatDate(now, tz, "MM/dd/yyyy");
+      var status  = data.status || "Pending Pickup";
+
+      sheet.getRange(nextRow, 1).setValue(subPoNumber);
+      sheet.getRange(nextRow, 2).setValue(today);
+      sheet.getRange(nextRow, 3).setValue(builder || "");
+      sheet.getRange(nextRow, 4).setValue(jobRef  || "");
+      sheet.getRange(nextRow, 5).setValue(data.vendor        || "");
+      sheet.getRange(nextRow, 6).setValue(data.vendorInvoice || "");
+      sheet.getRange(nextRow, 7).setValue(status);
+      sheet.getRange(nextRow, 8).setValue(data.invoiceTotal  || "");
+      sheet.getRange(nextRow, 12).setValue(data.notes           || "");
+      sheet.getRange(nextRow, 13).setValue(data.additionalNotes || "");
+      sheet.getRange(nextRow, 14).setValue(getFirstName(data.orderedBy));
+
+      if (status === "Pending Pickup") {
+        sheet.getRange(nextRow, 9).setValue(today);
+      }
+
+      return { success: true, poNumber: subPoNumber, rowIndex: nextRow };
     } finally {
       lock.releaseLock();
     }
@@ -1006,7 +1091,7 @@ function getSheet() {
 }
 
 function isValidPONumber(s) {
-  return /^\d{2}-\d{2}-\d{3,4}$/.test(s);
+  return /^\d{2}-\d{2}-\d{3,4}[A-Z]?$/.test(s);
 }
 
 function formatDateCell(cell, tz) {

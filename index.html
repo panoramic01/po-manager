@@ -1608,6 +1608,7 @@
   <div class="cleanup-header">
     <h2 id="po-detail-title">PO</h2>
     <div style="display:flex;gap:8px;flex-shrink:0">
+      <button class="po-detail-edit-btn" id="po-detail-subpo-btn" onclick="openSubPOForm(G.detailPO)" title="Create Sub-PO">+B</button>
       <button class="po-detail-edit-btn" id="po-detail-edit-btn" onclick="editFromPODetail()" title="Edit PO">&#9998;</button>
       <button class="cleanup-close" onclick="closePODetail()">Close</button>
     </div>
@@ -3335,6 +3336,8 @@ function showPODetail(poNum) {
   document.getElementById('po-detail-title').textContent = po.poNum;
   var editBtn = document.getElementById('po-detail-edit-btn');
   if (editBtn) editBtn.style.display = G.perms.canEdit ? '' : 'none';
+  var subpoBtn = document.getElementById('po-detail-subpo-btn');
+  if (subpoBtn) subpoBtn.style.display = G.perms.canEdit ? '' : 'none';
 
   var amtRow = (G.perms.canViewInvoice && po.invoiceTotal && parseFloat(po.invoiceTotal) > 0)
     ? poDetailRow('Invoice Total', '$' + fmtCurrency(po.invoiceTotal)) : '';
@@ -3367,6 +3370,80 @@ function editFromPODetail() {
   openEdit(G.detailPO);
 }
 
+// ── Create Sub-PO ─────────────────────────────────────────────────────────────
+// Splits an existing PO into a lettered sub-order (25-04-132 -> 25-04-132B,
+// ...C, etc.), inheriting Builder/Job from the parent and reusing the same
+// field set as the main Create PO form for everything else.
+function openSubPOForm(poNum) {
+  var po = G.pos.find(function(p){ return p.poNum === poNum; });
+  if (!po) return;
+  G.detailMode = 'subpo';
+
+  var vendorOpts = (G.config.vendorOptions || []).map(function(v){
+    return '<option value="'+esc(v)+'">'+esc(v)+'</option>';
+  }).join('');
+  var statusOpts = (G.config.statusOptions || []).map(function(s){
+    return '<option value="'+esc(s)+'"'+(s === 'Pending Pickup' ? ' selected' : '')+'>'+esc(s)+'</option>';
+  }).join('');
+
+  document.getElementById('po-detail-title').textContent = 'Sub-PO of ' + poNum;
+  document.getElementById('po-detail-overlay').style.display = 'flex';
+  var editBtn = document.getElementById('po-detail-edit-btn');
+  if (editBtn) editBtn.style.display = 'none';
+  var subpoBtn = document.getElementById('po-detail-subpo-btn');
+  if (subpoBtn) subpoBtn.style.display = 'none';
+
+  document.getElementById('po-detail-body').innerHTML =
+    '<div style="background:#fff;border-radius:12px;padding:2px 16px;margin-bottom:12px">' +
+      poDetailRow('Builder', po.builder) +
+      poDetailRow('Job Reference', po.jobRef) +
+    '</div>' +
+    fg('Vendor *',
+      '<select class="form-control" id="sp-vendor" onchange="toggleOtherVendor(\'sp-vendor\',\'sp-vendor-other\')">' +
+        '<option value="">— Select Vendor —</option>' + vendorOpts +
+      '</select>' +
+      '<input type="text" class="form-control" id="sp-vendor-other" placeholder="Type vendor name…" style="margin-top:10px;display:none">') +
+    fg('Vendor Invoice #','<input type="text" class="form-control" id="sp-invoice" placeholder="Optional">') +
+    fg('Status',
+      '<select class="form-control" id="sp-status" onchange="toggleOtherVendor(\'sp-status\',\'sp-status-other\')">' + statusOpts + '</select>' +
+      '<input type="text" class="form-control" id="sp-status-other" placeholder="Enter custom status…" style="margin-top:10px;display:none">') +
+    fg('Invoice Total ($)','<input type="number" class="form-control" id="sp-total" placeholder="0.00" step="0.01" min="0">') +
+    fg('Notes','<textarea class="form-control" id="sp-notes" placeholder="Details about this order…"></textarea>') +
+    '<div class="modal-actions">' +
+      '<button class="btn btn-primary" style="flex:1" id="sp-create-btn" onclick="submitCreateSubPO(\''+esc(poNum)+'\')">Create Sub-PO</button>' +
+      '<button class="btn btn-secondary" style="flex:0 0 auto" onclick="showPODetail(\''+esc(poNum)+'\')">Cancel</button>' +
+    '</div>';
+}
+
+function submitCreateSubPO(parentPoNum) {
+  var vendor = getVendorValue('sp-vendor', 'sp-vendor-other');
+  if (!vendor) { showToast('Vendor is required'); return; }
+
+  setBtnState('sp-create-btn', 'Creating…', true);
+
+  gasCall('createSubPO', {
+    parentPoNumber: parentPoNum,
+    vendor:         vendor,
+    vendorInvoice:  trim('sp-invoice'),
+    status:         getVendorValue('sp-status', 'sp-status-other'),
+    invoiceTotal:   val('sp-total'),
+    notes:          trim('sp-notes'),
+    orderedBy:      G.config.userName || G.userEmail
+  }, function(res) {
+    setBtnState('sp-create-btn', 'Create Sub-PO', false);
+    if (res.success) {
+      loadData();
+      showToast('Created ' + res.poNumber);
+      closePODetail();
+    } else {
+      showToast('Error:' + res.error);
+    }
+  }, function() {
+    setBtnState('sp-create-btn', 'Create Sub-PO', false);
+    showToast('Error:Error creating sub-PO');
+  });
+}
+
 // ── Edit Modal ────────────────────────────────────────────────────────────────
 function openEdit(poNum) {
   var po = G.pos.find(function(p){ return p.poNum === poNum; });
@@ -3391,6 +3468,8 @@ function openEdit(poNum) {
   document.getElementById('po-detail-overlay').style.display = 'flex';
   var poDetailEditBtn = document.getElementById('po-detail-edit-btn');
   if (poDetailEditBtn) poDetailEditBtn.style.display = 'none';
+  var poDetailSubpoBtn = document.getElementById('po-detail-subpo-btn');
+  if (poDetailSubpoBtn) poDetailSubpoBtn.style.display = 'none';
 
   var issuedField =
     '<div class="form-group">' +
