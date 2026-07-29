@@ -18,7 +18,7 @@ var QBO_SANDBOX_BASE_URL = 'https://sandbox-quickbooks.api.intuit.com';
 
 /** Owner-only gate (same convention as the push-notifications admin card): admin role AND owner email. */
 function authorizeQuickBooksOwner_(payload) {
-  var auth = authorizeQuickBooksOwner_(payload);
+  var auth = authorizeCaller(payload, ['admin']);
   if (!auth.ok) return auth;
   if (!isOwnerEmail(auth.email)) {
     return { ok: false, code: 'FORBIDDEN', error: 'You do not have permission to do this.' };
