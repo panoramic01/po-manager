@@ -108,7 +108,11 @@ var VENDOR_OPTIONS = [
 
 // ─── Web App Entry Point ─────────────────────────────────────────────────────
 
-function doGet() {
+function doGet(e) {
+  var params = (e && e.parameter) || {};
+  if (params.qboCallback) {
+    return quickbooksAuthCallback_(e);
+  }
   return HtmlService.createHtmlOutputFromFile("index")
     .setTitle("Panoramic Ops")
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
@@ -191,6 +195,11 @@ function doPost(e) {
     else if (action === 'getMaterialInventory')        result = getMaterialInventory(payload);
     else if (action === 'logMaterialTransaction')      result = logMaterialTransaction(payload);
     else if (action === 'deleteMaterialLogEntry')      result = deleteMaterialLogEntry(payload);
+    else if (action === 'getQuickBooksAuthUrl')        result = getQuickBooksAuthorizationUrl(payload);
+    else if (action === 'getQuickBooksStatus')         result = getQuickBooksStatus(payload);
+    else if (action === 'disconnectQuickBooks')        result = disconnectQuickBooks(payload);
+    else if (action === 'testQuickBooksConnection')    result = testQuickBooksConnection(payload);
+    else if (action === 'testQuickBooksVendors')       result = testQuickBooksVendors(payload);
     else                                        result = { error: 'Unknown action: ' + action };
 
     if (result && result.success === false) {
