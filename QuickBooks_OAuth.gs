@@ -54,7 +54,12 @@ function getQuickBooksAuthorizationUrl(payload) {
   return { success: true, url: getQuickBooksService_().getAuthorizationUrl() };
 }
 
-/** Invoked directly by doGet() when Intuit redirects back with ?qboCallback=1. */
+/**
+ * Invoked directly by the Apps Script platform's built-in OAuth2 callback
+ * endpoint (https://script.google.com/macros/d/{scriptId}/usercallback) -
+ * this bypasses doGet() entirely, which is the OAuth2 library's normal,
+ * documented usage. Do not try to route this through doGet().
+ */
 function quickbooksAuthCallback_(e) {
   var service = getQuickBooksService_();
   var isAuthorized = service.handleCallback(e);

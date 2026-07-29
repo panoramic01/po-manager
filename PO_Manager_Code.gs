@@ -108,11 +108,7 @@ var VENDOR_OPTIONS = [
 
 // ─── Web App Entry Point ─────────────────────────────────────────────────────
 
-function doGet(e) {
-  var params = (e && e.parameter) || {};
-  if (params.qboCallback) {
-    return quickbooksAuthCallback_(e);
-  }
+function doGet() {
   return HtmlService.createHtmlOutputFromFile("index")
     .setTitle("Panoramic Ops")
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
