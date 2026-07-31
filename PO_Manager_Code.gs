@@ -1182,8 +1182,8 @@ function getPurchasingRootFolder() {
  * Resolves the base folder an upload's typed subfolders should live under:
  * the matching job's own Drive folder (Projects sheet lookup) if one
  * exists, else the global "Purchasing" folder. isProjectFolder tells the
- * caller whether to skip the ANYONE_WITH_LINK sharing fixup (project
- * folders live on a Shared Drive, governed by drive membership instead).
+ * caller whether a Drive failure here means a per-job misconfiguration
+ * (surfaced to the user) versus a generic script-owned-folder error.
  *
  * If the Builder+Job pair IS in the Projects sheet but its Drive ID cell
  * is blank, unparseable, or points at an inaccessible folder, this is
@@ -1313,20 +1313,18 @@ function savePhotoToDrive(base64Data, mimeType, filename, builder, jobRef, docTy
       throw driveErr;
     }
 
-    if (!base.isProjectFolder) {
-      // New files inherit ANYONE_WITH_LINK from the folder (set once via
-      // oneTimeSetFolderSharing) so no extra Drive permissions API call is
-      // needed in the common case. Only fix up sharing if inheritance did
-      // not actually apply, instead of paying for setSharing() on every
-      // upload. Project folders live on a shared drive, where access is
-      // governed by drive membership -- no setSharing() call needed there.
-      try {
-        if (file.getSharingAccess() !== DriveApp.Access.ANYONE_WITH_LINK) {
-          file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-        }
-      } catch (sharingErr) {
+    // The app's own <img> thumbnail requests (drive.google.com/thumbnail)
+    // are anonymous -- login here is email/password, not Google OAuth, so
+    // the browser never carries a Google session. Shared Drive membership
+    // does nothing for that anonymous request; only ANYONE_WITH_LINK
+    // sharing on the file itself makes the thumbnail load. This must run
+    // for project-folder uploads too, not just the Purchasing fallback.
+    try {
+      if (file.getSharingAccess() !== DriveApp.Access.ANYONE_WITH_LINK) {
         file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
       }
+    } catch (sharingErr) {
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
     }
 
     return { success: true, url: file.getUrl() };
