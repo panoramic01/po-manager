@@ -3409,11 +3409,11 @@ function typeClass(status) {
 }
 
 // ── PO Detail View ────────────────────────────────────────────────────────────
-function poDetailRow(label, value) {
-  if (!value) return '';
+function poDetailRow(label, value, alwaysShow) {
+  if (!value && !alwaysShow) return '';
   return '<div class="po-detail-row">' +
     '<div class="po-detail-label">' + esc(label) + '</div>' +
-    '<div class="po-detail-value">' + esc(value) + '</div>' +
+    '<div class="po-detail-value">' + (value ? esc(value) : '<span style="color:#aaa">None yet</span>') + '</div>' +
   '</div>';
 }
 
@@ -3442,8 +3442,8 @@ function showPODetail(poNum) {
       poDetailRow('Vendor Invoice #', po.vendorInvoice) +
       amtRow +
       poDetailRow('Delivery / Pickup Date', po.deliveryDate) +
-      poDetailRow('Notes', po.notes) +
-      poDetailRow('Additional Notes', po.additionalNotes) +
+      poDetailRow('Notes', po.notes, true) +
+      poDetailRow('Additional Notes', po.additionalNotes, true) +
     '</div>' +
     buildPhotoSection(po.receivedNote);
 
