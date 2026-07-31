@@ -179,6 +179,11 @@ function doPost(e) {
     else if (action === 'emailPayroll')                result = emailPayroll(payload);
     else if (action === 'approveTimesheet')            result = approveTimesheet(payload);
     else if (action === 'unapproveTimesheet')          result = unapproveTimesheet(payload);
+    else if (action === 'submitTimeCorrection')         result = submitTimeCorrection(payload);
+    else if (action === 'getMyTimeCorrections')         result = getMyTimeCorrections(payload);
+    else if (action === 'getTimeCorrectionQueue')       result = getTimeCorrectionQueue(payload);
+    else if (action === 'approveTimeCorrection')        result = approveTimeCorrection(payload);
+    else if (action === 'denyTimeCorrection')           result = denyTimeCorrection(payload);
     else if (action === 'getInventory')                result = getInventory(payload);
     else if (action === 'addAsset')                    result = addAsset(payload);
     else if (action === 'updateAsset')                 result = updateAsset(payload);
@@ -3663,6 +3668,254 @@ function unapproveTimesheet(payload) {
           }
         }
       }
+      return { success: true };
+    } finally {
+      lock.releaseLock();
+    }
+  } catch(e) { return { error: e.toString() }; }
+}
+
+// ── Time Corrections ──────────────────────────────────────────────────────────
+// Sheet: "Time Corrections" -- lets an employee ask for a past clock in/out to
+// be fixed (clocked in late, forgot to clock out, forgot to punch at all) and
+// an admin/HR reviewer to approve (writes the fix into Time Tracking) or deny it.
+var TIME_CORRECTIONS_SHEET = 'Time Corrections';
+var TIME_CORRECTIONS_HEADERS = [
+  'Request ID', 'Submitted At', 'Employee Name', 'Employee Email', 'Shift Date',
+  'Original Clock In', 'Original Clock Out', 'Requested Clock In', 'Requested Clock Out',
+  'Reason', 'Status', 'Reviewed By', 'Reviewed At', 'Review Note'
+];
+
+function getTimeCorrectionsSheet_() {
+  return ensureSheetWithHeaders_(TIME_CORRECTIONS_SHEET, TIME_CORRECTIONS_HEADERS);
+}
+
+/** Combines a 'YYYY-MM-DD' date string and an 'HH:MM' (24h) time string into one Date. */
+function combineDateTime_(dateStr, timeStr) {
+  var dp = dateStr.split('-');
+  var tp = timeStr.split(':');
+  return new Date(parseInt(dp[0], 10), parseInt(dp[1], 10) - 1, parseInt(dp[2], 10), parseInt(tp[0], 10), parseInt(tp[1], 10));
+}
+
+function formatCorrectionRow_(row, tz) {
+  return {
+    id:                (row[0] || '').toString(),
+    submittedAt:       row[1] ? Utilities.formatDate(new Date(row[1]), tz, 'MM/dd/yyyy h:mm a') : '',
+    employeeName:      (row[2] || '').toString(),
+    employeeEmail:     (row[3] || '').toString(),
+    date:              (row[4] || '').toString(),
+    originalClockIn:   (row[5] || '').toString(),
+    originalClockOut:  (row[6] || '').toString(),
+    requestedClockIn:  (row[7] || '').toString(),
+    requestedClockOut: (row[8] || '').toString(),
+    reason:            (row[9]  || '').toString(),
+    status:            (row[10] || 'pending').toString(),
+    reviewedBy:        (row[11] || '').toString(),
+    reviewedAt:        row[12] ? Utilities.formatDate(new Date(row[12]), tz, 'MM/dd/yyyy h:mm a') : '',
+    reviewNote:        (row[13] || '').toString()
+  };
+}
+
+/** Finds a Time Corrections row by its Request ID. Returns { rowNum, row } or null. */
+function findCorrectionRow_(sheet, requestId) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return null;
+  var data = sheet.getRange(2, 1, lastRow - 1, TIME_CORRECTIONS_HEADERS.length).getValues();
+  for (var i = 0; i < data.length; i++) {
+    if ((data[i][0] || '').toString() === requestId) return { rowNum: i + 2, row: data[i] };
+  }
+  return null;
+}
+
+/** Finds the Time Tracking row for email+date (midnight-normalized). Returns 1-based row number or -1. */
+function findTimeTrackingRowForDate_(email, targetMidnight) {
+  var sh = getTimeSheet_();
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) return -1;
+  var data = sh.getRange(2, 1, lastRow - 1, 6).getValues();
+  for (var i = 0; i < data.length; i++) {
+    var rowEmail = (data[i][1] || '').toString().toLowerCase().trim();
+    if (rowEmail !== email) continue;
+    var rowDate = data[i][2] ? new Date(data[i][2]) : null;
+    if (!rowDate) continue;
+    var rd = new Date(rowDate.getFullYear(), rowDate.getMonth(), rowDate.getDate());
+    if (rd.getTime() === targetMidnight.getTime()) return i + 2;
+  }
+  return -1;
+}
+
+/** Employee-submitted request to fix a past clock in/out. Requires at least one corrected time and a reason. */
+function submitTimeCorrection(payload) {
+  try {
+    var auth = requireVerifiedEmail_(payload);
+    if (auth.error) return auth;
+    var email    = auth.email;
+    var name     = (payload.name || email).toString();
+    var dateStr  = (payload.date || '').toString().trim();   // 'YYYY-MM-DD' from <input type=date>
+    var clockIn  = (payload.clockIn  || '').toString().trim(); // 'HH:MM' 24h from <input type=time>
+    var clockOut = (payload.clockOut || '').toString().trim();
+    var reason   = (payload.reason || '').toString().trim();
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return { error: 'Please choose a valid shift date.' };
+    if (!clockIn && !clockOut) return { error: 'Enter a corrected clock in and/or clock out time.' };
+    if (!reason) return { error: 'Please explain why this correction is needed.' };
+
+    var dp = dateStr.split('-');
+    var targetMidnight = new Date(parseInt(dp[0], 10), parseInt(dp[1], 10) - 1, parseInt(dp[2], 10));
+    var todayMidnight = new Date();
+    todayMidnight = new Date(todayMidnight.getFullYear(), todayMidnight.getMonth(), todayMidnight.getDate());
+    if (targetMidnight.getTime() > todayMidnight.getTime()) return { error: 'Shift date cannot be in the future.' };
+
+    var tz = Session.getScriptTimeZone();
+
+    // Best-effort snapshot of what's currently on record, purely for the reviewer's context.
+    var originalIn = '', originalOut = '';
+    var matchRow = findTimeTrackingRowForDate_(email, targetMidnight);
+    if (matchRow !== -1) {
+      var tsSheet = getTimeSheet_();
+      var existing = tsSheet.getRange(matchRow, 4, 1, 2).getValues()[0];
+      originalIn  = existing[0] ? Utilities.formatDate(new Date(existing[0]), tz, 'h:mm a') : '';
+      originalOut = existing[1] ? Utilities.formatDate(new Date(existing[1]), tz, 'h:mm a') : '';
+    }
+
+    var sheet = getTimeCorrectionsSheet_();
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(10000)) return { error: 'Server is busy - try again in a moment.' };
+    try {
+      sheet.appendRow([
+        Utilities.getUuid(), new Date(), name, email, dateStr,
+        originalIn, originalOut, clockIn, clockOut, reason,
+        'pending', '', '', ''
+      ]);
+      return { success: true };
+    } finally {
+      lock.releaseLock();
+    }
+  } catch(e) { return { error: e.toString() }; }
+}
+
+/** The caller's own correction requests (any status), newest submitted first. */
+function getMyTimeCorrections(payload) {
+  try {
+    var auth = requireVerifiedEmail_(payload);
+    if (auth.error) return auth;
+    var email = auth.email;
+    var sheet = getTimeCorrectionsSheet_();
+    var lastRow = sheet.getLastRow();
+    var requests = [];
+    if (lastRow >= 2) {
+      var data = sheet.getRange(2, 1, lastRow - 1, TIME_CORRECTIONS_HEADERS.length).getValues();
+      var tz = Session.getScriptTimeZone();
+      for (var i = 0; i < data.length; i++) {
+        if ((data[i][3] || '').toString().toLowerCase().trim() !== email) continue;
+        requests.push(formatCorrectionRow_(data[i], tz));
+      }
+    }
+    requests.reverse();
+    return { requests: requests };
+  } catch(e) { return { error: e.toString() }; }
+}
+
+/** All pending correction requests across employees, for the admin/HR review queue. */
+function getTimeCorrectionQueue(payload) {
+  try {
+    var auth = authorizeCaller(payload, ['admin', 'human_resources']);
+    if (!auth.ok) return { error: auth.error, code: auth.code };
+    var sheet = getTimeCorrectionsSheet_();
+    var lastRow = sheet.getLastRow();
+    var queue = [];
+    if (lastRow >= 2) {
+      var data = sheet.getRange(2, 1, lastRow - 1, TIME_CORRECTIONS_HEADERS.length).getValues();
+      var tz = Session.getScriptTimeZone();
+      for (var i = 0; i < data.length; i++) {
+        if ((data[i][10] || '').toString() !== 'pending') continue;
+        queue.push(formatCorrectionRow_(data[i], tz));
+      }
+    }
+    return { queue: queue };
+  } catch(e) { return { error: e.toString() }; }
+}
+
+/**
+ * Approves a correction request: writes the requested time(s) into the matching
+ * Time Tracking row (only the field(s) actually requested), recomputes Hours if
+ * both Clock In and Clock Out are now present, or appends a brand-new row if no
+ * shift existed for that date at all (e.g. the employee forgot to punch in).
+ */
+function approveTimeCorrection(payload) {
+  try {
+    var auth = authorizeCaller(payload, ['admin', 'human_resources']);
+    if (!auth.ok) return { error: auth.error, code: auth.code };
+    var requestId = (payload.requestId || '').toString();
+    if (!requestId) return { error: 'Missing requestId' };
+
+    var sheet = getTimeCorrectionsSheet_();
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(10000)) return { error: 'Server is busy - try again in a moment.' };
+    try {
+      var found = findCorrectionRow_(sheet, requestId);
+      if (!found) return { error: 'Request not found' };
+      if ((found.row[10] || '').toString() !== 'pending') return { error: 'This request has already been reviewed.' };
+
+      var email   = (found.row[3] || '').toString().toLowerCase().trim();
+      var name    = (found.row[2] || '').toString();
+      var dateStr = (found.row[4] || '').toString();
+      var reqIn   = (found.row[7] || '').toString();
+      var reqOut  = (found.row[8] || '').toString();
+
+      var dp = dateStr.split('-');
+      var targetMidnight = new Date(parseInt(dp[0], 10), parseInt(dp[1], 10) - 1, parseInt(dp[2], 10));
+      var tz = Session.getScriptTimeZone();
+      var tsSheet = getTimeSheet_();
+      var matchRow = findTimeTrackingRowForDate_(email, targetMidnight);
+
+      var newIn  = reqIn  ? combineDateTime_(dateStr, reqIn)  : null;
+      var newOut = reqOut ? combineDateTime_(dateStr, reqOut) : null;
+
+      if (matchRow !== -1) {
+        if (newIn)  tsSheet.getRange(matchRow, 4).setValue(newIn);
+        if (newOut) tsSheet.getRange(matchRow, 5).setValue(newOut);
+        var finalInVal  = tsSheet.getRange(matchRow, 4).getValue();
+        var finalOutVal = tsSheet.getRange(matchRow, 5).getValue();
+        if (finalInVal && finalOutVal) {
+          var hrs = Math.round(Math.max(0, (new Date(finalOutVal) - new Date(finalInVal)) / 3600000) * 100) / 100;
+          tsSheet.getRange(matchRow, 6).setValue(hrs);
+        }
+      } else {
+        var hours = (newIn && newOut) ? Math.round(Math.max(0, (newOut - newIn) / 3600000) * 100) / 100 : '';
+        tsSheet.appendRow([name, email, Utilities.formatDate(targetMidnight, tz, 'MM/dd/yyyy'), newIn || '', newOut || '', hours, '', '']);
+      }
+
+      sheet.getRange(found.rowNum, 11).setValue('approved');
+      sheet.getRange(found.rowNum, 12).setValue(auth.email);
+      sheet.getRange(found.rowNum, 13).setValue(new Date());
+      return { success: true };
+    } finally {
+      lock.releaseLock();
+    }
+  } catch(e) { return { error: e.toString() }; }
+}
+
+/** Denies a correction request, leaving Time Tracking untouched. Optional note is shown to the employee. */
+function denyTimeCorrection(payload) {
+  try {
+    var auth = authorizeCaller(payload, ['admin', 'human_resources']);
+    if (!auth.ok) return { error: auth.error, code: auth.code };
+    var requestId = (payload.requestId || '').toString();
+    if (!requestId) return { error: 'Missing requestId' };
+    var note = (payload.note || '').toString().trim();
+
+    var sheet = getTimeCorrectionsSheet_();
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(10000)) return { error: 'Server is busy - try again in a moment.' };
+    try {
+      var found = findCorrectionRow_(sheet, requestId);
+      if (!found) return { error: 'Request not found' };
+      if ((found.row[10] || '').toString() !== 'pending') return { error: 'This request has already been reviewed.' };
+      sheet.getRange(found.rowNum, 11).setValue('denied');
+      sheet.getRange(found.rowNum, 12).setValue(auth.email);
+      sheet.getRange(found.rowNum, 13).setValue(new Date());
+      sheet.getRange(found.rowNum, 14).setValue(note);
       return { success: true };
     } finally {
       lock.releaseLock();

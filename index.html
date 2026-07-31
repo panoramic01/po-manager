@@ -1303,6 +1303,22 @@
           <div id="tc-team-list"></div>
         </div>
 
+        <!-- Admin/HR: pending correction requests (hidden for non-admins) -->
+        <div id="tc-correction-admin-section" style="display:none;margin-top:16px">
+          <div style="font-size:14px;font-weight:700;color:#1F3971;margin-bottom:10px">Pending Correction Requests</div>
+          <div id="tc-correction-queue-loading" style="text-align:center;padding:20px;color:#888;font-size:13px">Loading...</div>
+          <div id="tc-correction-queue-list"></div>
+        </div>
+
+        <!-- Time correction requests -->
+        <div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.07);margin-top:16px">
+          <div style="font-size:14px;font-weight:700;color:#1F3971;margin-bottom:4px">Time Correction Requests</div>
+          <div style="font-size:12px;color:#888;margin-bottom:12px">Clocked in late, clocked out late, or forgot to punch? Request a fix and your manager will review it.</div>
+          <button onclick="openTimeCorrectionForm()" style="width:100%;background:none;border:1.5px solid #1F3971;color:#1F3971;border-radius:9px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:12px">Request a Correction</button>
+          <div id="tc-correction-history-loading" style="text-align:center;padding:12px;color:#888;font-size:13px">Loading...</div>
+          <div id="tc-correction-history-list"></div>
+        </div>
+
       </div>
     </div>
 
@@ -1363,6 +1379,7 @@
             <span style="font-size:13px;color:#888;font-weight:500">hrs</span>
           </div>
           <div id="acct-my-days" style="border-top:1px solid #f0f0f0;padding-top:8px"></div>
+          <button onclick="openTimeCorrectionForm()" style="width:100%;margin-top:12px;background:none;border:1.5px solid #1F3971;color:#1F3971;border-radius:9px;padding:10px;font-size:13px;font-weight:700;cursor:pointer">Request a Correction</button>
         </div>
       </div>
     </div>
@@ -8239,6 +8256,9 @@ var _tcClockInTime = null;
 
 function loadTimeClock() {
   document.getElementById('tc-admin-section').style.display = canManageHR(G.role) ? 'block' : 'none';
+  loadTimeCorrectionHistory();
+  if (canManageHR(G.role)) { loadTimeCorrectionQueue(); }
+  else { document.getElementById('tc-correction-admin-section').style.display = 'none'; }
   // Get status + timesheet in parallel
   gasCall('getClockStatus', { email: G.userEmail }, function(s) {
     if (s.error) return;
@@ -8283,6 +8303,176 @@ function loadTimeClock() {
       document.getElementById('tc-team-list').innerHTML = '<p style="font-size:13px;color:#aaa">No hours recorded yet this period.</p>';
     }
   }, function(){});
+}
+
+// ── Time Corrections ─────────────────────────────────────────────────────────
+function fmtISODate_(iso) {
+  var p = (iso || '').split('-');
+  return p.length === 3 ? (p[1] + '/' + p[2] + '/' + p[0]) : (iso || '');
+}
+
+function openTimeCorrectionForm() {
+  var todayStr = new Date().toISOString().slice(0, 10);
+  document.getElementById('edit-modal-title').textContent = 'Request a Time Correction';
+  document.getElementById('edit-modal-body').innerHTML =
+    '<div style="margin-bottom:12px">' +
+      '<label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Shift Date</label>' +
+      '<input type="date" id="tcr-date" max="' + todayStr + '" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:10px 12px;font-size:14px;outline:none">' +
+    '</div>' +
+    '<div style="display:flex;gap:10px;margin-bottom:6px">' +
+      '<div style="flex:1">' +
+        '<label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Corrected Clock In</label>' +
+        '<input type="time" id="tcr-clockin" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:10px 12px;font-size:14px;outline:none">' +
+      '</div>' +
+      '<div style="flex:1">' +
+        '<label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Corrected Clock Out</label>' +
+        '<input type="time" id="tcr-clockout" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:10px 12px;font-size:14px;outline:none">' +
+      '</div>' +
+    '</div>' +
+    '<div style="font-size:11px;color:#888;margin-bottom:12px">Leave a time blank if it was already correct.</div>' +
+    '<div style="margin-bottom:12px">' +
+      '<label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Reason</label>' +
+      '<textarea id="tcr-reason" rows="3" placeholder="e.g. forgot to clock out at lunch, traffic made me late..." style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:10px 12px;font-size:14px;outline:none;resize:none;font-family:inherit"></textarea>' +
+    '</div>' +
+    '<div id="tcr-err" style="display:none;color:#c62828;font-size:12px;margin-bottom:8px"></div>' +
+    '<div class="modal-actions">' +
+      '<button class="btn btn-secondary" style="width:100%" onclick="closeEdit()">Cancel</button>' +
+      '<button class="btn btn-primary" id="tcr-submit-btn" style="width:100%" onclick="submitTimeCorrectionRequest()">Submit</button>' +
+    '</div>';
+  document.getElementById('edit-modal').classList.add('open');
+}
+
+function submitTimeCorrectionRequest() {
+  var date   = val('tcr-date');
+  var cin    = val('tcr-clockin');
+  var cout   = val('tcr-clockout');
+  var reason = trim('tcr-reason');
+  var errEl  = document.getElementById('tcr-err');
+  var btn    = document.getElementById('tcr-submit-btn');
+  errEl.style.display = 'none';
+
+  if (!date) { errEl.textContent = 'Please choose the shift date.'; errEl.style.display = 'block'; return; }
+  if (!cin && !cout) { errEl.textContent = 'Enter a corrected clock in and/or clock out time.'; errEl.style.display = 'block'; return; }
+  if (!reason) { errEl.textContent = 'Please explain why this correction is needed.'; errEl.style.display = 'block'; return; }
+
+  btn.disabled = true; btn.textContent = 'Submitting...';
+  gasCall('submitTimeCorrection', {
+    date: date, clockIn: cin, clockOut: cout, reason: reason,
+    name: G.config.userName || G.userEmail
+  }, function(r) {
+    btn.disabled = false; btn.textContent = 'Submit';
+    if (r && r.success) {
+      showToast('Correction request submitted');
+      closeEdit();
+      loadTimeCorrectionHistory();
+    } else {
+      errEl.textContent = (r && r.error) ? r.error : 'Submission failed. Try again.';
+      errEl.style.display = 'block';
+    }
+  }, function() {
+    btn.disabled = false; btn.textContent = 'Submit';
+    errEl.textContent = 'Could not connect. Try again.';
+    errEl.style.display = 'block';
+  });
+}
+
+function loadTimeCorrectionHistory() {
+  gasCall('getMyTimeCorrections', {}, function(d) {
+    var loadEl = document.getElementById('tc-correction-history-loading');
+    var listEl = document.getElementById('tc-correction-history-list');
+    if (loadEl) loadEl.style.display = 'none';
+    var requests = (d && d.requests) || [];
+    if (!listEl) return;
+    if (!requests.length) {
+      listEl.innerHTML = '<p style="color:#888;font-size:13px;text-align:center;padding:10px 0">No requests yet.</p>';
+      return;
+    }
+    listEl.innerHTML = requests.map(function(r) {
+      var badge = r.status === 'approved'
+        ? '<span style="background:#e8f5e9;color:#2e7d32;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px">Approved</span>'
+        : r.status === 'denied'
+        ? '<span style="background:#fce4ec;color:#c62828;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px">Denied</span>'
+        : '<span style="background:#fff8e1;color:#e65100;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px">Pending</span>';
+      var changeParts = [];
+      if (r.requestedClockIn)  changeParts.push('In ' + esc(r.requestedClockIn));
+      if (r.requestedClockOut) changeParts.push('Out ' + esc(r.requestedClockOut));
+      var note = r.status === 'denied' && r.reviewNote ? '<div style="font-size:12px;color:#c62828;margin-top:3px">Note: ' + esc(r.reviewNote) + '</div>' : '';
+      return '<div style="background:#f7f8fc;border-radius:10px;padding:12px 14px;margin-bottom:8px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">' +
+        '<span style="font-size:13px;font-weight:600;color:#222">' + esc(fmtISODate_(r.date)) + '</span>' + badge +
+        '</div>' +
+        '<div style="font-size:12px;color:#666">' + changeParts.join(' &middot; ') + '</div>' +
+        '<div style="font-size:12px;color:#888;margin-top:2px">' + esc(r.reason) + '</div>' +
+        note +
+        '</div>';
+    }).join('');
+  }, function() {
+    var loadEl = document.getElementById('tc-correction-history-loading');
+    if (loadEl) loadEl.textContent = 'Could not load.';
+  });
+}
+
+function loadTimeCorrectionQueue() {
+  gasCall('getTimeCorrectionQueue', {}, function(d) {
+    var loadEl = document.getElementById('tc-correction-queue-loading');
+    var listEl = document.getElementById('tc-correction-queue-list');
+    var sectionEl = document.getElementById('tc-correction-admin-section');
+    if (sectionEl) sectionEl.style.display = 'block';
+    if (loadEl) loadEl.style.display = 'none';
+    var queue = (d && d.queue) || [];
+    if (!listEl) return;
+    if (!queue.length) {
+      listEl.innerHTML = '<p style="color:#888;font-size:13px;padding:8px 0 4px">No pending requests.</p>';
+      return;
+    }
+    listEl.innerHTML = queue.map(function(r) {
+      var changeParts = [];
+      if (r.requestedClockIn)  changeParts.push('In ' + (r.originalClockIn ? esc(r.originalClockIn) + ' &rarr; ' : '') + esc(r.requestedClockIn));
+      if (r.requestedClockOut) changeParts.push('Out ' + (r.originalClockOut ? esc(r.originalClockOut) + ' &rarr; ' : '') + esc(r.requestedClockOut));
+      return '<div style="background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,0.07)">' +
+        '<div style="font-size:13px;font-weight:700;color:#222">' + esc(r.employeeName) + '</div>' +
+        '<div style="font-size:12px;color:#666;margin-top:1px">' + esc(fmtISODate_(r.date)) + ' &middot; ' + changeParts.join(', ') + '</div>' +
+        '<div style="font-size:12px;color:#888;margin-top:2px">' + esc(r.reason) + '</div>' +
+        '<div style="display:flex;gap:8px;margin-top:8px">' +
+        '<button onclick="doApproveTimeCorrection(\'' + r.id + '\',this)" style="flex:1;background:#1F3971;color:#fff;border:none;border-radius:7px;padding:9px;font-size:13px;font-weight:700;cursor:pointer">&#10003; Approve</button>' +
+        '<button onclick="doDenyTimeCorrection(\'' + r.id + '\',this)" style="flex:1;background:#fff;color:#c62828;border:1.5px solid #c62828;border-radius:7px;padding:9px;font-size:13px;font-weight:700;cursor:pointer">&#10007; Deny</button>' +
+        '</div></div>';
+    }).join('');
+  }, function() {
+    var loadEl = document.getElementById('tc-correction-queue-loading');
+    if (loadEl) loadEl.textContent = 'Could not load.';
+  });
+}
+
+function doApproveTimeCorrection(requestId, btn) {
+  var orig = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Approving...';
+  gasCall('approveTimeCorrection', { requestId: requestId }, function(r) {
+    if (r && r.success) {
+      showToast('Correction approved');
+      loadTimeCorrectionQueue();
+      loadTimeClock();
+    } else {
+      btn.disabled = false; btn.textContent = orig;
+      showToast('Error: ' + ((r && r.error) || 'unknown'));
+    }
+  }, function() { btn.disabled = false; btn.textContent = orig; showToast('Could not connect'); });
+}
+
+function doDenyTimeCorrection(requestId, btn) {
+  var note = prompt('Deny this request. Optional note for the employee:', '');
+  if (note === null) return;
+  var orig = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Denying...';
+  gasCall('denyTimeCorrection', { requestId: requestId, note: note }, function(r) {
+    if (r && r.success) {
+      showToast('Correction denied');
+      loadTimeCorrectionQueue();
+    } else {
+      btn.disabled = false; btn.textContent = orig;
+      showToast('Error: ' + ((r && r.error) || 'unknown'));
+    }
+  }, function() { btn.disabled = false; btn.textContent = orig; showToast('Could not connect'); });
 }
 
 function updateClockUI(clockedIn, since) {
