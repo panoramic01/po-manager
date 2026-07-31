@@ -104,6 +104,11 @@
     .po-item.reconcile{ border-left-color: #1F3971; }
     .po-item.complete { border-left-color: #D1D0CB; }
     .po-item.ordered  { border-left-color: #1F3971; }
+    .po-chip {
+      width: 22px; height: 22px; border-radius: 7px; flex: none;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 800; margin-right: 8px;
+    }
     .po-num  { font-size: 14px; font-weight: 700; color: #1F3971; font-family: monospace; }
     .po-main { font-size: 19px; font-weight: 700; margin: 5px 0 4px; }
     .po-sub  { font-size: 15px; color: #8A887E; }
@@ -1249,10 +1254,15 @@ function poCard(po, type) {
     ? '<div class="swipe-bg"><svg width="22" height="22" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>'
     : '';
 
+  var chip = poChip(type);
+
   return '<div class="po-item '+type+'" data-ponum="'+esc(po.poNum)+'" data-rowindex="'+po.rowIndex+'">' +
     swipeBg +
     '<div class="row-between">' +
-      '<span class="po-num">'+po.poNum+'</span>' + amt +
+      '<span style="display:flex;align-items:center">' +
+        '<span class="po-chip" style="background:'+chip.bg+';color:'+chip.fg+'">'+chip.glyph+'</span>' +
+        '<span class="po-num">'+po.poNum+'</span>' +
+      '</span>' + amt +
     '</div>' +
     '<div class="po-main">'+(po.jobRef||'—')+'</div>' +
     '<div class="po-sub">'+(po.vendor||'—')+(po.builder?' · '+po.builder:'')+dateStr+'</div>' +
@@ -1265,6 +1275,19 @@ function poCard(po, type) {
       (po.issuedPOLink ? '<a href="'+esc(po.issuedPOLink)+'" target="_blank" class="btn btn-sm" style="background:#eaedfa;color:#1F3971;text-decoration:none">Issued PO</a>' : '') +
     '</div>' +
   '</div>';
+}
+
+function poChip(type) {
+  var map = {
+    'overdue'  : { bg: '#ffcdd2', fg: '#b71c1c', glyph: '!' },
+    'missing'  : { bg: '#fff3e0', fg: '#bf360c', glyph: '?' },
+    'reconcile': { bg: '#e0f2f1', fg: '#1F3971', glyph: '↻' },
+    'delivery' : { bg: '#eaedfa', fg: '#1F3971', glyph: '→' },
+    'pickup'   : { bg: '#e8edf5', fg: '#1F3971', glyph: '↑' },
+    'ordered'  : { bg: '#e8edf5', fg: '#152847', glyph: '●' },
+    'complete' : { bg: '#f7f6f2', fg: '#757575', glyph: '✓' }
+  };
+  return map[type] || { bg: '#f7f6f2', fg: '#757575', glyph: '●' };
 }
 
 function badgeCls(status) {
