@@ -179,6 +179,7 @@ function doPost(e) {
     else if (action === 'emailPayroll')                result = emailPayroll(payload);
     else if (action === 'approveTimesheet')            result = approveTimesheet(payload);
     else if (action === 'unapproveTimesheet')          result = unapproveTimesheet(payload);
+    else if (action === 'getShiftForDate')               result = getShiftForDate(payload);
     else if (action === 'submitTimeCorrection')         result = submitTimeCorrection(payload);
     else if (action === 'getMyTimeCorrections')         result = getMyTimeCorrections(payload);
     else if (action === 'getTimeCorrectionQueue')       result = getTimeCorrectionQueue(payload);
@@ -3740,6 +3741,33 @@ function findTimeTrackingRowForDate_(email, targetMidnight) {
     if (rd.getTime() === targetMidnight.getTime()) return i + 2;
   }
   return -1;
+}
+
+/**
+ * Looks up what's currently on record for the caller on a given date, so the
+ * correction form can prefill "what's there now" instead of starting blank.
+ * Returns 24h 'HH:mm' strings (or '' if that side was never punched).
+ */
+function getShiftForDate(payload) {
+  try {
+    var auth = requireVerifiedEmail_(payload);
+    if (auth.error) return auth;
+    var email = auth.email;
+    var dateStr = (payload.date || '').toString().trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return { error: 'Invalid date' };
+
+    var dp = dateStr.split('-');
+    var targetMidnight = new Date(parseInt(dp[0], 10), parseInt(dp[1], 10) - 1, parseInt(dp[2], 10));
+    var matchRow = findTimeTrackingRowForDate_(email, targetMidnight);
+    if (matchRow === -1) return { clockIn: '', clockOut: '' };
+
+    var tz = Session.getScriptTimeZone();
+    var vals = getTimeSheet_().getRange(matchRow, 4, 1, 2).getValues()[0];
+    return {
+      clockIn:  vals[0] ? Utilities.formatDate(new Date(vals[0]), tz, 'HH:mm') : '',
+      clockOut: vals[1] ? Utilities.formatDate(new Date(vals[1]), tz, 'HH:mm') : ''
+    };
+  } catch(e) { return { error: e.toString() }; }
 }
 
 /** Employee-submitted request to fix a past clock in/out. Requires at least one corrected time and a reason. */

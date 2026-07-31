@@ -8317,7 +8317,7 @@ function openTimeCorrectionForm() {
   document.getElementById('edit-modal-body').innerHTML =
     '<div style="margin-bottom:12px">' +
       '<label style="font-size:12px;font-weight:600;color:#555;display:block;margin-bottom:4px">Shift Date</label>' +
-      '<input type="date" id="tcr-date" max="' + todayStr + '" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:10px 12px;font-size:14px;outline:none">' +
+      '<input type="date" id="tcr-date" max="' + todayStr + '" onchange="loadShiftForCorrectionDate()" style="width:100%;box-sizing:border-box;border:1.5px solid #e0e0e0;border-radius:8px;padding:10px 12px;font-size:14px;outline:none">' +
     '</div>' +
     '<div style="display:flex;gap:10px;margin-bottom:6px">' +
       '<div style="flex:1">' +
@@ -8340,6 +8340,18 @@ function openTimeCorrectionForm() {
       '<button class="btn btn-primary" id="tcr-submit-btn" style="width:100%" onclick="submitTimeCorrectionRequest()">Submit</button>' +
     '</div>';
   document.getElementById('edit-modal').classList.add('open');
+}
+
+function loadShiftForCorrectionDate() {
+  var date = val('tcr-date');
+  if (!date) return;
+  gasCall('getShiftForDate', { date: date }, function(d) {
+    var cinEl  = document.getElementById('tcr-clockin');
+    var coutEl = document.getElementById('tcr-clockout');
+    if (!d || d.error) return;
+    if (cinEl)  cinEl.value  = d.clockIn  || '';
+    if (coutEl) coutEl.value = d.clockOut || '';
+  }, function() {});
 }
 
 function submitTimeCorrectionRequest() {
