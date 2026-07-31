@@ -3611,6 +3611,7 @@ function openEdit(poNum) {
     invoiceField +
     buildPhotoSection(po.receivedNote) +
     fg('Notes',           '<textarea class="form-control" id="e-notes" rows="3">'+esc(po.notes)+'</textarea>') +
+    fg('Additional Notes','<textarea class="form-control" id="e-additional-notes" rows="3">'+esc(po.additionalNotes)+'</textarea>') +
     '<div class="modal-actions">' +
       '<button class="btn btn-primary" style="flex:1" onclick="submitEdit()">Save</button>' +
       '<button class="btn btn-secondary" style="flex:0 0 auto" onclick="showPODetail(\''+poNum+'\')">Cancel</button>' +
@@ -3774,7 +3775,8 @@ function submitEdit() {
     deliveryDate:  fromInputDate(trim('e-date')),
     issuedPO:      trim('e-issued'),
     invoiceFile:   G.perms.canViewInvoice ? trim('e-invoicefile') : undefined,
-    notes:         trim('e-notes')
+    notes:         trim('e-notes'),
+    additionalNotes: trim('e-additional-notes')
   };
 
   gasCall('updatePO', { rowIndex: G.editRow, updates: updates }, function(res) {
