@@ -3092,12 +3092,11 @@ function formatPeriodLabel_(pStart, pEnd) {
   return MONTH_ABBRS[pStart.getMonth()] + ' ' + pStart.getDate() + ' - ' + MONTH_ABBRS[pEnd.getMonth()] + ' ' + pEnd.getDate();
 }
 
-// Overtime thresholds. This split is advisory (for admin visibility before
+// Overtime threshold. This split is advisory (for admin visibility before
 // payroll runs), not a certified payroll engine -- a week that straddles a
 // pay-period boundary is only evaluated against the days present in the
 // current period, same simplification as the documented pay-period-boundary
 // limitation for hour bucketing.
-var OT_DAILY_THRESHOLD  = 8;
 var OT_WEEKLY_THRESHOLD = 40;
 
 function getWeekKey_(date) {
@@ -3108,26 +3107,24 @@ function getWeekKey_(date) {
 
 /**
  * Splits an array of { date, hours } day-entries (one period, any order)
- * into { regular, overtime } using daily (>8h/day) then weekly (>40h/week)
- * thresholds, applied chronologically so weekly accumulation makes sense.
+ * into { regular, overtime } using only the weekly (>40h/week) threshold --
+ * no daily threshold, applied chronologically so weekly accumulation makes
+ * sense.
  */
 function splitRegularOvertime_(dayEntries) {
   var sorted = dayEntries.slice().sort(function(a, b) { return a.date - b.date; });
   var weekTotals = {};
   var regular = 0, overtime = 0;
   sorted.forEach(function(entry) {
-    var dayRegular = Math.min(entry.hours, OT_DAILY_THRESHOLD);
-    var dayOT      = Math.max(0, entry.hours - OT_DAILY_THRESHOLD);
-
     var weekKey       = getWeekKey_(entry.date);
     var weekSoFar      = weekTotals[weekKey] || 0;
     var roomLeftInWeek = Math.max(0, OT_WEEKLY_THRESHOLD - weekSoFar);
-    var weeklyRegular   = Math.min(dayRegular, roomLeftInWeek);
-    var pushedToWeeklyOT = dayRegular - weeklyRegular;
+    var weeklyRegular   = Math.min(entry.hours, roomLeftInWeek);
+    var weeklyOT        = entry.hours - weeklyRegular;
 
     regular  += weeklyRegular;
-    overtime += pushedToWeeklyOT + dayOT;
-    weekTotals[weekKey] = weekSoFar + dayRegular;
+    overtime += weeklyOT;
+    weekTotals[weekKey] = weekSoFar + entry.hours;
   });
   return { regular: Math.round(regular * 100) / 100, overtime: Math.round(overtime * 100) / 100 };
 }
