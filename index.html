@@ -1904,6 +1904,15 @@
   <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;background:var(--c-bg)" id="period-review-body"></div>
 </div>
 
+<!-- PDF Viewer -->
+<div class="cleanup-overlay" id="pdf-viewer-overlay" style="display:none">
+  <div class="cleanup-header">
+    <h2 id="pdf-viewer-title">Document</h2>
+    <button class="cleanup-close" onclick="closePdfViewer()">Close</button>
+  </div>
+  <iframe id="pdf-viewer-frame" src="" title="PDF preview"></iframe>
+</div>
+
 <!-- Photo Lightbox -->
 <div class="photo-lightbox" id="photo-lightbox" onclick="maybeClosePhotoLightbox(event)">
   <div class="photo-lightbox-header">
@@ -9170,7 +9179,7 @@ function openPeriodReview() {
     + '<label class="form-label" style="display:block;margin-bottom:6px">Mileage &amp; Commission PDF (optional)</label>'
     + '<input type="file" id="pr-pdf-file" accept="application/pdf,.pdf" style="display:none" onchange="handlePeriodPdfFile(this)">'
     + '<button type="button" onclick="document.getElementById(\'pr-pdf-file\').click()" style="width:100%;background:none;border:1.5px solid var(--c-navy);color:var(--c-navy);border-radius:9px;padding:10px;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:6px">' + (d.employeePdfUrl ? 'Replace PDF' : 'Attach PDF') + '</button>'
-    + '<div id="pr-pdf-status" style="font-size:12px;color:var(--c-ink-soft);margin-bottom:16px">' + (d.employeePdfUrl ? '<a href="' + esc(d.employeePdfUrl) + '" target="_blank" rel="noopener" style="color:var(--c-navy);font-weight:600">Open current PDF</a>' : 'No PDF attached yet') + '</div>'
+    + '<div id="pr-pdf-status" style="font-size:12px;color:var(--c-ink-soft);margin-bottom:16px">' + (d.employeePdfUrl ? '<a href="javascript:void(0)" onclick="openPdfViewer(\'' + esc(d.employeePdfUrl) + '\')" style="color:var(--c-navy);font-weight:600">Open current PDF</a>' : 'No PDF attached yet') + '</div>'
     + '</div>'
     + '<div style="border-top:1px solid var(--c-border-soft);padding-top:14px">'
     + '<label class="form-label" style="display:block;margin-bottom:6px">Notes for payroll (optional)</label>'
@@ -9243,7 +9252,7 @@ function handlePeriodPdfFile(input) {
     }, function(res) {
       if (res && res.success) {
         _periodReviewPdfUrl = res.url;
-        if (statusEl) statusEl.innerHTML = '<a href="' + esc(res.url) + '" target="_blank" rel="noopener" style="color:var(--c-navy);font-weight:600">Open uploaded PDF</a>';
+        if (statusEl) statusEl.innerHTML = '<a href="javascript:void(0)" onclick="openPdfViewer(\'' + esc(res.url) + '\')" style="color:var(--c-navy);font-weight:600">Open uploaded PDF</a>';
         showToast('PDF uploaded');
       } else {
         if (statusEl) statusEl.textContent = 'Upload failed';
@@ -9251,6 +9260,20 @@ function handlePeriodPdfFile(input) {
       }
     }, function() { if (statusEl) statusEl.textContent = 'Upload failed'; showToast('Could not connect'); });
   }, function() { if (statusEl) statusEl.textContent = 'Could not read file'; });
+}
+
+function openPdfViewer(url, title) {
+  var m = (url || '').match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  var fileId = m ? m[1] : null;
+  var previewUrl = fileId ? ('https://drive.google.com/file/d/' + fileId + '/preview') : url;
+  document.getElementById('pdf-viewer-title').textContent = title || 'Document';
+  document.getElementById('pdf-viewer-frame').src = previewUrl;
+  document.getElementById('pdf-viewer-overlay').style.display = 'flex';
+}
+
+function closePdfViewer() {
+  document.getElementById('pdf-viewer-overlay').style.display = 'none';
+  document.getElementById('pdf-viewer-frame').src = '';
 }
 
 // ── Employee Manager ──────────────────────────────────────────────────────────────────────
@@ -9497,7 +9520,7 @@ function loadPayroll(offset) {
                 ? '<span style="color:#1a7a3c;font-weight:700">Employee: &#10003; Checked ' + esc(e.employeeApprovedAt) + '</span>'
                 : '<span style="color:var(--c-ink-faint)">Employee: Not yet checked</span>')
             + (e.employeeNote ? '<div style="margin-top:4px;font-style:italic">"' + esc(e.employeeNote) + '"</div>' : '')
-            + (e.employeePdfUrl ? '<div style="margin-top:4px"><a href="' + esc(e.employeePdfUrl) + '" target="_blank" rel="noopener" style="color:var(--c-navy);font-weight:600">Open Mileage/Commission PDF</a></div>' : '')
+            + (e.employeePdfUrl ? '<div style="margin-top:4px"><a href="javascript:void(0)" onclick="openPdfViewer(\'' + esc(e.employeePdfUrl) + '\', \'Mileage &amp; Commission PDF\')" style="color:var(--c-navy);font-weight:600">Open Mileage/Commission PDF</a></div>' : '')
             + '</div>'
             + '<div style="margin-top:10px;text-align:right">'
             + (isCurrentPeriod
