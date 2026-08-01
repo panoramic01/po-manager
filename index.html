@@ -9471,7 +9471,6 @@ function loadPayroll(offset) {
     if (d.error) { document.getElementById('payroll-emp-list').innerHTML = '<p style="color:red;font-size:13px">' + esc(empErrorMessage(d)) + '</p>'; return; }
     document.getElementById('payroll-period-label').textContent = d.periodLabel || '';
     updatePayrollNavButtons();
-    var isCurrentPeriod = _payrollOffset === 0;
     var emps = d.employees || [];
     var needsReview = d.needsReview || [];
     var grandTotal = emps.reduce(function(s, e) { return s + e.total; }, 0);
@@ -9523,29 +9522,27 @@ function loadPayroll(offset) {
             + (e.employeePdfUrl ? '<div style="margin-top:4px"><a href="javascript:void(0)" onclick="openPdfViewer(\'' + esc(e.employeePdfUrl) + '\', \'Mileage &amp; Commission PDF\')" style="color:var(--c-navy);font-weight:600">Open Mileage/Commission PDF</a></div>' : '')
             + '</div>'
             + '<div style="margin-top:10px;text-align:right">'
-            + (isCurrentPeriod
-                ? (e.approved
-                    ? '<button onclick="doUnapproveTimesheet(\'' + e.email + '\')" style="background:var(--c-bg);color:var(--c-ink-soft);border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer">Reopen</button>'
-                    : '<button onclick="doApproveTimesheet(\'' + e.email + '\')" style="background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer">Approve</button>')
-                : '') // past periods: read-only badge -- approveTimesheet/unapproveTimesheet always act on the CURRENT period
+            + (e.approved
+                ? '<button onclick="doUnapproveTimesheet(\'' + e.email + '\')" style="background:var(--c-bg);color:var(--c-ink-soft);border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer">Reopen</button>'
+                : '<button onclick="doApproveTimesheet(\'' + e.email + '\')" style="background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer">Approve</button>')
             + '</div></div></div>';
         }).join('') : '<p style="color:var(--c-ink-faint);font-size:13px">No hours recorded this period.</p>');
   }, function() { document.getElementById('payroll-period-label').textContent = ''; document.getElementById('payroll-emp-list').innerHTML = '<p style="color:red;font-size:13px">Could not connect</p>'; });
 }
 
 function doApproveTimesheet(employeeEmail) {
-  gasCall('approveTimesheet', { employeeEmail: employeeEmail, callerEmail: G.userEmail }, function(r) {
+  gasCall('approveTimesheet', { employeeEmail: employeeEmail, callerEmail: G.userEmail, periodOffset: _payrollOffset }, function(r) {
     if (r.error) { showToast(empErrorMessage(r)); return; }
     showToast('Timesheet approved');
-    loadPayroll();
+    loadPayroll(_payrollOffset);
   }, function() { showToast('Could not connect'); });
 }
 
 function doUnapproveTimesheet(employeeEmail) {
-  gasCall('unapproveTimesheet', { employeeEmail: employeeEmail, callerEmail: G.userEmail }, function(r) {
+  gasCall('unapproveTimesheet', { employeeEmail: employeeEmail, callerEmail: G.userEmail, periodOffset: _payrollOffset }, function(r) {
     if (r.error) { showToast(empErrorMessage(r)); return; }
     showToast('Timesheet reopened');
-    loadPayroll();
+    loadPayroll(_payrollOffset);
   }, function() { showToast('Could not connect'); });
 }
 

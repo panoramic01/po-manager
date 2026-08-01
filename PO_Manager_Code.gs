@@ -3681,7 +3681,11 @@ function getApprovalMap_(periodLabel) {
   return map;
 }
 
-/** Approves (or re-approves) the current pay period for one employee. Idempotent per period+employee. */
+/**
+ * Approves (or re-approves) a pay period for one employee -- the current
+ * period by default, or a past one via periodOffset (never a future one).
+ * Idempotent per period+employee.
+ */
 function approveTimesheet(payload) {
   try {
     var auth = authorizeCaller(payload, ['admin', 'human_resources']);
@@ -3689,7 +3693,10 @@ function approveTimesheet(payload) {
     var employeeEmail = (payload.employeeEmail || '').toString().toLowerCase().trim();
     if (!employeeEmail) return { error: 'Missing employeeEmail.' };
 
-    var periodLabel = formatPeriodLabel_(getPeriodBounds(new Date()).start, getPeriodBounds(new Date()).end);
+    var offset = parseInt(payload.periodOffset, 10);
+    if (isNaN(offset) || offset > 0) offset = 0;
+    var bounds = getPeriodBoundsOffset_(new Date(), offset);
+    var periodLabel = formatPeriodLabel_(bounds.start, bounds.end);
     var sheet = ensureSheetWithHeaders_(PAYROLL_APPROVALS_SHEET, PAYROLL_APPROVALS_HEADERS);
 
     var lock = LockService.getScriptLock();
@@ -3842,11 +3849,12 @@ function getMyPeriodDetail(payload) {
 }
 
 /**
- * Reopens the current pay period for one employee (admin approval only),
- * letting them clock in/out again and admins re-approve later. Clears the
- * admin approval columns (C/D) instead of deleting the row, so an
- * employee's own self-approval/note in columns E/F -- written independently
- * via approveMyTimesheet -- survives an admin reopen.
+ * Reopens whichever period (current or a past periodOffset) for one
+ * employee (admin approval only), letting them clock in/out again and
+ * admins re-approve later. Clears the admin approval columns (C/D) instead
+ * of deleting the row, so an employee's own self-approval/note in columns
+ * E/F -- written independently via approveMyTimesheet -- survives an admin
+ * reopen.
  */
 function unapproveTimesheet(payload) {
   try {
@@ -3855,7 +3863,10 @@ function unapproveTimesheet(payload) {
     var employeeEmail = (payload.employeeEmail || '').toString().toLowerCase().trim();
     if (!employeeEmail) return { error: 'Missing employeeEmail.' };
 
-    var periodLabel = formatPeriodLabel_(getPeriodBounds(new Date()).start, getPeriodBounds(new Date()).end);
+    var offset = parseInt(payload.periodOffset, 10);
+    if (isNaN(offset) || offset > 0) offset = 0;
+    var bounds = getPeriodBoundsOffset_(new Date(), offset);
+    var periodLabel = formatPeriodLabel_(bounds.start, bounds.end);
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PAYROLL_APPROVALS_SHEET);
     if (!sheet) return { success: true };
 
