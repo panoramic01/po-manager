@@ -2677,19 +2677,21 @@ function getRecentQualityWalks(payload) {
   try {
     var auth = authorizeCaller(payload, ['admin']);
     if (!auth.ok) return { error: auth.error, code: auth.code };
+    var limit = Math.min(Math.max(parseInt((payload && payload.limit), 10) || 5, 1), 50);
 
     var wsResult = asanaRequest('get', '/workspaces?opt_fields=gid&limit=1');
     if (wsResult.errors || !wsResult.data || !wsResult.data.length) return { walks: [] };
     var workspaceGid = wsResult.data[0].gid;
 
-    // Fetch more than 5 up front -- some recent results turn out to be older
-    // free-text-summary tasks (pre-dating the current Walk Type/Trade(s)/
-    // [PASS]-[FLAG]-[N/A] format and never created as a job subtask), which
-    // get filtered out below. Without the headroom, a few of those near the
-    // top of the date-sorted results would silently leave fewer than 5 real
-    // walks instead of backfilling from further back.
+    // Fetch more than `limit` up front -- some recent results turn out to be
+    // older free-text-summary tasks (pre-dating the current Walk Type/
+    // Trade(s)/[PASS]-[FLAG]-[N/A] format and never created as a job
+    // subtask), which get filtered out below. Without the headroom, a few of
+    // those near the top of the date-sorted results would silently leave
+    // fewer than `limit` real walks instead of backfilling from further back.
+    var searchFetch = Math.min(Math.max(limit * 4, 20), 100);
     var searchUrl = '/workspaces/' + workspaceGid +
-      '/tasks/search?text=Quality Check&sort_by=created_at&sort_ascending=false&limit=20' +
+      '/tasks/search?text=Quality Check&sort_by=created_at&sort_ascending=false&limit=' + searchFetch +
       '&opt_fields=name,notes,created_at,parent.name,parent.gid,permalink_url';
     var searchResult = asanaRequest('get', searchUrl);
     if (searchResult.errors) return { walks: [], error: searchResult.errors[0].message };
@@ -2728,7 +2730,7 @@ function getRecentQualityWalks(payload) {
       // parsed checklist items) are a different, pre-current-format thing
       // and are excluded here rather than shown as "Unknown job".
       return w.items.length > 0;
-    }).slice(0, 5);
+    }).slice(0, limit);
 
     return { walks: walks };
   } catch (e) { return { error: e.toString() }; }

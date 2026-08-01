@@ -3098,20 +3098,25 @@ function loadHomeJobsByPhase() {
   }, function() { el.innerHTML = '<div class="empty">Could not load jobs.</div>'; });
 }
 
-// 5 most recent Quality Check walks across all jobs -- see
+// Most recent Quality Check walks across all jobs -- see
 // getRecentQualityWalks() for why this is one workspace-search call rather
-// than crawling every job's subtasks.
+// than crawling every job's subtasks. Defaults to 5; "See All" re-fetches
+// with HOME_QUALITY_SEE_ALL_LIMIT instead of paging, since the underlying
+// Asana search call is cheap for either size.
 window._homeQualityWalks = [];
+var HOME_QUALITY_DEFAULT_LIMIT = 5;
+var HOME_QUALITY_SEE_ALL_LIMIT = 25;
 
-function loadHomeQualityWalks() {
+function loadHomeQualityWalks(limit) {
+  limit = limit || HOME_QUALITY_DEFAULT_LIMIT;
   var el = document.getElementById('home-quality-content');
   if (!el) return;
-  gasCall('getRecentQualityWalks', {}, function(d) {
+  gasCall('getRecentQualityWalks', { limit: limit }, function(d) {
     if (d && d.error && !(d.walks && d.walks.length)) { el.innerHTML = '<div class="empty">' + esc(d.error) + '</div>'; return; }
     var walks = (d && d.walks) || [];
     window._homeQualityWalks = walks;
     if (!walks.length) { el.innerHTML = '<div class="empty">No quality walks yet.</div>'; return; }
-    el.innerHTML = walks.map(function(w, i) {
+    var rowsHtml = walks.map(function(w, i) {
       return '<div style="padding:10px 0;border-bottom:1px solid var(--c-border-hair);cursor:pointer" onclick="openQualityWalkDetail(' + i + ', window._homeQualityWalks)">' +
         '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">' +
           '<span style="font-size:13px;font-weight:600;color:var(--c-ink)">' + esc(w.jobName || 'Unknown job') + '</span>' +
@@ -3122,6 +3127,12 @@ function loadHomeQualityWalks() {
           (w.passCount || w.flagCount || w.naCount ? ' · ' + w.passCount + '&#10003; ' + w.flagCount + '&#9873; ' + w.naCount + ' N/A' : '') +
         '</div></div>';
     }).join('');
+    // Only offer "See All" when we're still on the default page and got a
+    // full page back -- getting fewer than the limit means that's everything.
+    var seeAllHtml = (limit === HOME_QUALITY_DEFAULT_LIMIT && walks.length >= HOME_QUALITY_DEFAULT_LIMIT)
+      ? '<button onclick="loadHomeQualityWalks(' + HOME_QUALITY_SEE_ALL_LIMIT + ')" style="width:100%;margin-top:8px;padding:9px;border:1px solid var(--c-border);border-radius:8px;background:none;color:var(--c-navy);font-size:13px;font-weight:600;cursor:pointer">See All</button>'
+      : '';
+    el.innerHTML = rowsHtml + seeAllHtml;
   }, function() { el.innerHTML = '<div class="empty">Could not load quality walks.</div>'; });
 }
 
