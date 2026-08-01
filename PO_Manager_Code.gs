@@ -179,6 +179,7 @@ function doPost(e) {
     else if (action === 'emailPayroll')                result = emailPayroll(payload);
     else if (action === 'approveTimesheet')            result = approveTimesheet(payload);
     else if (action === 'unapproveTimesheet')          result = unapproveTimesheet(payload);
+    else if (action === 'approveMyTimesheet')          result = approveMyTimesheet(payload);
     else if (action === 'getShiftForDate')               result = getShiftForDate(payload);
     else if (action === 'submitTimeCorrection')         result = submitTimeCorrection(payload);
     else if (action === 'getMyTimeCorrections')         result = getMyTimeCorrections(payload);
@@ -3092,6 +3093,12 @@ function formatPeriodLabel_(pStart, pEnd) {
   return MONTH_ABBRS[pStart.getMonth()] + ' ' + pStart.getDate() + ' - ' + MONTH_ABBRS[pEnd.getMonth()] + ' ' + pEnd.getDate();
 }
 
+/** Walks d back to the most recent Friday (returns d unchanged if d is already a Friday). */
+function lastFridayOnOrBefore_(d) {
+  var diff = (d.getDay() - 5 + 7) % 7; // Friday = 5
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() - diff);
+}
+
 // Overtime threshold. This split is advisory (for admin visibility before
 // payroll runs), not a certified payroll engine -- a week that straddles a
 // pay-period boundary is only evaluated against the days present in the
@@ -3317,13 +3324,21 @@ function getTimesheet(payload) {
 
     var otSplit = splitRegularOvertime_(myDayEntries);
 
+    var myApproval = getApprovalMap_(periodLabel)[email] || {};
+    var todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    var lastFriday = lastFridayOnOrBefore_(pEnd);
+
     return {
       myHours:      Math.round(myHours * 100) / 100,
       myRegularHours:  otSplit.regular,
       myOvertimeHours: otSplit.overtime,
       myDays:       myDays,
       periodLabel:  periodLabel,
-      allEmployees: allEmployees
+      allEmployees: allEmployees,
+      employeeApproved:     !!myApproval.employeeApprovedAt,
+      employeeApprovedAt:   myApproval.employeeApprovedAt || '',
+      employeeNote:         myApproval.employeeNote || '',
+      showApprovalReminder: todayMidnight.getTime() >= lastFriday.getTime() && !myApproval.employeeApprovedAt
     };
   } catch(e) { return { error: e.toString() }; }
 }
@@ -3592,8 +3607,15 @@ function findFlaggableShifts_(sh, pStart, pEnd) {
 
 // ── Payroll: period approval/lock ─────────────────────────────────────────────
 var PAYROLL_APPROVALS_SHEET  = 'Payroll Approvals';
-var PAYROLL_APPROVALS_HEADERS = ['Period Label', 'Employee Email', 'Approved By', 'Approved At'];
+var PAYROLL_APPROVALS_HEADERS = ['Period Label', 'Employee Email', 'Approved By', 'Approved At', 'Employee Approved At', 'Employee Note'];
 
+/**
+ * True only if an ADMIN/HR has approved this period for this employee (column
+ * D populated) -- this gates clock in/out, so it must NOT trigger off of a
+ * row that exists purely from the employee's own self-approval (columns E/F
+ * via approveMyTimesheet), which is informational-only and must never block
+ * clocking in/out.
+ */
 function isPeriodApprovedForEmail_(email, periodLabel) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName(PAYROLL_APPROVALS_SHEET);
@@ -3601,14 +3623,14 @@ function isPeriodApprovedForEmail_(email, periodLabel) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return false;
   email = (email || '').toString().toLowerCase().trim();
-  var data = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+  var data = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
   for (var i = 0; i < data.length; i++) {
-    if ((data[i][0] || '') === periodLabel && (data[i][1] || '').toString().toLowerCase().trim() === email) return true;
+    if ((data[i][0] || '') === periodLabel && (data[i][1] || '').toString().toLowerCase().trim() === email && data[i][3]) return true;
   }
   return false;
 }
 
-/** email(lowercase) -> { approvedBy, approvedAt } for every approval on file for periodLabel. */
+/** email(lowercase) -> { approvedBy, approvedAt, employeeApprovedAt, employeeNote } for every approval on file for periodLabel. */
 function getApprovalMap_(periodLabel) {
   var map = {};
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -3617,14 +3639,16 @@ function getApprovalMap_(periodLabel) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return map;
   var tz = Session.getScriptTimeZone();
-  var data = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
+  var data = sheet.getRange(2, 1, lastRow - 1, 6).getValues();
   for (var i = 0; i < data.length; i++) {
     if ((data[i][0] || '') !== periodLabel) continue;
     var email = (data[i][1] || '').toString().toLowerCase().trim();
     if (!email) continue;
     map[email] = {
-      approvedBy: (data[i][2] || '').toString(),
-      approvedAt: data[i][3] ? Utilities.formatDate(new Date(data[i][3]), tz, 'MM/dd/yyyy h:mm a') : ''
+      approvedBy:         (data[i][2] || '').toString(),
+      approvedAt:         data[i][3] ? Utilities.formatDate(new Date(data[i][3]), tz, 'MM/dd/yyyy h:mm a') : '',
+      employeeApprovedAt: data[i][4] ? Utilities.formatDate(new Date(data[i][4]), tz, 'MM/dd/yyyy h:mm a') : '',
+      employeeNote:       (data[i][5] || '').toString()
     };
   }
   return map;
@@ -3664,7 +3688,55 @@ function approveTimesheet(payload) {
   } catch(e) { return { error: e.toString() }; }
 }
 
-/** Reopens the current pay period for one employee, letting them clock in/out again and admins re-approve later. */
+/**
+ * Employee self-approval of their OWN current-period hours, with an optional
+ * note. Unlike approveTimesheet this is never admin/HR-gated -- it's only
+ * ever keyed to the caller's own email (never accepts an employeeEmail
+ * param), which is what makes it safe to expose to any signed-in user.
+ * Purely informational for payroll -- doesn't block or affect
+ * approveTimesheet/unapproveTimesheet in any way. Idempotent/re-callable so
+ * an employee can update their note later without "unapproving" first.
+ */
+function approveMyTimesheet(payload) {
+  try {
+    var auth = requireVerifiedEmail_(payload);
+    if (auth.error) return auth;
+    var email = auth.email;
+    var note = (payload.note || '').toString().trim();
+
+    var periodLabel = formatPeriodLabel_(getPeriodBounds(new Date()).start, getPeriodBounds(new Date()).end);
+    var sheet = ensureSheetWithHeaders_(PAYROLL_APPROVALS_SHEET, PAYROLL_APPROVALS_HEADERS);
+
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(10000)) return { error: 'Server is busy - try again in a moment.' };
+    try {
+      var now = new Date();
+      var lastRow = sheet.getLastRow();
+      if (lastRow >= 2) {
+        var data = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+        for (var i = 0; i < data.length; i++) {
+          if ((data[i][0] || '') === periodLabel && (data[i][1] || '').toString().toLowerCase().trim() === email) {
+            sheet.getRange(i + 2, 5).setValue(now);
+            sheet.getRange(i + 2, 6).setValue(note);
+            return { success: true, approvedAt: Utilities.formatDate(now, Session.getScriptTimeZone(), 'MM/dd/yyyy h:mm a') };
+          }
+        }
+      }
+      sheet.appendRow([periodLabel, email, '', '', now, note]);
+      return { success: true, approvedAt: Utilities.formatDate(now, Session.getScriptTimeZone(), 'MM/dd/yyyy h:mm a') };
+    } finally {
+      lock.releaseLock();
+    }
+  } catch(e) { return { error: e.toString() }; }
+}
+
+/**
+ * Reopens the current pay period for one employee (admin approval only),
+ * letting them clock in/out again and admins re-approve later. Clears the
+ * admin approval columns (C/D) instead of deleting the row, so an
+ * employee's own self-approval/note in columns E/F -- written independently
+ * via approveMyTimesheet -- survives an admin reopen.
+ */
 function unapproveTimesheet(payload) {
   try {
     var auth = authorizeCaller(payload, ['admin', 'human_resources']);
@@ -3684,7 +3756,8 @@ function unapproveTimesheet(payload) {
         var data = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
         for (var i = data.length - 1; i >= 0; i--) {
           if ((data[i][0] || '') === periodLabel && (data[i][1] || '').toString().toLowerCase().trim() === employeeEmail) {
-            sheet.deleteRow(i + 2);
+            sheet.getRange(i + 2, 3).setValue('');
+            sheet.getRange(i + 2, 4).setValue('');
           }
         }
       }
@@ -3693,6 +3766,50 @@ function unapproveTimesheet(payload) {
       lock.releaseLock();
     }
   } catch(e) { return { error: e.toString() }; }
+}
+
+// ── Pay-period approval reminder (time-based trigger) ─────────────────────────
+// Fires daily but only actually sends a push on the day that is the last
+// Friday of the current pay period, to whichever employees haven't yet
+// self-approved (via approveMyTimesheet) that period. The in-app banner
+// (see getTimesheet's showApprovalReminder) is computed independently on
+// every load, so a missed/failed push doesn't hide the reminder.
+function checkPayPeriodApprovalReminder() {
+  try {
+    var bounds = getPeriodBounds(new Date());
+    var lastFriday = lastFridayOnOrBefore_(bounds.end);
+    var today = new Date();
+    today = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    if (today.getTime() !== lastFriday.getTime()) return;
+
+    var periodLabel = formatPeriodLabel_(bounds.start, bounds.end);
+    var approvalMap = getApprovalMap_(periodLabel);
+    var roster = getAssignableEmployees().employees || [];
+    var targets = roster.map(function(r) { return (r.email || '').toString().toLowerCase().trim(); })
+      .filter(function(e) { return e && !(approvalMap[e] && approvalMap[e].employeeApprovedAt); });
+
+    if (targets.length) {
+      sendPushNotification(targets, 'Approve your hours', 'Please check and approve your hours for ' + periodLabel + '.', '/');
+    }
+  } catch (e) {
+    // Trigger context -- no caller to report an error to.
+  }
+}
+
+/**
+ * Run this ONCE from the Apps Script editor (or `clasp run
+ * createPayPeriodReminderTrigger`) after deploying, to install the daily
+ * check. clasp push never installs triggers on its own. Safe to re-run --
+ * clears any prior trigger on the same handler first.
+ */
+function createPayPeriodReminderTrigger() {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'checkPayPeriodApprovalReminder') {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+  ScriptApp.newTrigger('checkPayPeriodApprovalReminder').timeBased().everyDays(1).atHour(8).create();
 }
 
 // ── Time Corrections ──────────────────────────────────────────────────────────
@@ -4054,11 +4171,15 @@ function getPayrollSummary(payload) {
     var employees = Object.keys(empMap).map(function(e) {
       var otSplit = splitRegularOvertime_(empMap[e].dayEntries);
       var approval = approvalMap[e];
+      // NOTE: a map entry can now exist purely from the employee's own
+      // self-approval (approveMyTimesheet), so "admin approved" must check
+      // approvedAt specifically rather than just truthiness of the entry.
       return {
         email: e, name: empMap[e].name, total: empMap[e].total,
         regularHours: otSplit.regular, overtimeHours: otSplit.overtime,
         days: empMap[e].days, shifts: empMap[e].shifts,
-        approved: !!approval, approvedBy: approval ? approval.approvedBy : '', approvedAt: approval ? approval.approvedAt : ''
+        approved: !!(approval && approval.approvedAt), approvedBy: approval ? approval.approvedBy : '', approvedAt: approval ? approval.approvedAt : '',
+        employeeApproved: !!(approval && approval.employeeApprovedAt), employeeApprovedAt: approval ? approval.employeeApprovedAt : '', employeeNote: approval ? approval.employeeNote : ''
       };
     }).sort(function(a, b) { return a.name.localeCompare(b.name); });
 
