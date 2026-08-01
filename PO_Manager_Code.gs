@@ -3061,6 +3061,30 @@ function getPeriodBounds(d) {
   return { start: start, end: end };
 }
 
+/**
+ * Bounds for the semi-monthly period `offset` periods before the period
+ * containing refDate (offset <= 0; 0 = current). Steps period-by-period
+ * since boundaries alternate 1st-15th / 16th-end-of-month, so month/year
+ * rollover needs the Date constructor's overflow normalization rather than
+ * simple date math.
+ */
+function getPeriodBoundsOffset_(refDate, offset) {
+  var bounds = getPeriodBounds(refDate);
+  var start = bounds.start, end = bounds.end;
+  var steps = Math.abs(Math.min(0, offset || 0));
+  for (var i = 0; i < steps; i++) {
+    if (start.getDate() === 1) {
+      var y = start.getFullYear(), m = start.getMonth() - 1;
+      start = new Date(y, m, 16);
+      end   = new Date(y, m + 1, 0);
+    } else {
+      start = new Date(start.getFullYear(), start.getMonth(), 1);
+      end   = new Date(start.getFullYear(), start.getMonth(), 15);
+    }
+  }
+  return { start: start, end: end };
+}
+
 var MONTH_ABBRS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 /** Formats a period's bounds as e.g. "Jul 1 - Jul 15". */
@@ -3955,8 +3979,9 @@ function getPayrollSummary(payload) {
     var auth = authorizeCaller(payload, ['admin', 'human_resources']);
     if (!auth.ok) return { error: auth.error, code: auth.code };
     var sh  = getTimeSheet_();
-    var now = new Date();
-    var bounds = getPeriodBounds(now);
+    var offset = parseInt(payload.periodOffset, 10);
+    if (isNaN(offset) || offset > 0) offset = 0; // never allow future periods
+    var bounds = getPeriodBoundsOffset_(new Date(), offset);
     var pStart = bounds.start;
     var pEnd   = bounds.end;
     var periodLabel = formatPeriodLabel_(pStart, pEnd);
@@ -4023,7 +4048,7 @@ function getPayrollSummary(payload) {
       };
     }).sort(function(a, b) { return a.name.localeCompare(b.name); });
 
-    return { employees: employees, periodLabel: periodLabel, needsReview: flagged };
+    return { employees: employees, periodLabel: periodLabel, needsReview: flagged, periodOffset: offset };
   } catch(e) { return { error: e.toString() }; }
 }
 

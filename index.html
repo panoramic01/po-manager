@@ -1621,7 +1621,19 @@
         <button onclick="doEmailPayroll()" style="background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:700;cursor:pointer">Email</button>
       </div>
       <div style="padding:16px;padding-bottom:80px">
-        <div id="payroll-period-label" style="font-size:13px;color:var(--c-ink-soft);margin-bottom:14px;text-align:center"></div>
+
+        <div style="margin-bottom:18px">
+          <div style="font-size:13px;font-weight:700;color:var(--c-navy);margin-bottom:8px">Pending Time Corrections</div>
+          <div id="payroll-correction-loading" style="text-align:center;padding:14px;color:var(--c-ink-soft);font-size:13px">Loading...</div>
+          <div id="payroll-correction-list"></div>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:14px">
+          <button id="payroll-prev-btn" onclick="payrollPrevPeriod()" style="background:none;border:none;cursor:pointer;padding:4px;color:var(--c-navy)"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg></button>
+          <div id="payroll-period-label" style="font-size:13px;color:var(--c-ink-soft);text-align:center;min-width:110px"></div>
+          <button id="payroll-next-btn" onclick="payrollNextPeriod()" style="background:none;border:none;cursor:pointer;padding:4px;color:var(--c-navy)"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg></button>
+        </div>
+
         <div id="payroll-emp-list"></div>
       </div>
     </div>
@@ -5566,7 +5578,7 @@ function showOtherPanel(name) {
   if (name === 'timeclock') loadTimeClock();
   if (name === 'emp-mgr') loadEmpMgr();
   if (name === 'pto-overview') loadPTOOverview();
-  if (name === 'payroll') loadPayroll();
+  if (name === 'payroll') { loadPayroll(0); loadPayrollCorrectionQueue(); }
   if (name === 'new-project') resetNewProjectDriveHint();
   if (name === 'quickbooks') loadQuickBooksPanel();
 }
@@ -9266,12 +9278,17 @@ function doPTOOverviewDeny(gid, email, btn) {
 }
 
 // ── Payroll Summary ───────────────────────────────────────────────────────────
-function loadPayroll() {
+var _payrollOffset = 0;
+
+function loadPayroll(offset) {
+  _payrollOffset = offset || 0;
   document.getElementById('payroll-period-label').textContent = 'Loading...';
   document.getElementById('payroll-emp-list').innerHTML = '';
-  gasCall('getPayrollSummary', { callerEmail: G.userEmail }, function(d) {
+  gasCall('getPayrollSummary', { callerEmail: G.userEmail, periodOffset: _payrollOffset }, function(d) {
     if (d.error) { document.getElementById('payroll-emp-list').innerHTML = '<p style="color:red;font-size:13px">' + esc(empErrorMessage(d)) + '</p>'; return; }
     document.getElementById('payroll-period-label').textContent = d.periodLabel || '';
+    updatePayrollNavButtons();
+    var isCurrentPeriod = _payrollOffset === 0;
     var emps = d.employees || [];
     var needsReview = d.needsReview || [];
     var grandTotal = emps.reduce(function(s, e) { return s + e.total; }, 0);
@@ -9316,9 +9333,11 @@ function loadPayroll() {
                 return '<div style="font-size:11.5px;color:var(--c-ink-faint);padding:2px 0">' + esc(s.date) + ': ' + esc(s.clockIn) + inLink + ' - ' + esc(s.clockOut || '(open)') + outLink + '</div>';
               }).join('') + '</div>' : '')
             + '<div style="margin-top:10px;text-align:right">'
-            + (e.approved
-                ? '<button onclick="doUnapproveTimesheet(\'' + e.email + '\')" style="background:var(--c-bg);color:var(--c-ink-soft);border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer">Reopen</button>'
-                : '<button onclick="doApproveTimesheet(\'' + e.email + '\')" style="background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer">Approve</button>')
+            + (isCurrentPeriod
+                ? (e.approved
+                    ? '<button onclick="doUnapproveTimesheet(\'' + e.email + '\')" style="background:var(--c-bg);color:var(--c-ink-soft);border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer">Reopen</button>'
+                    : '<button onclick="doApproveTimesheet(\'' + e.email + '\')" style="background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer">Approve</button>')
+                : '') // past periods: read-only badge -- approveTimesheet/unapproveTimesheet always act on the CURRENT period
             + '</div></div></div>';
         }).join('') : '<p style="color:var(--c-ink-faint);font-size:13px">No hours recorded this period.</p>');
   }, function() { document.getElementById('payroll-period-label').textContent = ''; document.getElementById('payroll-emp-list').innerHTML = '<p style="color:red;font-size:13px">Could not connect</p>'; });
@@ -9352,11 +9371,85 @@ function togglePayrollRow(i) {
 function doEmailPayroll() {
   var btn = document.querySelector('[onclick="doEmailPayroll()"]');
   if (btn) { btn.disabled = true; btn.textContent = 'Sending...'; }
-  gasCall('emailPayroll', { to: G.userEmail, callerEmail: G.userEmail }, function(r) {
+  gasCall('emailPayroll', { to: G.userEmail, callerEmail: G.userEmail, periodOffset: _payrollOffset }, function(r) {
     if (btn) { btn.disabled = false; btn.textContent = 'Email'; }
     if (r.error) { showToast(empErrorMessage(r)); return; }
     showToast('Summary emailed to ' + G.userEmail);
   }, function() { if (btn) { btn.disabled = false; btn.textContent = 'Email'; } showToast('Could not connect'); });
+}
+
+function payrollPrevPeriod() { loadPayroll(_payrollOffset - 1); }
+
+function payrollNextPeriod() { if (_payrollOffset < 0) loadPayroll(_payrollOffset + 1); }
+
+function updatePayrollNavButtons() {
+  var nextBtn = document.getElementById('payroll-next-btn');
+  if (!nextBtn) return;
+  var atCurrent = _payrollOffset >= 0;
+  nextBtn.disabled = atCurrent;
+  nextBtn.style.opacity = atCurrent ? '0.3' : '1';
+  nextBtn.style.pointerEvents = atCurrent ? 'none' : 'auto';
+}
+
+function loadPayrollCorrectionQueue() {
+  gasCall('getTimeCorrectionQueue', {}, function(d) {
+    var loadEl = document.getElementById('payroll-correction-loading');
+    var listEl = document.getElementById('payroll-correction-list');
+    if (loadEl) loadEl.style.display = 'none';
+    var queue = (d && d.queue) || [];
+    if (!listEl) return;
+    if (!queue.length) {
+      listEl.innerHTML = '<p style="color:var(--c-ink-soft);font-size:13px;padding:8px 0 4px">No pending requests.</p>';
+      return;
+    }
+    listEl.innerHTML = queue.map(function(r) {
+      var changeParts = [];
+      if (r.requestedClockIn)  changeParts.push('In ' + (r.originalClockIn ? esc(r.originalClockIn) + ' &rarr; ' : '') + esc(r.requestedClockIn));
+      if (r.requestedClockOut) changeParts.push('Out ' + (r.originalClockOut ? esc(r.originalClockOut) + ' &rarr; ' : '') + esc(r.requestedClockOut));
+      return '<div style="background:var(--c-surface);border-radius:10px;padding:12px 14px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,0.07)">' +
+        '<div style="font-size:13px;font-weight:700;color:var(--c-ink)">' + esc(r.employeeName) + '</div>' +
+        '<div style="font-size:12px;color:var(--c-ink-soft);margin-top:1px">' + esc(fmtISODate_(r.date)) + ' &middot; ' + changeParts.join(', ') + '</div>' +
+        '<div style="font-size:12px;color:var(--c-ink-soft);margin-top:2px">' + esc(r.reason) + '</div>' +
+        '<div style="display:flex;gap:8px;margin-top:8px">' +
+        '<button onclick="doApprovePayrollCorrection(\'' + r.id + '\',this)" style="flex:1;background:var(--c-navy);color:#fff;border:none;border-radius:7px;padding:9px;font-size:13px;font-weight:700;cursor:pointer">&#10003; Approve</button>' +
+        '<button onclick="doDenyPayrollCorrection(\'' + r.id + '\',this)" style="flex:1;background:var(--c-surface);color:var(--c-danger);border:1.5px solid var(--c-danger);border-radius:7px;padding:9px;font-size:13px;font-weight:700;cursor:pointer">&#10007; Deny</button>' +
+        '</div></div>';
+    }).join('');
+  }, function() {
+    var loadEl = document.getElementById('payroll-correction-loading');
+    if (loadEl) loadEl.textContent = 'Could not load.';
+  });
+}
+
+function doApprovePayrollCorrection(requestId, btn) {
+  var orig = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Approving...';
+  gasCall('approveTimeCorrection', { requestId: requestId }, function(r) {
+    if (r && r.success) {
+      showToast('Correction approved');
+      loadPayrollCorrectionQueue();
+      loadPayroll(_payrollOffset);
+    } else {
+      btn.disabled = false; btn.textContent = orig;
+      showToast('Error: ' + ((r && r.error) || 'unknown'));
+    }
+  }, function() { btn.disabled = false; btn.textContent = orig; showToast('Could not connect'); });
+}
+
+function doDenyPayrollCorrection(requestId, btn) {
+  var note = prompt('Deny this request. Optional note for the employee:', '');
+  if (note === null) return;
+  var orig = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Denying...';
+  gasCall('denyTimeCorrection', { requestId: requestId, note: note }, function(r) {
+    if (r && r.success) {
+      showToast('Correction denied');
+      loadPayrollCorrectionQueue();
+    } else {
+      btn.disabled = false; btn.textContent = orig;
+      showToast('Error: ' + ((r && r.error) || 'unknown'));
+    }
+  }, function() { btn.disabled = false; btn.textContent = orig; showToast('Could not connect'); });
 }
 
 </script>
