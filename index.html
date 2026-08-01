@@ -3112,7 +3112,7 @@ function loadHomeQualityWalks() {
     window._homeQualityWalks = walks;
     if (!walks.length) { el.innerHTML = '<div class="empty">No quality walks yet.</div>'; return; }
     el.innerHTML = walks.map(function(w, i) {
-      return '<div style="padding:10px 0;border-bottom:1px solid var(--c-border-hair);cursor:pointer" onclick="openQualityWalkDetail(' + i + ')">' +
+      return '<div style="padding:10px 0;border-bottom:1px solid var(--c-border-hair);cursor:pointer" onclick="openQualityWalkDetail(' + i + ', window._homeQualityWalks)">' +
         '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">' +
           '<span style="font-size:13px;font-weight:600;color:var(--c-ink)">' + esc(w.jobName || 'Unknown job') + '</span>' +
           '<span style="font-size:11px;color:var(--c-ink-faint);white-space:nowrap">' + esc(w.timestamp) + '</span>' +
@@ -3123,47 +3123,6 @@ function loadHomeQualityWalks() {
         '</div></div>';
     }).join('');
   }, function() { el.innerHTML = '<div class="empty">Could not load quality walks.</div>'; });
-}
-
-function closeQualityWalkDetail() {
-  var ov = document.getElementById('qw-detail-overlay');
-  if (ov) ov.remove();
-}
-
-function openQualityWalkDetail(i) {
-  var w = window._homeQualityWalks[i];
-  if (!w) return;
-
-  var itemsHtml = (w.items && w.items.length)
-    ? w.items.map(function(it) {
-        var color = it.status === 'pass' ? 'var(--bd-green-fg)' : it.status === 'flag' ? 'var(--c-danger)' : 'var(--c-ink-faint)';
-        var label = it.status === 'pass' ? 'PASS' : it.status === 'flag' ? 'FLAG' : 'N/A';
-        return '<div style="padding:8px 0;border-top:1px solid var(--c-border-soft)">' +
-          '<div style="display:flex;gap:8px;align-items:baseline">' +
-            '<span style="font-size:11px;font-weight:700;color:' + color + ';min-width:34px">' + label + '</span>' +
-            '<span style="font-size:13px;color:var(--c-ink)">' + esc(it.text) + '</span>' +
-          '</div>' +
-          (it.note ? '<div style="font-size:12px;color:var(--c-ink-soft);margin-left:42px">' + esc(it.note) + '</div>' : '') +
-        '</div>';
-      }).join('')
-    : '<p style="font-size:12px;color:var(--c-ink-soft)">No itemized checklist on this walk' + (w.notes ? ' — raw notes below.' : '.') + '</p>' +
-      (w.notes ? '<pre style="white-space:pre-wrap;font-size:11px;color:var(--c-ink-soft);background:var(--c-surface-2);border-radius:8px;padding:10px;margin-top:8px">' + esc(w.notes) + '</pre>' : '');
-
-  var overlay = document.createElement('div');
-  overlay.id = 'qw-detail-overlay';
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
-  overlay.onclick = function(e) { if (e.target === overlay) closeQualityWalkDetail(); };
-  overlay.innerHTML = '<div style="background:var(--c-surface);border-radius:16px;width:100%;max-width:480px;max-height:85vh;overflow:auto;padding:20px">'
-    + '<p style="font-size:15px;font-weight:700;color:var(--c-navy);margin:0 0 2px">' + esc(w.jobName || 'Unknown job') + '</p>'
-    + '<p style="font-size:12px;color:var(--c-ink-soft);margin:0 0 14px">'
-      + esc(w.walkType || 'Quality Check') + (w.trades ? ' · ' + esc(w.trades) : '') + (w.submitter ? ' · ' + esc(w.submitter) : '') + ' · ' + esc(w.timestamp)
-    + '</p>'
-    + itemsHtml
-    + '<div style="display:flex;gap:8px;margin-top:16px">'
-    + (w.permalinkUrl ? '<a href="' + esc(w.permalinkUrl) + '" target="_blank" style="flex:1;text-align:center;padding:10px;border:1px solid var(--c-border);border-radius:8px;color:var(--c-navy);font-size:13px;font-weight:600;text-decoration:none">View in Asana</a>' : '')
-    + '<button onclick="closeQualityWalkDetail()" style="flex:1;padding:10px;border:none;border-radius:8px;background:var(--c-navy);color:#fff;font-size:14px;font-weight:600;cursor:pointer">Close</button>'
-    + '</div></div>';
-  document.body.appendChild(overlay);
 }
 
 // Universal search -- searches POs (always loaded), Pricing and Contacts
@@ -6420,8 +6379,12 @@ var QC_DETAIL_ICONS = {
   na:   { icon: '&#8211;',  color: 'var(--qc-na-fg)' }
 };
 
-function openQualityWalkDetail(idx) {
-  var q = G_qualityRecent[idx];
+// list defaults to G_qualityRecent (the Job Dashboard's single-job history)
+// but callers with their own array -- like Home's cross-job recent-walks
+// card -- pass it explicitly instead of writing into that shared global,
+// which would otherwise go stale/wrong if the two views' data collide.
+function openQualityWalkDetail(idx, list) {
+  var q = (list || G_qualityRecent)[idx];
   if (!q) return;
   var badge = q.walkType
     ? '<span style="display:inline-block;padding:2px 7px;border-radius:10px;background:#eef1f8;color:var(--c-navy);font-size:10px;font-weight:700;text-transform:uppercase;margin-right:6px">' + esc(q.walkType) + '</span>'
@@ -6435,11 +6398,13 @@ function openQualityWalkDetail(idx) {
       + '</div>'
       + (it.note ? '<div style="margin-left:24px;margin-top:6px;font-size:12px;color:#b45309;background:#fef3cd;padding:6px 8px;border-radius:6px">' + esc(it.note) + '</div>' : '')
       + '</div>';
-  }).join('');
+  }).join('') || (q.notes ? '<pre style="white-space:pre-wrap;font-size:11px;color:var(--c-ink-soft);background:var(--c-surface-2);border-radius:8px;padding:10px">' + esc(q.notes) + '</pre>' : '');
   document.getElementById('qwd-body').innerHTML =
     '<div style="background:var(--c-surface);border-radius:12px;padding:16px 20px;margin-bottom:12px">'
+    + (q.jobName ? '<div style="font-size:13px;font-weight:700;color:var(--c-navy);margin-bottom:4px">' + esc(q.jobName) + '</div>' : '')
     + '<div style="font-size:15px;font-weight:700;color:var(--c-ink)">' + badge + esc(q.trades || 'General') + '</div>'
     + '<div style="font-size:12px;color:var(--c-ink-soft);margin-top:4px">' + esc(q.timestamp) + (q.submitter ? ' · ' + esc(q.submitter) : '') + '</div>'
+    + (q.permalinkUrl ? '<a href="' + esc(q.permalinkUrl) + '" target="_blank" style="display:inline-block;margin-top:8px;font-size:12px;font-weight:600;color:var(--c-navy)">View in Asana &rsaquo;</a>' : '')
     + '</div>'
     + '<div style="background:var(--c-surface);border-radius:12px;padding:4px 20px 2px">'
     + (itemsHtml || '<div class="empty">No item detail available for this walk.</div>')
