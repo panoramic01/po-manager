@@ -3720,17 +3720,34 @@ function combineDateTime_(dateStr, timeStr) {
   return new Date(parseInt(dp[0], 10), parseInt(dp[1], 10) - 1, parseInt(dp[2], 10), parseInt(tp[0], 10), parseInt(tp[1], 10));
 }
 
+/**
+ * Sheets silently auto-converts plain "YYYY-MM-DD" / "HH:MM" strings written
+ * into a cell into real Date objects if they look like a date/time. Format
+ * those properly instead of calling .toString() on a raw Date, which prints
+ * the full "Thu Jul 30 2026 00:00:00 GMT-0600 (...)" form.
+ */
+function formatCorrectionDate_(v, tz) {
+  return (v instanceof Date) ? Utilities.formatDate(v, tz, 'yyyy-MM-dd') : (v || '').toString();
+}
+function formatCorrectionTime_(v, tz) {
+  return (v instanceof Date) ? Utilities.formatDate(v, tz, 'h:mm a') : (v || '').toString();
+}
+/** Same Date-vs-string handling as formatCorrectionTime_, but in the 24h "HH:mm" shape combineDateTime_() expects. */
+function formatCorrectionTime24_(v, tz) {
+  return (v instanceof Date) ? Utilities.formatDate(v, tz, 'HH:mm') : (v || '').toString();
+}
+
 function formatCorrectionRow_(row, tz) {
   return {
     id:                (row[0] || '').toString(),
     submittedAt:       row[1] ? Utilities.formatDate(new Date(row[1]), tz, 'MM/dd/yyyy h:mm a') : '',
     employeeName:      (row[2] || '').toString(),
     employeeEmail:     (row[3] || '').toString(),
-    date:              (row[4] || '').toString(),
-    originalClockIn:   (row[5] || '').toString(),
-    originalClockOut:  (row[6] || '').toString(),
-    requestedClockIn:  (row[7] || '').toString(),
-    requestedClockOut: (row[8] || '').toString(),
+    date:              formatCorrectionDate_(row[4], tz),
+    originalClockIn:   formatCorrectionTime_(row[5], tz),
+    originalClockOut:  formatCorrectionTime_(row[6], tz),
+    requestedClockIn:  formatCorrectionTime_(row[7], tz),
+    requestedClockOut: formatCorrectionTime_(row[8], tz),
     reason:            (row[9]  || '').toString(),
     status:            (row[10] || 'pending').toString(),
     reviewedBy:        (row[11] || '').toString(),
@@ -3907,15 +3924,15 @@ function approveTimeCorrection(payload) {
       if (!found) return { error: 'Request not found' };
       if ((found.row[10] || '').toString() !== 'pending') return { error: 'This request has already been reviewed.' };
 
+      var tz      = Session.getScriptTimeZone();
       var email   = (found.row[3] || '').toString().toLowerCase().trim();
       var name    = (found.row[2] || '').toString();
-      var dateStr = (found.row[4] || '').toString();
-      var reqIn   = (found.row[7] || '').toString();
-      var reqOut  = (found.row[8] || '').toString();
+      var dateStr = formatCorrectionDate_(found.row[4], tz);
+      var reqIn   = formatCorrectionTime24_(found.row[7], tz);
+      var reqOut  = formatCorrectionTime24_(found.row[8], tz);
 
       var dp = dateStr.split('-');
       var targetMidnight = new Date(parseInt(dp[0], 10), parseInt(dp[1], 10) - 1, parseInt(dp[2], 10));
-      var tz = Session.getScriptTimeZone();
       var tsSheet = getTimeSheet_();
       var matchRow = findTimeTrackingRowForDate_(email, targetMidnight);
 
