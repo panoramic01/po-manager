@@ -155,6 +155,7 @@ function doPost(e) {
     else if (action === 'getSopData')                  result = getSopData();
     else if (action === 'saveMaterialHistory')          result = saveMaterialHistory(payload);
     else if (action === 'getAsanaJobs')                result = getAsanaJobs();
+    else if (action === 'getJobsByPhase')               result = getJobsByPhase(payload);
     else if (action === 'submitQualityCheck')           result = submitQualityCheck(payload);
     else if (action === 'submitOfficeNote')             result = submitOfficeNote(payload);
     else if (action === 'getAssignableEmployees')       result = getAssignableEmployees(payload);
@@ -2529,6 +2530,50 @@ function getAsanaJobs() {
       }
     }
     return { jobs: jobs };
+  } catch(e) { return { error: e.toString() }; }
+}
+
+/**
+ * Bulk-fetches incomplete Exterior Master Schedule tasks together with their
+ * current section membership, and groups them by section. Section names on
+ * this Asana board (Estimate Requested, Siding, Masonry, etc.) ARE the job
+ * phases -- this reuses the exact pagination shape of getAsanaJobs() above,
+ * just with memberships.section fields added, so it's one bulk call instead
+ * of the N+1 per-job section lookup getJobDashboard() does for a single job.
+ * The phase list/order comes from the sections endpoint itself (the same
+ * call getSectionGidByName() below makes) so nothing is hardcoded here.
+ */
+function getJobsByPhase(payload) {
+  try {
+    var auth = authorizeCaller(payload, ['admin']);
+    if (!auth.ok) return { error: auth.error, code: auth.code };
+
+    var sectionsResult = asanaRequest('get', '/projects/' + ASANA_EXT_SCHED + '/sections?opt_fields=gid,name');
+    if (sectionsResult.errors) return { error: sectionsResult.errors[0].message };
+    var sections = (sectionsResult.data || []).map(function(s) { return { gid: s.gid, name: s.name, jobs: [] }; });
+    var sectionByGid = {};
+    sections.forEach(function(s) { sectionByGid[s.gid] = s; });
+
+    var offset = null;
+    var maxPages = 10;
+    for (var page = 0; page < maxPages; page++) {
+      var url = '/projects/' + ASANA_EXT_SCHED +
+        '/tasks?opt_fields=gid,name,completed,memberships.section.gid,memberships.section.name&limit=100' +
+        (offset ? '&offset=' + encodeURIComponent(offset) : '');
+      var result = asanaRequest('get', url);
+      if (result.errors) return { error: result.errors[0].message };
+      (result.data || []).forEach(function(t) {
+        if (t.completed || !t.name) return;
+        var membership = (t.memberships || []).filter(function(m) { return m.section && sectionByGid[m.section.gid]; })[0];
+        if (membership) sectionByGid[membership.section.gid].jobs.push({ gid: t.gid, name: t.name });
+      });
+      if (result.next_page && result.next_page.offset) {
+        offset = result.next_page.offset;
+      } else {
+        break;
+      }
+    }
+    return { sections: sections };
   } catch(e) { return { error: e.toString() }; }
 }
 
