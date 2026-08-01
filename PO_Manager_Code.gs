@@ -159,6 +159,7 @@ function doPost(e) {
     else if (action === 'submitOfficeNote')             result = submitOfficeNote(payload);
     else if (action === 'getAssignableEmployees')       result = getAssignableEmployees(payload);
     else if (action === 'saveOfficeNotePhoto')          result = saveOfficeNotePhoto(payload.base64Data, payload.mimeType, payload.filename);
+    else if (action === 'saveMileageCommissionPdf')     result = saveMileageCommissionPdf(payload);
     else if (action === 'getPTOData')                  result = getPTOData(payload);
     else if (action === 'submitPTORequest')             result = submitPTORequest(payload);
     else if (action === 'getPTOQueue')                  result = getPTOQueue(payload);
@@ -1404,6 +1405,43 @@ function saveOfficeNotePhoto(base64Data, mimeType, filename) {
     return { success: true, url: file.getUrl() };
   } catch (e) {
     return { success: false, error: e.toString() };
+  }
+}
+
+/**
+ * Saves a mileage/commission PDF (or any file) an employee attaches from the
+ * period-review screen, into Purchasing/Mileage & Commission/{their email}
+ * (created on first use, one subfolder per employee for organization).
+ * Auth-gated (unlike saveOfficeNotePhoto above) since the destination folder
+ * depends on knowing who the caller is.
+ */
+function saveMileageCommissionPdf(payload) {
+  try {
+    var auth = requireVerifiedEmail_(payload);
+    if (auth.error) return auth;
+    var base64Data = (payload.base64Data || '').toString();
+    var mimeType   = (payload.mimeType || 'application/pdf').toString();
+    var filename   = (payload.filename || 'document.pdf').toString();
+    if (!base64Data) return { error: 'No file data received.' };
+
+    var root = getOrCreateChildFolder(getPurchasingRootFolder(), 'Mileage & Commission');
+    var folder = getOrCreateChildFolder(root, auth.email);
+
+    var bytes = Utilities.base64Decode(base64Data);
+    var blob  = Utilities.newBlob(bytes, mimeType, filename);
+    var file  = folder.createFile(blob);
+
+    try {
+      if (file.getSharingAccess() !== DriveApp.Access.ANYONE_WITH_LINK) {
+        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      }
+    } catch (sharingErr) {
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    }
+
+    return { success: true, url: file.getUrl() };
+  } catch (e) {
+    return { error: e.toString() };
   }
 }
 
@@ -3595,7 +3633,7 @@ function findFlaggableShifts_(sh, pStart, pEnd) {
 
 // ── Payroll: period approval/lock ─────────────────────────────────────────────
 var PAYROLL_APPROVALS_SHEET  = 'Payroll Approvals';
-var PAYROLL_APPROVALS_HEADERS = ['Period Label', 'Employee Email', 'Approved By', 'Approved At', 'Employee Approved At', 'Employee Note'];
+var PAYROLL_APPROVALS_HEADERS = ['Period Label', 'Employee Email', 'Approved By', 'Approved At', 'Employee Approved At', 'Employee Note', 'Employee PDF URL'];
 
 /**
  * True only if an ADMIN/HR has approved this period for this employee (column
@@ -3627,7 +3665,7 @@ function getApprovalMap_(periodLabel) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return map;
   var tz = Session.getScriptTimeZone();
-  var data = sheet.getRange(2, 1, lastRow - 1, 6).getValues();
+  var data = sheet.getRange(2, 1, lastRow - 1, 7).getValues();
   for (var i = 0; i < data.length; i++) {
     if ((data[i][0] || '') !== periodLabel) continue;
     var email = (data[i][1] || '').toString().toLowerCase().trim();
@@ -3636,7 +3674,8 @@ function getApprovalMap_(periodLabel) {
       approvedBy:         (data[i][2] || '').toString(),
       approvedAt:         data[i][3] ? Utilities.formatDate(new Date(data[i][3]), tz, 'MM/dd/yyyy h:mm a') : '',
       employeeApprovedAt: data[i][4] ? Utilities.formatDate(new Date(data[i][4]), tz, 'MM/dd/yyyy h:mm a') : '',
-      employeeNote:       (data[i][5] || '').toString()
+      employeeNote:       (data[i][5] || '').toString(),
+      employeePdfUrl:     (data[i][6] || '').toString()
     };
   }
   return map;
@@ -3693,6 +3732,7 @@ function approveMyTimesheet(payload) {
     if (auth.error) return auth;
     var email = auth.email;
     var note = (payload.note || '').toString().trim();
+    var pdfUrl = (payload.pdfUrl || '').toString().trim();
 
     var offset = parseInt(payload.periodOffset, 10);
     if (isNaN(offset) || offset >= 0) offset = -1;
@@ -3711,11 +3751,12 @@ function approveMyTimesheet(payload) {
           if ((data[i][0] || '') === periodLabel && (data[i][1] || '').toString().toLowerCase().trim() === email) {
             sheet.getRange(i + 2, 5).setValue(now);
             sheet.getRange(i + 2, 6).setValue(note);
+            sheet.getRange(i + 2, 7).setValue(pdfUrl);
             return { success: true, approvedAt: Utilities.formatDate(now, Session.getScriptTimeZone(), 'MM/dd/yyyy h:mm a') };
           }
         }
       }
-      sheet.appendRow([periodLabel, email, '', '', now, note]);
+      sheet.appendRow([periodLabel, email, '', '', now, note, pdfUrl]);
       return { success: true, approvedAt: Utilities.formatDate(now, Session.getScriptTimeZone(), 'MM/dd/yyyy h:mm a') };
     } finally {
       lock.releaseLock();
@@ -3794,7 +3835,8 @@ function getMyPeriodDetail(payload) {
       days: days,
       employeeApproved: !!myApproval.employeeApprovedAt,
       employeeApprovedAt: myApproval.employeeApprovedAt || '',
-      employeeNote: myApproval.employeeNote || ''
+      employeeNote: myApproval.employeeNote || '',
+      employeePdfUrl: myApproval.employeePdfUrl || ''
     };
   } catch(e) { return { error: e.toString() }; }
 }
@@ -4317,7 +4359,8 @@ function getPayrollSummary(payload) {
         regularHours: otSplit.regular, overtimeHours: otSplit.overtime,
         days: empMap[e].days, shifts: empMap[e].shifts,
         approved: !!(approval && approval.approvedAt), approvedBy: approval ? approval.approvedBy : '', approvedAt: approval ? approval.approvedAt : '',
-        employeeApproved: !!(approval && approval.employeeApprovedAt), employeeApprovedAt: approval ? approval.employeeApprovedAt : '', employeeNote: approval ? approval.employeeNote : ''
+        employeeApproved: !!(approval && approval.employeeApprovedAt), employeeApprovedAt: approval ? approval.employeeApprovedAt : '', employeeNote: approval ? approval.employeeNote : '',
+        employeePdfUrl: approval ? approval.employeePdfUrl : ''
       };
     }).sort(function(a, b) { return a.name.localeCompare(b.name); });
 

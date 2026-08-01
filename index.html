@@ -8838,6 +8838,7 @@ window.addEventListener('popstate', function(e) {
 var _acctClockedIn = false;
 var _acctClockInterval = null;
 var _myPeriodDetailCache = null;
+var _periodReviewPdfUrl = '';
 
 // ── Settings panel ──────────────────────────────────────────────────────────
 function openAcctSettings() {
@@ -9135,6 +9136,7 @@ function doPunchAcct() {
 function openPeriodReview() {
   var d = _myPeriodDetailCache;
   if (!d) { showToast('Still loading, try again in a moment'); return; }
+  _periodReviewPdfUrl = d.employeePdfUrl || '';
 
   document.getElementById('period-review-title').textContent = 'Approve Hours: ' + (d.periodLabel || '');
 
@@ -9163,6 +9165,12 @@ function openPeriodReview() {
     + '<label class="form-label" style="display:block;margin-bottom:6px">Reason for changes (if any)</label>'
     + '<textarea id="pr-reason" class="form-control" placeholder="Explain any times you changed above..." style="min-height:50px;margin-bottom:10px"></textarea>'
     + '<button onclick="doSubmitPeriodCorrections()" style="width:100%;background:none;border:1.5px solid var(--c-navy);color:var(--c-navy);border-radius:9px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:16px">Submit Corrections</button>'
+    + '</div>'
+    + '<div style="border-top:1px solid var(--c-border-soft);padding-top:14px">'
+    + '<label class="form-label" style="display:block;margin-bottom:6px">Mileage &amp; Commission PDF (optional)</label>'
+    + '<input type="file" id="pr-pdf-file" accept="application/pdf,.pdf" style="display:none" onchange="handlePeriodPdfFile(this)">'
+    + '<button type="button" onclick="document.getElementById(\'pr-pdf-file\').click()" style="width:100%;background:none;border:1.5px solid var(--c-navy);color:var(--c-navy);border-radius:9px;padding:10px;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:6px">' + (d.employeePdfUrl ? 'Replace PDF' : 'Attach PDF') + '</button>'
+    + '<div id="pr-pdf-status" style="font-size:12px;color:var(--c-ink-soft);margin-bottom:16px">' + (d.employeePdfUrl ? '<a href="' + esc(d.employeePdfUrl) + '" target="_blank" rel="noopener" style="color:var(--c-navy);font-weight:600">Open current PDF</a>' : 'No PDF attached yet') + '</div>'
     + '</div>'
     + '<div style="border-top:1px solid var(--c-border-soft);padding-top:14px">'
     + '<label class="form-label" style="display:block;margin-bottom:6px">Notes for payroll (optional)</label>'
@@ -9211,7 +9219,7 @@ function doApprovePeriodHours() {
   var note = noteEl ? noteEl.value : '';
   var orig = btn.textContent;
   btn.disabled = true; btn.textContent = 'Saving...';
-  gasCall('approveMyTimesheet', { note: note, periodOffset: -1 }, function(r) {
+  gasCall('approveMyTimesheet', { note: note, pdfUrl: _periodReviewPdfUrl, periodOffset: -1 }, function(r) {
     btn.disabled = false;
     if (r && r.success) {
       showToast('Hours approved');
@@ -9222,6 +9230,27 @@ function doApprovePeriodHours() {
       showToast('Error: ' + ((r && r.error) || 'Could not save'));
     }
   }, function() { btn.disabled = false; btn.textContent = orig; showToast('Could not connect'); });
+}
+
+function handlePeriodPdfFile(input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+  var statusEl = document.getElementById('pr-pdf-status');
+  if (statusEl) statusEl.textContent = 'Uploading...';
+  readAndCompressFile(file, function(dataUrl, mimeType) {
+    gasCall('saveMileageCommissionPdf', {
+      base64Data: dataUrl.split(',')[1], mimeType: mimeType || 'application/pdf', filename: file.name
+    }, function(res) {
+      if (res && res.success) {
+        _periodReviewPdfUrl = res.url;
+        if (statusEl) statusEl.innerHTML = '<a href="' + esc(res.url) + '" target="_blank" rel="noopener" style="color:var(--c-navy);font-weight:600">Open uploaded PDF</a>';
+        showToast('PDF uploaded');
+      } else {
+        if (statusEl) statusEl.textContent = 'Upload failed';
+        showToast('Error: ' + ((res && res.error) || 'Could not upload'));
+      }
+    }, function() { if (statusEl) statusEl.textContent = 'Upload failed'; showToast('Could not connect'); });
+  }, function() { if (statusEl) statusEl.textContent = 'Could not read file'; });
 }
 
 // ── Employee Manager ──────────────────────────────────────────────────────────────────────
@@ -9468,6 +9497,7 @@ function loadPayroll(offset) {
                 ? '<span style="color:#1a7a3c;font-weight:700">Employee: &#10003; Checked ' + esc(e.employeeApprovedAt) + '</span>'
                 : '<span style="color:var(--c-ink-faint)">Employee: Not yet checked</span>')
             + (e.employeeNote ? '<div style="margin-top:4px;font-style:italic">"' + esc(e.employeeNote) + '"</div>' : '')
+            + (e.employeePdfUrl ? '<div style="margin-top:4px"><a href="' + esc(e.employeePdfUrl) + '" target="_blank" rel="noopener" style="color:var(--c-navy);font-weight:600">Open Mileage/Commission PDF</a></div>' : '')
             + '</div>'
             + '<div style="margin-top:10px;text-align:right">'
             + (isCurrentPeriod
