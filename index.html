@@ -846,11 +846,6 @@
           <span class="tile-label">New Project</span>
         </div>
 
-        <div id="other-card-quickbooks" class="tile" onclick="showOtherPanel('quickbooks')">
-          <span class="tile-swatch ts-amber"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 14l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg></span>
-          <span class="tile-label">QuickBooks</span>
-        </div>
-
       </div>
     </div>
 
@@ -1858,10 +1853,6 @@
         <span class="tile-swatch ts-amber"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/></svg></span>
         <span class="tile-label">Payroll</span>
       </div>
-      <div class="tile" onclick="showOtherPanel('quickbooks')">
-        <span class="tile-swatch ts-amber"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 14l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg></span>
-        <span class="tile-label">QuickBooks</span>
-      </div>
     </div>
 
     <div class="sec-head sh-blue">Reference</div>
@@ -2736,7 +2727,6 @@ function applyRole(role) {
   sd('other-card-pto-overview',  has(['admin', 'human_resources']));
   sd('other-card-payroll',       has(['admin', 'human_resources']));
   sd('other-card-new-project',   p.canCreate);
-  sd('other-card-quickbooks',    roleTokens(role).indexOf('aidan') !== -1);
   sd('receive-po-card', p.canReceivePO);
   sd('acct-push-card', true);
   sd('acct-theme-card', G.isAidan);
