@@ -2684,7 +2684,7 @@ function getRecentQualityWalks(payload) {
 
     var searchUrl = '/workspaces/' + workspaceGid +
       '/tasks/search?text=Quality Check&sort_by=created_at&sort_ascending=false&limit=5' +
-      '&opt_fields=name,notes,created_at,parent.name';
+      '&opt_fields=name,notes,created_at,parent.name,parent.gid,permalink_url';
     var searchResult = asanaRequest('get', searchUrl);
     if (searchResult.errors) return { walks: [], error: searchResult.errors[0].message };
 
@@ -2696,12 +2696,29 @@ function getRecentQualityWalks(payload) {
       var submitter = (notes.match(/Submitted by:\s*(.+)/) || [])[1] || '';
       var trades    = (notes.match(/Trade\(s\):\s*(.+)/)   || [])[1] || '';
       var created   = t.created_at ? new Date(t.created_at) : null;
+      var items     = parseQualityCheckItems_(notes);
+      var passCount = 0, flagCount = 0, naCount = 0;
+      items.forEach(function(it) {
+        if (it.status === 'pass') passCount++;
+        else if (it.status === 'flag') flagCount++;
+        else naCount++;
+      });
+      // No parent = the task genuinely isn't a subtask of any job (or Asana
+      // didn't return one). Surfacing notes/permalink raw here rather than
+      // guessing lets you go look at the actual task and see why.
       return {
-        jobName:   t.parent ? t.parent.name : '',
-        walkType:  walkType,
-        submitter: submitter,
-        trades:    trades,
-        timestamp: created ? Utilities.formatDate(created, Session.getScriptTimeZone(), 'MM/dd/yy') : ''
+        jobName:      t.parent ? t.parent.name : '',
+        jobGid:       t.parent ? t.parent.gid : '',
+        walkType:     walkType,
+        submitter:    submitter,
+        trades:       trades,
+        timestamp:    created ? Utilities.formatDate(created, Session.getScriptTimeZone(), 'MM/dd/yy') : '',
+        items:        items,
+        passCount:    passCount,
+        flagCount:    flagCount,
+        naCount:      naCount,
+        notes:        notes,
+        permalinkUrl: t.permalink_url || ''
       };
     });
 
