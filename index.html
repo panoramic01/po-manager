@@ -558,6 +558,33 @@
       <div id="runner-home-greeting" style="font-size:19px;font-weight:700;color:var(--c-navy)"></div>
     </div>
 
+    <!-- Time Clock widget -- runner-only, moved here from Account (see
+         applyRole()'s sd('acct-timeclock-card', false), which hides the
+         old Account-tab copy for everyone since no other role clocks in). -->
+    <div style="background:var(--c-surface);border-radius:14px;overflow:hidden;box-shadow:0 1px 4px var(--c-shadow-sm);margin-bottom:14px">
+      <div style="padding:14px 16px 10px;font-size:14px;font-weight:700;color:var(--c-navy);border-bottom:1px solid var(--c-border-soft)">Time Clock</div>
+      <div style="padding:16px">
+        <div id="home-clock-card" style="background:linear-gradient(135deg,#1F3971,#2d5ab5);border-radius:12px;padding:20px;text-align:center;margin-bottom:0">
+          <div id="home-status-label" style="font-size:11px;color:rgba(255,255,255,0.75);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Not clocked in</div>
+          <div id="home-time-display" style="font-size:30px;font-weight:800;color:#fff;margin-bottom:2px;font-variant-numeric:tabular-nums">--:--</div>
+          <div id="home-since-label" style="font-size:12px;color:rgba(255,255,255,0.6);margin-bottom:16px;min-height:16px"></div>
+          <button id="home-punch-btn" onclick="doPunchHome()" style="background:#fff;color:#1F3971;border:none;border-radius:9px;padding:12px 40px;font-size:15px;font-weight:800;cursor:pointer;width:100%">Clock In</button>
+        </div>
+        <div style="padding:0 0 4px">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0 8px;border-top:1px solid var(--c-border-soft);margin-top:12px">
+            <span style="font-size:13px;font-weight:700;color:var(--c-navy)">Hours This Period</span>
+            <span id="home-period-label" style="font-size:12px;color:var(--c-ink-soft)"></span>
+          </div>
+          <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:10px">
+            <span id="home-my-hours" style="font-size:36px;font-weight:800;color:var(--c-navy)">--</span>
+            <span style="font-size:13px;color:var(--c-ink-soft);font-weight:500">hrs</span>
+          </div>
+          <div id="home-my-days" style="border-top:1px solid var(--c-border-soft);padding-top:8px"></div>
+          <button onclick="openTimeCorrectionForm()" style="width:100%;margin-top:12px;background:none;border:1.5px solid var(--c-navy);color:var(--c-navy);border-radius:9px;padding:10px;font-size:13px;font-weight:700;cursor:pointer">Request a Correction</button>
+        </div>
+      </div>
+    </div>
+
     <div class="tile-grid" id="runner-home-quick-actions" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px"></div>
   </div>
 
@@ -1509,8 +1536,10 @@
       <span style="color:var(--c-ink-faint);font-size:20px;line-height:1">›</span>
     </div>
 
-    <!-- Time Clock widget -->
-    <div style="background:var(--c-surface);border-radius:14px;overflow:hidden;box-shadow:0 1px 4px var(--c-shadow-sm);margin-bottom:16px">
+    <!-- Time Clock widget -- runner-only; moved to Runner Home (see
+         applyRole()'s sd('acct-timeclock-card', false)), no other role
+         clocks in so this stays hidden for everyone here now. -->
+    <div id="acct-timeclock-card" style="background:var(--c-surface);border-radius:14px;overflow:hidden;box-shadow:0 1px 4px var(--c-shadow-sm);margin-bottom:16px">
       <div style="padding:14px 16px 10px;font-size:14px;font-weight:700;color:var(--c-navy);border-bottom:1px solid var(--c-border-soft)">Time Clock</div>
       <div style="padding:16px">
         <div id="acct-clock-card" style="background:linear-gradient(135deg,#1F3971,#2d5ab5);border-radius:12px;padding:20px;text-align:center;margin-bottom:0">
@@ -2763,6 +2792,9 @@ function applyRole(role) {
   // so they reset correctly for every other role too.
   sd('receive-quick-tiles', !G.isRunnerHome);
   sd('receive-recent-pos-card', G.isRunnerHome);
+  // Clock-in only applies to Runner, and Runner's copy now lives on Home
+  // (see tab-runnerhome) -- the Account tab's copy is retired for everyone.
+  sd('acct-timeclock-card', false);
   sd('acct-push-card', true);
   sd('acct-theme-card', G.isAidan);
 
@@ -3283,6 +3315,114 @@ function renderRunnerHomeQuickActions() {
 function initRunnerHomeTab() {
   renderHomeGreeting('runner-home-greeting');
   renderRunnerHomeQuickActions();
+  loadHomeClock();
+}
+
+// Runner Home's Time Clock widget -- ported from the old Account-tab
+// acct-clock-card (see applyRole()'s sd('acct-timeclock-card', false)),
+// same gasCall endpoints, own 'home-' ids/state since that widget is
+// retired rather than removed from the DOM.
+var _homeClockedIn = false;
+var _homeClockInterval = null;
+
+function loadHomeClock() {
+  gasCall('getClockStatus', { email: G.userEmail }, function(s) {
+    if (s.error) return;
+    _homeClockedIn = s.clockedIn;
+    updateHomeClockUI(s.clockedIn, s.since || null);
+    if (s.clockedIn) startHomeTick();
+  }, function(){});
+
+  gasCall('getTimesheet', { email: G.userEmail, role: G.role }, function(d) {
+    if (d.error) return;
+    document.getElementById('home-period-label').textContent = d.periodLabel || '';
+    var hoursText = d.myHours !== undefined ? String(d.myHours) : '--';
+    if (d.myOvertimeHours) hoursText += ' (' + d.myOvertimeHours + ' OT)';
+    document.getElementById('home-my-hours').textContent = hoursText;
+    var daysEl = document.getElementById('home-my-days');
+    var days = d.myDays || {};
+    var keys = Object.keys(days);
+    if (keys.length) {
+      daysEl.innerHTML = keys.map(function(day) {
+        return '<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:13px;color:var(--c-ink-soft);border-bottom:1px solid var(--c-border-soft)">'
+          + '<span>' + day + '</span><span style="font-weight:600">' + days[day] + ' hrs</span></div>';
+      }).join('');
+    } else {
+      daysEl.innerHTML = '<p style="font-size:13px;color:var(--c-ink-faint);margin:0">No hours recorded yet this period.</p>';
+    }
+  }, function(){});
+}
+
+function updateHomeClockUI(clockedIn, since) {
+  var card   = document.getElementById('home-clock-card');
+  var status = document.getElementById('home-status-label');
+  var since_ = document.getElementById('home-since-label');
+  var btn    = document.getElementById('home-punch-btn');
+  if (!card) return;
+  if (clockedIn) {
+    card.style.background = 'linear-gradient(135deg,#1b5e20,#2e7d32)';
+    status.textContent = 'Currently clocked in';
+    since_.textContent = since ? 'Since ' + since : '';
+    btn.textContent = 'Clock Out';
+    btn.style.color = '#2e7d32';
+    _homeClockedIn = true;
+    updateHomeLiveClock();
+  } else {
+    card.style.background = 'linear-gradient(135deg,#1F3971,#2d5ab5)';
+    status.textContent = 'Not clocked in';
+    since_.textContent = '';
+    btn.textContent = 'Clock In';
+    btn.style.color = '#1F3971';
+    document.getElementById('home-time-display').textContent = '--:--';
+    _homeClockedIn = false;
+    if (_homeClockInterval) { clearInterval(_homeClockInterval); _homeClockInterval = null; }
+  }
+}
+
+function startHomeTick() {
+  if (_homeClockInterval) clearInterval(_homeClockInterval);
+  updateHomeLiveClock();
+  _homeClockInterval = setInterval(updateHomeLiveClock, 1000);
+}
+
+function updateHomeLiveClock() {
+  var now = new Date();
+  var el = document.getElementById('home-time-display');
+  if (!el) return;
+  el.textContent = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0') + ':' + now.getSeconds().toString().padStart(2,'0');
+}
+
+function doPunchHome() {
+  var btn = document.getElementById('home-punch-btn');
+  btn.disabled = true;
+  btn.textContent = _homeClockedIn ? 'Clocking out...' : 'Clocking in...';
+  captureLocationThen_(function(loc) {
+    if (_homeClockedIn) {
+      gasCall('clockOut', Object.assign({ email: G.userEmail }, loc), function(r) {
+        btn.disabled = false;
+        if (r && r.success) {
+          showToast('Clocked out - ' + r.hours + ' hrs logged' + (loc.lat ? '' : ' (location off)'));
+          updateHomeClockUI(false, null);
+          loadHomeClock();
+        } else {
+          btn.textContent = 'Clock Out';
+          showToast('Error: ' + ((r && r.error) || 'Could not clock out'));
+        }
+      }, function() { btn.disabled = false; btn.textContent = 'Clock Out'; showToast('Could not connect'); });
+    } else {
+      gasCall('clockIn', Object.assign({ email: G.userEmail, name: G.config.userName || G.userEmail }, loc), function(r) {
+        btn.disabled = false;
+        if (r && r.success) {
+          showToast('Clocked in at ' + r.clockIn + (loc.lat ? '' : ' (location off)'));
+          updateHomeClockUI(true, r.clockIn);
+          startHomeTick();
+        } else {
+          btn.textContent = 'Clock In';
+          showToast('Error: ' + ((r && r.error) || 'Could not clock in'));
+        }
+      }, function() { btn.disabled = false; btn.textContent = 'Clock In'; showToast('Could not connect'); });
+    }
+  });
 }
 
 // ── Deliveries & Pickups summary card ────────────────────────────────────────
@@ -9416,34 +9556,6 @@ function loadAccount() {
   document.getElementById('acct-phone-input').value         = phone;
   updateThemeToggleUI();
   renderPushUI();
-
-  // Load clock status
-  gasCall('getClockStatus', { email: email }, function(s) {
-    if (s.error) return;
-    _acctClockedIn = s.clockedIn;
-    updateAcctClockUI(s.clockedIn, s.since || null);
-    if (s.clockedIn) startAcctTick();
-  }, function(){});
-
-  // Load timesheet hours
-  gasCall('getTimesheet', { email: email, role: G.role }, function(d) {
-    if (d.error) return;
-    document.getElementById('acct-period-label').textContent = d.periodLabel || '';
-    var acctHoursText = d.myHours !== undefined ? String(d.myHours) : '--';
-    if (d.myOvertimeHours) acctHoursText += ' (' + d.myOvertimeHours + ' OT)';
-    document.getElementById('acct-my-hours').textContent = acctHoursText;
-    var daysEl = document.getElementById('acct-my-days');
-    var days = d.myDays || {};
-    var keys = Object.keys(days);
-    if (keys.length) {
-      daysEl.innerHTML = keys.map(function(day) {
-        return '<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:13px;color:var(--c-ink-soft);border-bottom:1px solid var(--c-border-soft)">'
-          + '<span>' + day + '</span><span style="font-weight:600">' + days[day] + ' hrs</span></div>';
-      }).join('');
-    } else {
-      daysEl.innerHTML = '<p style="font-size:13px;color:var(--c-ink-faint);margin:0">No hours recorded yet this period.</p>';
-    }
-  }, function(){});
 
   // Load prior-period detail, for the "Approve Hours" card + review overlay
   gasCall('getMyPeriodDetail', { periodOffset: -1 }, function(d) {
