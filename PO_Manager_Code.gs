@@ -2682,8 +2682,14 @@ function getRecentQualityWalks(payload) {
     if (wsResult.errors || !wsResult.data || !wsResult.data.length) return { walks: [] };
     var workspaceGid = wsResult.data[0].gid;
 
+    // Fetch more than 5 up front -- some recent results turn out to be older
+    // free-text-summary tasks (pre-dating the current Walk Type/Trade(s)/
+    // [PASS]-[FLAG]-[N/A] format and never created as a job subtask), which
+    // get filtered out below. Without the headroom, a few of those near the
+    // top of the date-sorted results would silently leave fewer than 5 real
+    // walks instead of backfilling from further back.
     var searchUrl = '/workspaces/' + workspaceGid +
-      '/tasks/search?text=Quality Check&sort_by=created_at&sort_ascending=false&limit=5' +
+      '/tasks/search?text=Quality Check&sort_by=created_at&sort_ascending=false&limit=20' +
       '&opt_fields=name,notes,created_at,parent.name,parent.gid,permalink_url';
     var searchResult = asanaRequest('get', searchUrl);
     if (searchResult.errors) return { walks: [], error: searchResult.errors[0].message };
@@ -2703,9 +2709,6 @@ function getRecentQualityWalks(payload) {
         else if (it.status === 'flag') flagCount++;
         else naCount++;
       });
-      // No parent = the task genuinely isn't a subtask of any job (or Asana
-      // didn't return one). Surfacing notes/permalink raw here rather than
-      // guessing lets you go look at the actual task and see why.
       return {
         jobName:      t.parent ? t.parent.name : '',
         jobGid:       t.parent ? t.parent.gid : '',
@@ -2720,7 +2723,12 @@ function getRecentQualityWalks(payload) {
         notes:        notes,
         permalinkUrl: t.permalink_url || ''
       };
-    });
+    }).filter(function(w) {
+      // Only genuine structured walks -- older free-text-summary tasks (no
+      // parsed checklist items) are a different, pre-current-format thing
+      // and are excluded here rather than shown as "Unknown job".
+      return w.items.length > 0;
+    }).slice(0, 5);
 
     return { walks: walks };
   } catch (e) { return { error: e.toString() }; }
