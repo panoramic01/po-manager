@@ -1736,9 +1736,9 @@
     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
     Dashboard
   </button>
-  <button id="nav-receive" class="nav-btn" onclick="showTab('receive',this)">
+  <button id="nav-receive" class="nav-btn" onclick="openActionsTab(this)">
     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-    Log
+    <span id="nav-receive-label">Log</span>
   </button>
   <button id="nav-other" class="nav-btn" onclick="showTab('other',this)">
     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h7"/></svg>
@@ -2510,6 +2510,7 @@ function applyRole(role) {
     canAccount:     true
   };
   G.perms = p;
+  G.isAidan = roleTokens(role).indexOf('aidan') !== -1;
 
   // Show/hide nav buttons (null-safe in case elements aren't in the deployed version yet)
   function sd(id, show) { var el = document.getElementById(id); if (el) el.style.display = show ? '' : 'none'; }
@@ -2535,8 +2536,17 @@ function applyRole(role) {
   sd('other-card-new-project',   p.canCreate);
   sd('other-card-quickbooks',    roleTokens(role).indexOf('aidan') !== -1);
   sd('receive-po-card', p.canReceivePO);
-  sd('acct-push-card', roleTokens(role).indexOf('aidan') !== -1);
-  sd('acct-theme-card', roleTokens(role).indexOf('aidan') !== -1);
+  sd('acct-push-card', G.isAidan);
+  sd('acct-theme-card', G.isAidan);
+
+  // Aidan-only rollout: rename the Log tab to Actions and keep the Receive PO
+  // card tucked away until quickReceive() opens it from a PO's Receive button.
+  if (G.isAidan) {
+    var navReceiveLabel = document.getElementById('nav-receive-label');
+    if (navReceiveLabel) navReceiveLabel.textContent = 'Actions';
+    var receivePoCard = document.getElementById('receive-po-card');
+    if (receivePoCard) receivePoCard.style.display = 'none';
+  }
 
   // Show role badge in header
   var headerP = document.querySelector('.app-header p');
@@ -3344,6 +3354,8 @@ function showReceiveInfo(po) {
 
 function quickReceive(poNum) {
   showTab('receive', document.getElementById('nav-receive'));
+  var rpc = document.getElementById('receive-po-card');
+  if (rpc) rpc.style.display = 'block';
   document.getElementById('r-ponum').value = poNum;
   document.getElementById('r-info').style.display = 'none';
   lookupPO();
@@ -3367,6 +3379,10 @@ function submitReceive() {
       showToast('' + G.receivePO.poNum + ' updated!');
       document.getElementById('r-ponum').value = '';
       document.getElementById('r-info').style.display = 'none';
+      if (G.isAidan) {
+        var rpc = document.getElementById('receive-po-card');
+        if (rpc) rpc.style.display = 'none';
+      }
       G.receivePO = null;
       loadData();
     } else {
@@ -3966,6 +3982,17 @@ function showTab(name, btn) {
   };
   if (blocked[name]) { showToast("You don't have access to that."); return; }
   showTabDirect(name, btn);
+}
+
+// Entry point for the Actions/Log nav button. On aidan's profile the Receive
+// PO card stays hidden until quickReceive() opens it from a PO's Receive
+// button -- so a direct tap into this tab always starts from a clean slate.
+function openActionsTab(btn) {
+  if (G.isAidan) {
+    var rpc = document.getElementById('receive-po-card');
+    if (rpc) rpc.style.display = 'none';
+  }
+  showTab('receive', btn);
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
