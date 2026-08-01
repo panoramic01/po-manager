@@ -3915,7 +3915,14 @@ function receiveRecentRow(po) {
 function renderReceiveRecentPOs() {
   var el = document.getElementById('receive-recent-pos-list');
   if (!el) return;
-  var recent = (G.pos || []).slice(-10).reverse();
+  // Complete/Delivered orders are already received -- nothing left to do
+  // with them here, so filter before slicing to the most recent 10 (not
+  // after) so the list still fills with 10 actionable orders.
+  var pending = (G.pos || []).filter(function(po) {
+    var sl = (po.status || '').toLowerCase();
+    return sl !== 'complete' && sl !== 'delivered';
+  });
+  var recent = pending.slice(-10).reverse();
   el.innerHTML = recent.length ? recent.map(receiveRecentRow).join('') : '<div class="empty">No orders yet.</div>';
 }
 
