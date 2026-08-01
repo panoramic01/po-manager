@@ -1444,7 +1444,7 @@
 
     <!-- Profile card -->
     <div style="background:var(--c-surface);border-radius:14px;padding:20px;box-shadow:0 1px 4px var(--c-shadow-sm);margin-bottom:16px">
-      <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px">
+      <div style="display:flex;align-items:center;gap:14px">
         <div id="acct-avatar" style="width:56px;height:56px;border-radius:50%;background:var(--c-navy);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800;color:#fff;flex-shrink:0">?</div>
         <div>
           <div id="acct-display-name" style="font-size:17px;font-weight:700;color:var(--c-navy)"></div>
@@ -1452,35 +1452,15 @@
           <div id="acct-email-label" style="font-size:12px;color:var(--c-ink-faint);margin-top:1px;word-break:break-all"></div>
         </div>
       </div>
-      <div style="margin-bottom:12px">
-        <label style="font-size:12px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Full Name</label>
-        <input id="acct-name-input" type="text" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:10px 12px;font-size:14px;outline:none;background:var(--c-surface);color:var(--c-ink)" placeholder="Your name"/>
-      </div>
-      <div style="margin-bottom:16px">
-        <label style="font-size:12px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Phone</label>
-        <input id="acct-phone-input" type="tel" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:10px 12px;font-size:14px;outline:none;background:var(--c-surface);color:var(--c-ink)" placeholder="Phone number"/>
-      </div>
-      <button onclick="saveProfile()" style="width:100%;background:var(--c-navy);color:#fff;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer">Save Changes</button>
     </div>
 
-    <!-- Appearance card (aidan role only -- test rollout) -->
-    <div id="acct-theme-card" style="background:var(--c-surface);border-radius:14px;padding:20px;box-shadow:0 1px 4px var(--c-shadow-sm);margin-bottom:16px">
-      <div style="font-size:14px;font-weight:700;color:var(--c-navy);margin-bottom:14px">Appearance</div>
-      <div id="acct-theme-toggle" style="display:flex;background:var(--c-bg);border-radius:10px;padding:4px;gap:4px">
-        <button id="acct-theme-light" onclick="setTheme('light')" style="flex:1;border:none;border-radius:8px;padding:10px 0;font-size:13px;font-weight:700;cursor:pointer;background:none;color:var(--c-ink-soft)">Light</button>
-        <button id="acct-theme-dark" onclick="setTheme('dark')" style="flex:1;border:none;border-radius:8px;padding:10px 0;font-size:13px;font-weight:700;cursor:pointer;background:none;color:var(--c-ink-soft)">Dark</button>
+    <!-- Settings entry -->
+    <div id="acct-settings-btn" onclick="openAcctSettings()" style="background:var(--c-surface);border-radius:14px;padding:16px 20px;box-shadow:0 1px 4px var(--c-shadow-sm);margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer">
+      <div style="display:flex;align-items:center;gap:12px">
+        <span style="font-size:20px">⚙️</span>
+        <span style="font-size:15px;font-weight:700;color:var(--c-navy)">Settings</span>
       </div>
-    </div>
-
-    <!-- Push Notifications card (aidan role only -- test rollout) -->
-    <div id="acct-push-card" style="background:var(--c-surface);border-radius:14px;padding:20px;box-shadow:0 1px 4px var(--c-shadow-sm);margin-bottom:16px">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
-        <div>
-          <div style="font-size:14px;font-weight:700;color:var(--c-navy)">Push Notifications</div>
-          <div id="acct-push-status" style="font-size:12px;color:var(--c-ink-soft);margin-top:2px">Off</div>
-        </div>
-        <button id="acct-push-btn" onclick="togglePush()" style="background:var(--c-navy);color:#fff;border:none;border-radius:9px;padding:10px 18px;font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0">Enable</button>
-      </div>
+      <span style="color:var(--c-ink-faint);font-size:20px;line-height:1">›</span>
     </div>
 
     <!-- Time Clock widget -->
@@ -1528,6 +1508,51 @@
       </div>
       <div id="acct-pto-list" style="border-top:1px solid var(--c-border-soft);padding-top:12px"></div>
       <button onclick="showTab('other');showOtherPanel('pto')" style="width:100%;margin-top:12px;background:none;border:1.5px solid var(--c-navy);color:var(--c-navy);border-radius:9px;padding:10px;font-size:13px;font-weight:700;cursor:pointer">Request Time Off</button>
+    </div>
+
+    <!-- Settings panel (overlay, opened from acct-settings-btn) -->
+    <div id="acct-settings-panel" style="display:none;position:fixed;inset:0;background:var(--c-bg);z-index:150;overflow-y:auto">
+      <div style="position:sticky;top:0;background:var(--c-surface);z-index:10;display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--c-border-soft)">
+        <button onclick="closeAcctSettings()" style="background:none;border:none;color:var(--c-navy);font-size:15px;font-weight:700;cursor:pointer;padding:4px 0">← Back</button>
+        <h2 style="font-size:17px;font-weight:700;color:var(--c-navy);margin:0">Settings</h2>
+      </div>
+      <div style="padding:16px;padding-bottom:80px">
+
+        <!-- Edit Profile card -->
+        <div style="background:var(--c-surface);border-radius:14px;padding:20px;box-shadow:0 1px 4px var(--c-shadow-sm);margin-bottom:16px">
+          <div style="font-size:14px;font-weight:700;color:var(--c-navy);margin-bottom:14px">Edit Profile</div>
+          <div style="margin-bottom:12px">
+            <label style="font-size:12px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Full Name</label>
+            <input id="acct-name-input" type="text" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:10px 12px;font-size:14px;outline:none;background:var(--c-surface);color:var(--c-ink)" placeholder="Your name"/>
+          </div>
+          <div style="margin-bottom:16px">
+            <label style="font-size:12px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Phone</label>
+            <input id="acct-phone-input" type="tel" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:10px 12px;font-size:14px;outline:none;background:var(--c-surface);color:var(--c-ink)" placeholder="Phone number"/>
+          </div>
+          <button onclick="saveProfile()" style="width:100%;background:var(--c-navy);color:#fff;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer">Save Changes</button>
+        </div>
+
+        <!-- Appearance card -->
+        <div id="acct-theme-card" style="background:var(--c-surface);border-radius:14px;padding:20px;box-shadow:0 1px 4px var(--c-shadow-sm);margin-bottom:16px">
+          <div style="font-size:14px;font-weight:700;color:var(--c-navy);margin-bottom:14px">Appearance</div>
+          <div id="acct-theme-toggle" style="display:flex;background:var(--c-bg);border-radius:10px;padding:4px;gap:4px">
+            <button id="acct-theme-light" onclick="setTheme('light')" style="flex:1;border:none;border-radius:8px;padding:10px 0;font-size:13px;font-weight:700;cursor:pointer;background:none;color:var(--c-ink-soft)">Light</button>
+            <button id="acct-theme-dark" onclick="setTheme('dark')" style="flex:1;border:none;border-radius:8px;padding:10px 0;font-size:13px;font-weight:700;cursor:pointer;background:none;color:var(--c-ink-soft)">Dark</button>
+          </div>
+        </div>
+
+        <!-- Push Notifications card -->
+        <div id="acct-push-card" style="background:var(--c-surface);border-radius:14px;padding:20px;box-shadow:0 1px 4px var(--c-shadow-sm);margin-bottom:16px">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+            <div>
+              <div style="font-size:14px;font-weight:700;color:var(--c-navy)">Push Notifications</div>
+              <div id="acct-push-status" style="font-size:12px;color:var(--c-ink-soft);margin-top:2px">Off</div>
+            </div>
+            <button id="acct-push-btn" onclick="togglePush()" style="background:var(--c-navy);color:#fff;border:none;border-radius:9px;padding:10px 18px;font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0">Enable</button>
+          </div>
+        </div>
+
+      </div>
     </div>
 
   </div>
@@ -2536,7 +2561,7 @@ function applyRole(role) {
   sd('other-card-new-project',   p.canCreate);
   sd('other-card-quickbooks',    roleTokens(role).indexOf('aidan') !== -1);
   sd('receive-po-card', p.canReceivePO);
-  sd('acct-push-card', G.isAidan);
+  sd('acct-push-card', true);
   sd('acct-theme-card', G.isAidan);
 
   // Aidan-only rollout: rename the Log tab to Actions and keep the Receive PO
@@ -8778,6 +8803,14 @@ window.addEventListener('popstate', function(e) {
 // ── Account Tab ───────────────────────────────────────────────────────────────
 var _acctClockedIn = false;
 var _acctClockInterval = null;
+
+// ── Settings panel ──────────────────────────────────────────────────────────
+function openAcctSettings() {
+  document.getElementById('acct-settings-panel').style.display = 'block';
+}
+function closeAcctSettings() {
+  document.getElementById('acct-settings-panel').style.display = 'none';
+}
 
 // ── Theme (light/dark) ──────────────────────────────────────────────────────
 function setTheme(mode) {
