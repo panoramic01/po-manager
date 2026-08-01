@@ -9173,7 +9173,6 @@ function openPeriodReview() {
     + '<div style="margin-top:16px">'
     + '<label class="form-label" style="display:block;margin-bottom:6px">Reason for changes (if any)</label>'
     + '<textarea id="pr-reason" class="form-control" placeholder="Explain any times you changed above..." style="min-height:50px;margin-bottom:10px"></textarea>'
-    + '<button onclick="doSubmitPeriodCorrections()" style="width:100%;background:none;border:1.5px solid var(--c-navy);color:var(--c-navy);border-radius:9px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:16px">Submit Corrections</button>'
     + '</div>'
     + '<div style="border-top:1px solid var(--c-border-soft);padding-top:14px">'
     + '<label class="form-label" style="display:block;margin-bottom:6px">Mileage &amp; Commission PDF (optional)</label>'
@@ -9184,7 +9183,7 @@ function openPeriodReview() {
     + '<div style="border-top:1px solid var(--c-border-soft);padding-top:14px">'
     + '<label class="form-label" style="display:block;margin-bottom:6px">Notes for payroll (optional)</label>'
     + '<textarea id="pr-note" class="form-control" placeholder="Anything payroll should know about this period..." style="min-height:60px;margin-bottom:10px">' + esc(d.employeeNote || '') + '</textarea>'
-    + '<button id="pr-approve-btn" onclick="doApprovePeriodHours()" style="width:100%;background:var(--c-navy);color:#fff;border:none;border-radius:9px;padding:11px;font-size:13px;font-weight:700;cursor:pointer">' + (d.employeeApproved ? 'Update' : 'Approve My Hours') + '</button>'
+    + '<button id="pr-approve-btn" onclick="doSavePeriodReview()" style="width:100%;background:var(--c-navy);color:#fff;border:none;border-radius:9px;padding:11px;font-size:13px;font-weight:700;cursor:pointer">' + (d.employeeApproved ? 'Update' : 'Approve My Hours') + '</button>'
     + '</div>';
 
   document.getElementById('period-review-overlay').style.display = 'flex';
@@ -9194,11 +9193,18 @@ function closePeriodReview() {
   document.getElementById('period-review-overlay').style.display = 'none';
 }
 
-function doSubmitPeriodCorrections() {
+// Single button does both: submits any edited days as corrections (if the
+// employee changed a clock in/out above), then approves the period with
+// whatever note/PDF is attached -- one action instead of two separate ones.
+function doSavePeriodReview() {
   var d = _myPeriodDetailCache;
   if (!d) return;
+  var btn = document.getElementById('pr-approve-btn');
   var reasonEl = document.getElementById('pr-reason');
   var reason = reasonEl ? reasonEl.value.trim() : '';
+  var noteEl = document.getElementById('pr-note');
+  var note = noteEl ? noteEl.value : '';
+
   var corrections = [];
   (d.days || []).forEach(function(day, i) {
     var inEl = document.getElementById('pr-in-' + i);
@@ -9209,34 +9215,35 @@ function doSubmitPeriodCorrections() {
       corrections.push({ date: day.date, clockIn: newIn, clockOut: newOut });
     }
   });
-  if (!corrections.length) { showToast('No changes to submit'); return; }
-  if (!reason) { showToast('Please explain what changed'); return; }
-  gasCall('submitTimeCorrectionsBatch', { corrections: corrections, reason: reason }, function(r) {
-    if (r && r.success) {
-      showToast(r.count + ' correction' + (r.count === 1 ? '' : 's') + ' submitted');
-      closePeriodReview();
-      loadAccount();
-    } else {
-      showToast('Error: ' + ((r && r.error) || 'Could not submit'));
-    }
-  }, function() { showToast('Could not connect'); });
-}
+  if (corrections.length && !reason) { showToast('Please explain what changed'); return; }
 
-function doApprovePeriodHours() {
-  var btn = document.getElementById('pr-approve-btn');
-  var noteEl = document.getElementById('pr-note');
-  var note = noteEl ? noteEl.value : '';
   var orig = btn.textContent;
   btn.disabled = true; btn.textContent = 'Saving...';
-  gasCall('approveMyTimesheet', { note: note, pdfUrl: _periodReviewPdfUrl, periodOffset: -1 }, function(r) {
-    btn.disabled = false;
+
+  var finishApprove = function(correctionMsg) {
+    gasCall('approveMyTimesheet', { note: note, pdfUrl: _periodReviewPdfUrl, periodOffset: -1 }, function(r) {
+      btn.disabled = false;
+      if (r && r.success) {
+        showToast((correctionMsg ? correctionMsg + ' — ' : '') + 'Hours approved');
+        closePeriodReview();
+        loadAccount();
+      } else {
+        btn.textContent = orig;
+        showToast('Error: ' + ((r && r.error) || 'Could not save'));
+      }
+    }, function() { btn.disabled = false; btn.textContent = orig; showToast('Could not connect'); });
+  };
+
+  if (!corrections.length) {
+    finishApprove(null);
+    return;
+  }
+  gasCall('submitTimeCorrectionsBatch', { corrections: corrections, reason: reason }, function(r) {
     if (r && r.success) {
-      showToast('Hours approved');
-      closePeriodReview();
-      loadAccount();
+      finishApprove(r.count + ' correction' + (r.count === 1 ? '' : 's') + ' submitted');
     } else {
-      btn.textContent = orig;
-      showToast('Error: ' + ((r && r.error) || 'Could not save'));
+      btn.disabled = false; btn.textContent = orig;
+      showToast('Error: ' + ((r && r.error) || 'Could not submit corrections'));
     }
   }, function() { btn.disabled = false; btn.textContent = orig; showToast('Could not connect'); });
 }
