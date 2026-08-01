@@ -599,6 +599,22 @@
     </div>
 
     <div class="tile-grid" id="sm-home-quick-actions" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px"></div>
+
+    <!-- PO-only search -- site_manager lacks canPricing/canContacts, so this
+         is a dedicated runSMHomeSearch() rather than reusing runHomeSearch()
+         (which also searches Pricing/Contacts, permission the search itself
+         doesn't check). -->
+    <div class="card" id="sm-home-search-card">
+      <div class="search-row" style="padding:0 0 4px">
+        <div class="search-wrap">
+          <input type="text" class="search-input" id="sm-home-search-input"
+                 placeholder="Search POs…"
+                 oninput="toggleClear('sm-home-search-input','sm-home-search-clear'); runSMHomeSearchDebounced()">
+          <button class="search-clear" id="sm-home-search-clear" onclick="clearSearch('sm-home-search-input','sm-home-search-clear'); runSMHomeSearch()">✕</button>
+        </div>
+      </div>
+      <div id="sm-home-search-results"></div>
+    </div>
   </div>
 
   <!-- ══ DASHBOARD ══ -->
@@ -2022,10 +2038,6 @@
         <span class="tile-swatch ts-navy"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></span>
         <span class="tile-label">Office Notes</span>
       </div>
-      <div class="tile" onclick="showOtherPanel('new-project')">
-        <span class="tile-swatch ts-solid"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg></span>
-        <span class="tile-label">New Project</span>
-      </div>
     </div>
 
   </div>
@@ -3448,6 +3460,32 @@ function renderSMHomeQuickActions() {
 function initSiteManagerHomeTab() {
   renderHomeGreeting('sm-home-greeting');
   renderSMHomeQuickActions();
+}
+
+// PO-only search for Site Manager Home -- see the tab-sitemanagerhome
+// comment for why this doesn't reuse runHomeSearch() (that one also
+// searches Pricing/Contacts, which site_manager can't see).
+var runSMHomeSearchDebounced = debounce(function(){ runSMHomeSearch(); }, 150);
+
+function runSMHomeSearch() {
+  var input = document.getElementById('sm-home-search-input');
+  var q = ((input && input.value) || '').toLowerCase().trim();
+  var resultsEl = document.getElementById('sm-home-search-results');
+  if (!resultsEl) return;
+  if (!q) { resultsEl.innerHTML = ''; return; }
+
+  var tokens = searchTokens(q);
+  var poHits = fuzzySearch(G.pos, function(po) { return [
+    { text: (po.poNum || '').toLowerCase(), weight: 3 },
+    { text: (po.jobRef || '').toLowerCase(), weight: 2 },
+    { text: (po.vendor || '').toLowerCase(), weight: 2 },
+    { text: (po.builder || '').toLowerCase(), weight: 1.5 },
+    { text: (po.notes || '').toLowerCase(), weight: 1 }
+  ]; }, q, { limit: 5 });
+
+  resultsEl.innerHTML = poHits.length
+    ? poHits.map(function(po) { return poCard(po, 'other', tokens); }).join('')
+    : '<div class="empty">No matches for "' + esc(q) + '".</div>';
 }
 
 // Runner Home's Time Clock widget -- ported from the old Account-tab
