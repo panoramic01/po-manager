@@ -532,14 +532,9 @@
       <div id="home-attention-list"></div>
     </div>
 
-    <div class="card" id="home-stats-card">
-      <div class="card-title">At a Glance</div>
-      <div id="home-stats-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px"></div>
-    </div>
-
-    <div class="card" id="home-jobs-card">
-      <div class="card-title">Active Jobs</div>
-      <div id="home-jobs-content"><div class="loading"><div class="spinner"></div><p>Loading jobs…</p></div></div>
+    <div class="card" id="home-quality-card">
+      <div class="card-title">Recent Quality Walks</div>
+      <div id="home-quality-content"><div class="loading"><div class="spinner"></div><p>Loading…</p></div></div>
     </div>
   </div>
 
@@ -780,7 +775,17 @@
 
   <!-- ══ PRICING ══ -->
 <!-- ══ OTHER (admin/office) ══ -->
-  <div class="tab" id="tab-other">
+  <!-- Deliberately NOT class="tab" -- most of the other-panel-* children
+       below are opened via showOtherPanel() from the aidan-only More tab
+       (and from Home's quick actions), which never makes THIS div the
+       active .tab. If it had class="tab" it would be display:none the
+       whole time for aidan and every panel nested inside it would be
+       invisible no matter what JS set on the panel itself, since a hidden
+       ancestor hides its descendants regardless of their own display style.
+       Each child here (other-home and every other-panel-*) already fully
+       self-manages its own display via inline style / showOtherPanel() /
+       resetOtherPanels(), so this container can just stay always-block. -->
+  <div id="tab-other">
 
     <!-- Home grid -->
     <div id="other-home" style="padding:16px">
@@ -2992,7 +2997,6 @@ function renderDashboard() {
   document.getElementById('dash-content').innerHTML = h;
   renderDelPickCard();
   renderRecentOrdersCard();
-  if (G.isAidan) refreshHomeStats();
 }
 
 // ── Home (aidan-only greeting/summary dashboard) ────────────────────────────
@@ -3020,46 +3024,18 @@ function renderHomeQuickActions() {
 function renderHomeGreeting() {
   var el = document.getElementById('home-greeting');
   if (!el) return;
-  var name = (G.config && G.config.userName) || G.userEmail || '';
+  var fullName = ((G.config && G.config.userName) || '').trim();
+  var firstName = fullName ? fullName.split(/\s+/)[0] : '';
   var hour = new Date().getHours();
   var part = hour < 12 ? 'Morning' : hour < 18 ? 'Afternoon' : 'Evening';
-  el.textContent = 'Good ' + part + (name ? ', ' + name : '');
+  el.textContent = 'Good ' + part + (firstName ? ', ' + firstName : '');
 }
 
-// At-a-glance stats -- reuses G.dashCounts/G.dashBuckets, already computed
-// by renderDashboard() above; called from there (gated to G.isAidan) so
-// there's no duplicate PO data fetch.
-function refreshHomeStats() {
-  var el = document.getElementById('home-stats-grid');
-  if (!el) return;
-  var c = G.dashCounts || { all: 0, draft: 0, open: 0, completed: 0, canceled: 0 };
-  var b = G.dashBuckets || {};
-  var overdue   = ((b.overdueDel || []).length) + ((b.overduePick || []).length);
-  var reconcile = (b.reconcile || []).length;
-  var stats = [
-    { label: 'Open POs',     value: c.open },
-    { label: 'Overdue',      value: overdue },
-    { label: 'To Reconcile', value: reconcile }
-  ];
-  el.innerHTML = stats.map(function(s) {
-    return '<div style="text-align:center;padding:10px 4px;background:var(--c-surface-2);border-radius:10px">' +
-      '<div style="font-size:20px;font-weight:800;color:var(--c-navy)">'+s.value+'</div>' +
-      '<div style="font-size:11px;color:var(--c-ink-soft);margin-top:2px">'+esc(s.label)+'</div></div>';
-  }).join('');
-}
-
-// Needs Your Attention -- each source populates its own row independently as
-// its own gasCall resolves. Deliberately NOT a combined backend endpoint: each
-// source already has a working, aidan-authorized endpoint, and combining them
-// would duplicate 5 different "what counts as pending" definitions that
-// already live in 5 different places.
+// Needs Your Attention -- just PTO for now, by request. Kept as a small
+// array + one gasCall per row (rather than hardcoding a single row) so more
+// sources can be added back the same way later.
 var HOME_ATTENTION_ROWS = [
-  { key: 'reconcile',    label: 'Ready to reconcile' },
-  { key: 'corrections',  label: 'Payroll corrections pending' },
-  { key: 'pto',          label: 'PTO requests pending' },
-  { key: 'missinginv',   label: 'POs missing invoices' },
-  { key: 'flagged',      label: 'Flagged shifts (data quality)' },
-  { key: 'approvals',    label: 'Timesheets awaiting approval' }
+  { key: 'pto', label: 'PTO requests pending' }
 ];
 
 function renderHomeAttentionSkeleton() {
@@ -3090,33 +3066,17 @@ function goToMorePanel(panel) {
 function loadHomeAttention() {
   renderHomeAttentionSkeleton();
 
-  setHomeAttentionCount('reconcile', (G.dashBuckets && G.dashBuckets.reconcile) ? G.dashBuckets.reconcile.length : 0,
-    function(){ setDashTab('completed'); showTab('dashboard', document.getElementById('nav-receive')); });
-
-  gasCall('getTimeCorrectionQueue', {}, function(d) {
-    setHomeAttentionCount('corrections', ((d && d.queue) || []).length, function(){ goToMorePanel('payroll'); });
-  }, function(){ setHomeAttentionCount('corrections', '—'); });
-
   gasCall('getPTOOverview', { callerEmail: G.userEmail }, function(d) {
     var pending = ((d && d.requests) || []).filter(function(r){ return r.status === 'pending'; });
     setHomeAttentionCount('pto', pending.length, function(){ goToMorePanel('pto-overview'); });
   }, function(){ setHomeAttentionCount('pto', '—'); });
-
-  gasCall('getMissingInvoices', {}, function(d) {
-    setHomeAttentionCount('missinginv', ((d && d.missing) || []).length, function(){ goToMorePanel('missing-inv'); });
-  }, function(){ setHomeAttentionCount('missinginv', '—'); });
-
-  gasCall('getPayrollSummary', { callerEmail: G.userEmail, periodOffset: 0 }, function(d) {
-    var flagged = ((d && d.needsReview) || []).length;
-    var pendingApproval = ((d && d.employees) || []).filter(function(e){ return !e.approved; }).length;
-    setHomeAttentionCount('flagged', flagged, function(){ goToMorePanel('payroll'); });
-    setHomeAttentionCount('approvals', pendingApproval, function(){ goToMorePanel('payroll'); });
-  }, function(){ setHomeAttentionCount('flagged', '—'); setHomeAttentionCount('approvals', '—'); });
 }
 
 // Active jobs by phase -- phase = the Asana section a job currently sits in
 // (Estimate Requested, Siding, Masonry, etc.), fetched in one bulk call by
-// getJobsByPhase() rather than modeled as new local data.
+// getJobsByPhase() rather than modeled as new local data. Not currently
+// called from initHomeTab() (removed from Home for now, by request) -- left
+// in place, working, ready to re-enable.
 function loadHomeJobsByPhase() {
   var el = document.getElementById('home-jobs-content');
   if (!el) return;
@@ -3131,6 +3091,29 @@ function loadHomeJobsByPhase() {
         '<span class="badge bd-blue">' + s.jobs.length + '</span></div>';
     }).join('');
   }, function() { el.innerHTML = '<div class="empty">Could not load jobs.</div>'; });
+}
+
+// 5 most recent Quality Check walks across all jobs -- see
+// getRecentQualityWalks() for why this is one workspace-search call rather
+// than crawling every job's subtasks.
+function loadHomeQualityWalks() {
+  var el = document.getElementById('home-quality-content');
+  if (!el) return;
+  gasCall('getRecentQualityWalks', {}, function(d) {
+    if (d && d.error && !(d.walks && d.walks.length)) { el.innerHTML = '<div class="empty">' + esc(d.error) + '</div>'; return; }
+    var walks = (d && d.walks) || [];
+    if (!walks.length) { el.innerHTML = '<div class="empty">No quality walks yet.</div>'; return; }
+    el.innerHTML = walks.map(function(w) {
+      return '<div style="padding:10px 0;border-bottom:1px solid var(--c-border-hair)">' +
+        '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">' +
+          '<span style="font-size:13px;font-weight:600;color:var(--c-ink)">' + esc(w.jobName || 'Unknown job') + '</span>' +
+          '<span style="font-size:11px;color:var(--c-ink-faint);white-space:nowrap">' + esc(w.timestamp) + '</span>' +
+        '</div>' +
+        '<div style="font-size:12px;color:var(--c-ink-soft);margin-top:2px">' +
+          esc(w.walkType || 'Quality Check') + (w.trades ? ' · ' + esc(w.trades) : '') + (w.submitter ? ' · ' + esc(w.submitter) : '') +
+        '</div></div>';
+    }).join('');
+  }, function() { el.innerHTML = '<div class="empty">Could not load quality walks.</div>'; });
 }
 
 // Universal search -- searches POs (always loaded), Pricing and Contacts
@@ -3201,9 +3184,10 @@ function runHomeSearch() {
 function initHomeTab() {
   renderHomeGreeting();
   renderHomeQuickActions();
-  refreshHomeStats();
   loadHomeAttention();
-  loadHomeJobsByPhase();
+  loadHomeQualityWalks();
+  // loadHomeJobsByPhase() is temporarily off the Home tab by request -- the
+  // function/backend endpoint are left in place to re-enable later.
 }
 
 // ── Deliveries & Pickups summary card ────────────────────────────────────────

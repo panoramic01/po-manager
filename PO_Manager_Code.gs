@@ -156,6 +156,7 @@ function doPost(e) {
     else if (action === 'saveMaterialHistory')          result = saveMaterialHistory(payload);
     else if (action === 'getAsanaJobs')                result = getAsanaJobs();
     else if (action === 'getJobsByPhase')               result = getJobsByPhase(payload);
+    else if (action === 'getRecentQualityWalks')        result = getRecentQualityWalks(payload);
     else if (action === 'submitQualityCheck')           result = submitQualityCheck(payload);
     else if (action === 'submitOfficeNote')             result = submitOfficeNote(payload);
     else if (action === 'getAssignableEmployees')       result = getAssignableEmployees(payload);
@@ -2661,6 +2662,51 @@ function getQualityWalkHistory_(jobGid) {
     // swallow -- a Quality Walks read failure shouldn't break the rest of the Job Dashboard
   }
   return result;
+}
+
+/**
+ * The 5 most recent Quality Check walks across ALL jobs, for the aidan-only
+ * Dashboard. Quality Check walks are subtasks scattered across every job
+ * task in ASANA_EXT_SCHED, so getting "most recent across all jobs" cheaply
+ * means using Asana's workspace task search (one call, sorted server-side)
+ * rather than crawling every job's subtasks one by one (N+1, slow). Falls
+ * back to an empty list (not an error) if search comes back empty so one
+ * missing/renamed workspace doesn't break the rest of the Dashboard.
+ */
+function getRecentQualityWalks(payload) {
+  try {
+    var auth = authorizeCaller(payload, ['admin']);
+    if (!auth.ok) return { error: auth.error, code: auth.code };
+
+    var wsResult = asanaRequest('get', '/workspaces?opt_fields=gid&limit=1');
+    if (wsResult.errors || !wsResult.data || !wsResult.data.length) return { walks: [] };
+    var workspaceGid = wsResult.data[0].gid;
+
+    var searchUrl = '/workspaces/' + workspaceGid +
+      '/tasks/search?text=Quality Check&sort_by=created_at&sort_ascending=false&limit=5' +
+      '&opt_fields=name,notes,created_at,parent.name';
+    var searchResult = asanaRequest('get', searchUrl);
+    if (searchResult.errors) return { walks: [], error: searchResult.errors[0].message };
+
+    var walks = (searchResult.data || []).filter(function(t) {
+      return (t.name || '').indexOf('Quality Check') === 0;
+    }).map(function(t) {
+      var notes     = t.notes || '';
+      var walkType  = (notes.match(/Walk Type:\s*(.+)/)    || [])[1] || '';
+      var submitter = (notes.match(/Submitted by:\s*(.+)/) || [])[1] || '';
+      var trades    = (notes.match(/Trade\(s\):\s*(.+)/)   || [])[1] || '';
+      var created   = t.created_at ? new Date(t.created_at) : null;
+      return {
+        jobName:   t.parent ? t.parent.name : '',
+        walkType:  walkType,
+        submitter: submitter,
+        trades:    trades,
+        timestamp: created ? Utilities.formatDate(created, Session.getScriptTimeZone(), 'MM/dd/yy') : ''
+      };
+    });
+
+    return { walks: walks };
+  } catch (e) { return { error: e.toString() }; }
 }
 
 function submitQualityCheck(payload) {
