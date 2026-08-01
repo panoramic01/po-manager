@@ -580,7 +580,6 @@
             <span style="font-size:13px;color:var(--c-ink-soft);font-weight:500">hrs</span>
           </div>
           <div id="home-my-days" style="border-top:1px solid var(--c-border-soft);padding-top:8px"></div>
-          <button onclick="openTimeCorrectionForm()" style="width:100%;margin-top:12px;background:none;border:1.5px solid var(--c-navy);color:var(--c-navy);border-radius:9px;padding:10px;font-size:13px;font-weight:700;cursor:pointer">Request a Correction</button>
         </div>
       </div>
     </div>
@@ -1559,9 +1558,17 @@
             <span style="font-size:13px;color:var(--c-ink-soft);font-weight:500">hrs</span>
           </div>
           <div id="acct-my-days" style="border-top:1px solid var(--c-border-soft);padding-top:8px"></div>
-          <button onclick="openTimeCorrectionForm()" style="width:100%;margin-top:12px;background:none;border:1.5px solid var(--c-navy);color:var(--c-navy);border-radius:9px;padding:10px;font-size:13px;font-weight:700;cursor:pointer">Request a Correction</button>
         </div>
       </div>
+    </div>
+
+    <!-- Time Correction request -- runner-only (only runners clock in, so
+         only they'd ever need to correct a punch). Clocking in/out itself
+         lives on Runner Home now; this button stayed on Account. -->
+    <div id="acct-correction-card" style="background:var(--c-surface);border-radius:14px;padding:16px;box-shadow:0 1px 4px var(--c-shadow-sm);margin-bottom:16px">
+      <div style="font-size:14px;font-weight:700;color:var(--c-navy);margin-bottom:4px">Time Correction</div>
+      <div style="font-size:12px;color:var(--c-ink-soft);margin-bottom:12px">Clocked in late, clocked out late, or forgot to punch? Request a fix and your manager will review it.</div>
+      <button onclick="openTimeCorrectionForm()" style="width:100%;background:none;border:1.5px solid var(--c-navy);color:var(--c-navy);border-radius:9px;padding:11px;font-size:13px;font-weight:700;cursor:pointer">Request a Correction</button>
     </div>
 
     <!-- Approve Hours (prior, now-closed pay period) -->
@@ -2794,7 +2801,9 @@ function applyRole(role) {
   sd('receive-recent-pos-card', G.isRunnerHome);
   // Clock-in only applies to Runner, and Runner's copy now lives on Home
   // (see tab-runnerhome) -- the Account tab's copy is retired for everyone.
+  // The correction-request button stayed on Account though (runner-only).
   sd('acct-timeclock-card', false);
+  sd('acct-correction-card', G.isRunnerHome);
   sd('acct-push-card', true);
   sd('acct-theme-card', G.isAidan);
 
