@@ -5958,6 +5958,13 @@ function doAddMaintenanceLog() {
 
 function showOtherPanel(name) {
   if (!_navPop) history.pushState({ view: 'other-panel', panel: name }, '');
+  // These panels are normal-flow siblings, not true overlays -- opening one
+  // doesn't automatically hide whichever top-level tab (Home/More/Other) is
+  // currently active, so without this it just stacks underneath/above that
+  // tab's own content instead of replacing it. resetOtherPanels() undoes
+  // this the same way it undoes everything else about an open panel.
+  var activeTab = document.querySelector('.tab.active');
+  if (activeTab) activeTab.style.display = 'none';
   document.getElementById('other-home').style.display = 'none';
   ['pricing', 'contacts', 'inventory', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'material-inventory', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project', 'quickbooks'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
@@ -5988,6 +5995,11 @@ function showOtherPanel(name) {
 // display reset explicitly any time we leave the Other tab, not just when
 // returning to its home grid.
 function resetOtherPanels() {
+  // Clear the inline display:none that showOtherPanel() put on whichever
+  // top-level tab was active when the panel opened -- without this the tab
+  // stays hidden forever after the first panel visit, since an inline style
+  // always wins over the .tab/.tab.active CSS class rule.
+  document.querySelectorAll('.tab').forEach(function(t) { t.style.display = ''; });
   document.getElementById('other-home').style.display = '';
   ['pricing', 'contacts', 'inventory', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'material-inventory', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project', 'quickbooks'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
