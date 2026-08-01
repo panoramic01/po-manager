@@ -73,37 +73,43 @@
       --dropzone-bg-active: var(--sh-green-bg); --dropzone-bd-active: var(--c-navy);
     }
     :root[data-theme="dark"] {
-      --c-bg: #10151d; --c-surface: #1a212c; --c-surface-2: #212938;
-      --c-ink: #EDEEF2; --c-ink-soft: #9AA0AC; --c-ink-faint: #6B7280;
-      --c-border: #2B3442; --c-border-soft: #232B38; --c-border-hair: #232B38; --c-border-hair2: #232B38;
-      --c-navy: #7B9AD9; --c-navy-deep: #2a4d96;
-      --c-danger: #F17070; --c-amber: #F0A860;
+      /* Contrast/differentiation pass (2026-08): brighter accent blue and
+         amber so they read as clearly "on" against the dark background
+         instead of blending into it; bd-green/sh-green switched from the
+         old blue-derived value to the teal/green family so "positive"
+         status actually looks green instead of blue; indigo/purple shifted
+         further from blue so it doesn't read as "blue again". */
+      --c-bg: #10151d; --c-surface: #1a212c; --c-surface-2: #242c3b;
+      --c-ink: #F5F6F8; --c-ink-soft: #ABB2BE; --c-ink-faint: #6B7280;
+      --c-border: #3A4356; --c-border-soft: #2E3648; --c-border-hair: #2E3648; --c-border-hair2: #2E3648;
+      --c-navy: #9DC1FF; --c-navy-deep: #2a4d96;
+      --c-danger: #F17070; --c-amber: #FFB84D;
       --c-shadow-sm: rgba(0,0,0,.45); --c-shadow-nav: rgba(0,0,0,.5); --c-shadow-md: rgba(0,0,0,.45);
 
       --bd-red-bg: rgba(214,69,65,.22); --bd-red-fg: #FF9A90;
-      --bd-green-bg: rgba(123,154,217,.22); --bd-green-fg: #B9C7E8;
-      --bd-blue-bg: rgba(123,154,217,.22); --bd-blue-fg: #B9C7E8;
-      --bd-amber-bg: rgba(230,101,0,.22); --bd-amber-fg: #FFB870;
-      --bd-teal-bg: rgba(31,122,92,.25); --bd-teal-fg: #7FD6BA;
-      --bd-indigo-bg: rgba(123,154,217,.16); --bd-indigo-fg: #C7D2EE;
+      --bd-green-bg: rgba(45,168,120,.28); --bd-green-fg: #8FEFC3;
+      --bd-blue-bg: rgba(157,193,255,.24); --bd-blue-fg: #CBE0FF;
+      --bd-amber-bg: rgba(255,159,26,.24); --bd-amber-fg: #FFCB8A;
+      --bd-teal-bg: rgba(45,168,120,.28); --bd-teal-fg: #8FEFC3;
+      --bd-indigo-bg: rgba(196,155,255,.18); --bd-indigo-fg: #DCC8FF;
       --bd-gray-bg: rgba(255,255,255,.07); --bd-gray-fg: #9AA0AC;
-      --bd-purple-bg: rgba(123,154,217,.16); --bd-purple-fg: #C7D2EE;
+      --bd-purple-bg: rgba(196,155,255,.18); --bd-purple-fg: #DCC8FF;
 
-      --sh-green-bg: rgba(123,154,217,.16); --sh-green-fg: #B9C7E8;
-      --sh-blue-bg: rgba(123,154,217,.14); --sh-blue-fg: #B9C7E8;
+      --sh-green-bg: rgba(45,168,120,.20); --sh-green-fg: #8FEFC3;
+      --sh-blue-bg: rgba(157,193,255,.16); --sh-blue-fg: #CBE0FF;
       --sh-red-bg: rgba(214,69,65,.16); --sh-red-fg: #FF9A90;
-      --sh-amber-bg: rgba(230,101,0,.16); --sh-amber-fg: #FFB870;
-      --sh-teal-bg: rgba(31,122,92,.18); --sh-teal-fg: #7FD6BA;
-      --sh-indigo-bg: rgba(123,154,217,.14); --sh-indigo-fg: #C7D2EE;
+      --sh-amber-bg: rgba(255,159,26,.20); --sh-amber-fg: #FFCB8A;
+      --sh-teal-bg: rgba(45,168,120,.22); --sh-teal-fg: #8FEFC3;
+      --sh-indigo-bg: rgba(196,155,255,.16); --sh-indigo-fg: #DCC8FF;
 
-      --dl-invoice-bg: rgba(230,101,0,.16); --dl-invoice-fg: #FFB870; --dl-invoice-bd: rgba(230,101,0,.4);
-      --dl-issued-bg: rgba(123,154,217,.18); --dl-issued-fg: #B9C7E8; --dl-issued-bd: rgba(123,154,217,.4);
+      --dl-invoice-bg: rgba(255,159,26,.16); --dl-invoice-fg: #FFCB8A; --dl-invoice-bd: rgba(255,159,26,.4);
+      --dl-issued-bg: rgba(157,193,255,.18); --dl-issued-fg: #CBE0FF; --dl-issued-bd: rgba(157,193,255,.4);
       --dl-disabled-bg: rgba(255,255,255,.05); --dl-disabled-fg: #6B7280; --dl-disabled-bd: #2B3442;
 
-      --info-bg: rgba(123,154,217,.14); --info-bd: rgba(123,154,217,.4);
-      --photo-bd: rgba(123,154,217,.4); --photo-bg: rgba(255,255,255,.03); --photo-bd-active: #7B9AD9; --photo-accent: #7B9AD9; --photo-add-icon: #5B6472;
+      --info-bg: rgba(157,193,255,.16); --info-bd: rgba(157,193,255,.4);
+      --photo-bd: rgba(157,193,255,.4); --photo-bg: rgba(255,255,255,.03); --photo-bd-active: #9DC1FF; --photo-accent: #9DC1FF; --photo-add-icon: #5B6472;
 
-      --qc-pass-bd: #4CAF6D; --qc-flag-bd: #F0A860;
+      --qc-pass-bd: #4CAF6D; --qc-flag-bd: #FFB84D;
     }
 
     /* ── Reset ── */
@@ -130,13 +136,21 @@
       box-shadow: 0 -2px 12px var(--c-shadow-nav);
     }
     .nav-btn {
+      position: relative;
       flex: 1; padding: 12px 4px 14px;
       display: flex; flex-direction: column; align-items: center; gap: 4px;
       font-size: 11px; font-weight: 600; color: var(--c-ink-faint);
       background: none; border: none; cursor: pointer; transition: color 0.15s;
       min-height: 60px;
     }
+    /* Active state is more than a color swap -- color alone isn't a
+       reliable signal for low-vision/colorblind users, so the active tab
+       also gets a small underline bar. */
     .nav-btn.active { color: var(--c-navy); }
+    .nav-btn.active::after {
+      content: ''; position: absolute; top: 4px; left: 50%; transform: translateX(-50%);
+      width: 18px; height: 3px; border-radius: 2px; background: var(--c-navy);
+    }
     .nav-btn svg { width: 26px; height: 26px; stroke-width: 2; }
 
     /* ── Content ── */
@@ -775,17 +789,7 @@
 
   <!-- ══ PRICING ══ -->
 <!-- ══ OTHER (admin/office) ══ -->
-  <!-- Deliberately NOT class="tab" -- most of the other-panel-* children
-       below are opened via showOtherPanel() from the aidan-only More tab
-       (and from Home's quick actions), which never makes THIS div the
-       active .tab. If it had class="tab" it would be display:none the
-       whole time for aidan and every panel nested inside it would be
-       invisible no matter what JS set on the panel itself, since a hidden
-       ancestor hides its descendants regardless of their own display style.
-       Each child here (other-home and every other-panel-*) already fully
-       self-manages its own display via inline style / showOtherPanel() /
-       resetOtherPanels(), so this container can just stay always-block. -->
-  <div id="tab-other">
+  <div class="tab" id="tab-other">
 
     <!-- Home grid -->
     <div id="other-home" style="padding:16px">
@@ -862,6 +866,8 @@
 
       </div>
     </div>
+
+  </div>
 
     <!-- Pricing sub-panel -->
     <div id="other-panel-pricing" style="display:none">
@@ -1050,7 +1056,6 @@
       </div>
     </div>
 
-  </div>
 
 
     <!-- Job Cost Summary sub-panel -->
