@@ -587,6 +587,20 @@
     <div class="tile-grid" id="runner-home-quick-actions" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px"></div>
   </div>
 
+  <!-- ══ SITE MANAGER HOME (site_manager-only, pure role) ══
+       Deliberately its own tab rather than sharing aidan's tab-home:
+       Home's search there includes Pricing/Contacts and its quick actions
+       include Job Dashboard, both of which site_manager doesn't have
+       permission for (canPricing/canContacts false, other-card-job-cost
+       admin-only) -- sharing would leak that data/access. -->
+  <div class="tab" id="tab-sitemanagerhome">
+    <div class="card" id="sm-home-greeting-card">
+      <div id="sm-home-greeting" style="font-size:19px;font-weight:700;color:var(--c-navy)"></div>
+    </div>
+
+    <div class="tile-grid" id="sm-home-quick-actions" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px"></div>
+  </div>
+
   <!-- ══ DASHBOARD ══ -->
   <div class="tab active" id="tab-dashboard">
     <!-- Search bar lives here now -->
@@ -1961,6 +1975,61 @@
 
   </div>
 
+  <!-- ══ SITE MANAGER MORE (site_manager-only, pure role) ══
+       Own tab, not shared with aidan's tab-more: that tile grid is
+       hardcoded with admin-only tiles (Payroll, Employees, PTO Overview,
+       Reconcile, Vendor Spend, Job Dashboard, Pricing, Contacts) that
+       site_manager has never had access to (all admin/purchaser/HR-gated
+       on their existing Other tab) -- this mirrors only the tiles
+       site_manager actually has today. -->
+  <div class="tab" id="tab-sitemanagermore" style="padding:0 12px">
+
+    <div class="sec-head sh-teal">Receiving &amp; Field</div>
+    <div class="tile-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="tile" onclick="openQualityCheck()">
+        <span class="tile-swatch ts-teal"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></span>
+        <span class="tile-label">Quality Check</span>
+      </div>
+      <div class="tile" onclick="openFormOverlay('cleanup-overlay')">
+        <span class="tile-swatch ts-navy"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg></span>
+        <span class="tile-label">Runner Cleanup Log</span>
+      </div>
+      <div class="tile" onclick="openFormOverlay('materialrequest-overlay')">
+        <span class="tile-swatch ts-navy"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg></span>
+        <span class="tile-label">Runner Request</span>
+      </div>
+      <div class="tile" onclick="showOtherPanel('material-inventory')">
+        <span class="tile-swatch ts-teal"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg></span>
+        <span class="tile-label">Material Inventory</span>
+      </div>
+    </div>
+
+    <div class="sec-head sh-amber">Money</div>
+    <div class="tile-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="tile" onclick="openFormOverlay('reimbursement-overlay')">
+        <span class="tile-swatch ts-amber"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/></svg></span>
+        <span class="tile-label">Reimbursement</span>
+      </div>
+      <div class="tile" onclick="openFormOverlay('creditcard-overlay')">
+        <span class="tile-swatch ts-amber"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg></span>
+        <span class="tile-label">Credit Card</span>
+      </div>
+    </div>
+
+    <div class="sec-head sh-blue">General</div>
+    <div class="tile-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding-bottom:16px">
+      <div class="tile" onclick="openOfficeNotes()">
+        <span class="tile-swatch ts-navy"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></span>
+        <span class="tile-label">Office Notes</span>
+      </div>
+      <div class="tile" onclick="showOtherPanel('new-project')">
+        <span class="tile-swatch ts-solid"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg></span>
+        <span class="tile-label">New Project</span>
+      </div>
+    </div>
+
+  </div>
+
 </main>
 
 
@@ -2764,10 +2833,12 @@ function applyRole(role) {
   };
   G.perms = p;
   G.isAidan = roleTokens(role).indexOf('aidan') !== -1;
-  // Pure runner only -- a combined role like 'runner,site_manager' keeps the
-  // fuller nav the other role grants instead of the stripped-down Home.
+  // Pure runner/site_manager only -- a combined role (e.g.
+  // 'runner,site_manager') keeps the fuller nav the other role grants
+  // instead of either of these role-specific rollouts.
   var _roleTokensRaw = roleTokens(role);
   G.isRunnerHome = _roleTokensRaw.length === 1 && _roleTokensRaw[0] === 'runner';
+  G.isSiteManagerHome = _roleTokensRaw.length === 1 && _roleTokensRaw[0] === 'site_manager';
 
   // Show/hide nav buttons (null-safe in case elements aren't in the deployed version yet)
   function sd(id, show) { var el = document.getElementById(id); if (el) el.style.display = show ? '' : 'none'; }
@@ -2852,6 +2923,30 @@ function applyRole(role) {
     if (navOtherLabel) navOtherLabel.textContent = 'More';
   }
 
+  // Site-manager-only rollout: same Dashboard/Purchasing/More/Account shape
+  // as aidan's, but on its OWN 'sitemanagerhome'/'sitemanagermore' tabs
+  // rather than sharing aidan's tab-home/tab-more -- those contain
+  // admin-only content (Pricing/Contacts search, Job Dashboard, Payroll,
+  // etc.) that site_manager doesn't have permission for. Purchasing is
+  // shared with aidan's though (both just repoint to the same unchanged
+  // tab-dashboard PO board, which has no admin-only content of its own).
+  if (G.isSiteManagerHome) {
+    var smNavDashBtn = document.getElementById('nav-dashboard');
+    if (smNavDashBtn) smNavDashBtn.setAttribute('onclick', "showTab('sitemanagerhome',this)");
+
+    var smNavReceiveBtn = document.getElementById('nav-receive');
+    if (smNavReceiveBtn) smNavReceiveBtn.setAttribute('onclick', "showTab('dashboard',this)");
+    var smNavReceiveLabel = document.getElementById('nav-receive-label');
+    if (smNavReceiveLabel) smNavReceiveLabel.textContent = 'Purchasing';
+    var smReceivePoCard = document.getElementById('receive-po-card');
+    if (smReceivePoCard) smReceivePoCard.style.display = 'none';
+
+    var smNavOtherBtn = document.getElementById('nav-other');
+    if (smNavOtherBtn) smNavOtherBtn.setAttribute('onclick', "showTab('sitemanagermore',this)");
+    var smNavOtherLabel = document.getElementById('nav-other-label');
+    if (smNavOtherLabel) smNavOtherLabel.textContent = 'More';
+  }
+
   // Runner-only rollout: Runner's whole feature set (Receive PO, Quality
   // Check, Cleanup Log, Runner Request, Material Inventory) becomes quick-
   // action tiles on one Home screen, reached via the nav-dashboard slot
@@ -2884,6 +2979,8 @@ function applyRole(role) {
     showTabDirect('home', document.getElementById('nav-dashboard'));
   } else if (G.isRunnerHome) {
     showTabDirect('runnerhome', document.getElementById('nav-dashboard'));
+  } else if (G.isSiteManagerHome) {
+    showTabDirect('sitemanagerhome', document.getElementById('nav-dashboard'));
   } else if (!p.canDash && p.canReceive) {
     showTabDirect('receive', document.getElementById('nav-receive'));
   } else if (!p.canDash && !p.canReceive) {
@@ -2909,6 +3006,7 @@ function showTabDirect(name, btn) {
   if (name === 'home') initHomeTab();
   if (name === 'runnerhome') initRunnerHomeTab();
   if (name === 'receive' && G.isRunnerHome) renderReceiveRecentPOs();
+  if (name === 'sitemanagerhome') initSiteManagerHomeTab();
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -3325,6 +3423,31 @@ function initRunnerHomeTab() {
   renderHomeGreeting('runner-home-greeting');
   renderRunnerHomeQuickActions();
   loadHomeClock();
+}
+
+// ── Site Manager Home (pure-site_manager-only greeting/quick-actions) ──────
+// Deliberately excludes Job Dashboard (admin-only tile elsewhere) and any
+// PTO/attention data (admin/HR-only) -- see the tab-sitemanagerhome comment
+// in the markup for why this isn't just shared with aidan's Home.
+var SM_HOME_QUICK_ACTIONS = [
+  { label: 'New PO',        swatch: 'ts-solid', path: 'M12 4v16m8-8H4', action: function(){ showTabDirect('create', null); } },
+  { label: 'Quality Check', swatch: 'ts-teal',  path: 'M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11', action: function(){ openQualityCheck(); } },
+  { label: 'Office Notes',  swatch: 'ts-navy',  path: 'M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z', action: function(){ openOfficeNotes(); } }
+];
+
+function renderSMHomeQuickActions() {
+  var el = document.getElementById('sm-home-quick-actions');
+  if (!el) return;
+  el.innerHTML = SM_HOME_QUICK_ACTIONS.map(function(t, i) {
+    return '<div class="tile" onclick="SM_HOME_QUICK_ACTIONS['+i+'].action()">' +
+      '<span class="tile-swatch '+t.swatch+'"><svg width="20" height="20" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="'+t.path+'"/></svg></span>' +
+      '<span class="tile-label">'+esc(t.label)+'</span></div>';
+  }).join('');
+}
+
+function initSiteManagerHomeTab() {
+  renderHomeGreeting('sm-home-greeting');
+  renderSMHomeQuickActions();
 }
 
 // Runner Home's Time Clock widget -- ported from the old Account-tab
@@ -4695,7 +4818,9 @@ function showTab(name, btn) {
     account:   false,
     home:      !G.isAidan,
     more:      !G.isAidan,
-    runnerhome: !G.isRunnerHome
+    runnerhome: !G.isRunnerHome,
+    sitemanagerhome: !G.isSiteManagerHome,
+    sitemanagermore: !G.isSiteManagerHome
   };
   if (blocked[name]) { showToast("You don't have access to that."); return; }
   showTabDirect(name, btn);
@@ -6283,7 +6408,7 @@ function resetOtherPanels() {
 }
 
 function showOtherHome() {
-  var backTab = G.isAidan ? 'more' : (G.isRunnerHome ? 'runnerhome' : 'other');
+  var backTab = G.isAidan ? 'more' : (G.isRunnerHome ? 'runnerhome' : (G.isSiteManagerHome ? 'sitemanagermore' : 'other'));
   if (!_navPop) history.pushState({ view: 'tab', tab: backTab }, '');
   resetOtherPanels();
 }
@@ -9491,7 +9616,7 @@ window.addEventListener('popstate', function(e) {
   var state = e.state;
   if (!state) {
     // No state — we're at the very start; just re-push so app stays open
-    history.pushState({ view: 'tab', tab: (G.isAidan ? 'home' : (G.isRunnerHome ? 'runnerhome' : 'dashboard')) }, '');
+    history.pushState({ view: 'tab', tab: (G.isAidan ? 'home' : (G.isRunnerHome ? 'runnerhome' : (G.isSiteManagerHome ? 'sitemanagerhome' : 'dashboard'))) }, '');
     _navPop = false;
     return;
   }
