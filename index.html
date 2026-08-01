@@ -552,6 +552,15 @@
     </div>
   </div>
 
+  <!-- ══ RUNNER HOME (runner-only, pure role) ══ -->
+  <div class="tab" id="tab-runnerhome">
+    <div class="card" id="runner-home-greeting-card">
+      <div id="runner-home-greeting" style="font-size:19px;font-weight:700;color:var(--c-navy)"></div>
+    </div>
+
+    <div class="tile-grid" id="runner-home-quick-actions" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px"></div>
+  </div>
+
   <!-- ══ DASHBOARD ══ -->
   <div class="tab active" id="tab-dashboard">
     <!-- Search bar lives here now -->
@@ -694,6 +703,12 @@
 
   <!-- ══ RECEIVE PO ══ -->
   <div class="tab" id="tab-receive">
+    <!-- Runner-only: Receive PO tile on Runner Home lands here directly, with
+         no nav button of its own left highlighted -- see applyRole()'s
+         G.isRunnerHome block, which is the only place that ever shows this. -->
+    <div id="receive-back-header" style="display:none;padding:0 0 12px">
+      <button onclick="showTabDirect('runnerhome', document.getElementById('nav-dashboard'))" style="background:none;border:none;font-size:14px;font-weight:600;color:var(--c-navy);cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back to Home</button>
+    </div>
     <div class="card" id="receive-po-card">
       <div class="card-title">Receive PO</div>
 
@@ -1909,7 +1924,7 @@
 <nav class="bottom-nav">
   <button id="nav-dashboard" class="nav-btn active" onclick="showTab('dashboard',this)">
     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
-    Dashboard
+    <span id="nav-dashboard-label">Dashboard</span>
   </button>
   <button id="nav-receive" class="nav-btn" onclick="openActionsTab(this)">
     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
@@ -2704,6 +2719,10 @@ function applyRole(role) {
   };
   G.perms = p;
   G.isAidan = roleTokens(role).indexOf('aidan') !== -1;
+  // Pure runner only -- a combined role like 'runner,site_manager' keeps the
+  // fuller nav the other role grants instead of the stripped-down Home.
+  var _roleTokensRaw = roleTokens(role);
+  G.isRunnerHome = _roleTokensRaw.length === 1 && _roleTokensRaw[0] === 'runner';
 
   // Show/hide nav buttons (null-safe in case elements aren't in the deployed version yet)
   function sd(id, show) { var el = document.getElementById(id); if (el) el.style.display = show ? '' : 'none'; }
@@ -2731,6 +2750,26 @@ function applyRole(role) {
   sd('acct-push-card', true);
   sd('acct-theme-card', G.isAidan);
 
+  // Reset nav-dashboard/nav-receive/nav-other back to their stock onclick +
+  // label before applying any role-specific rewrite below. applyRole() can
+  // run more than once per page load (switchAccount() shows the login
+  // screen again without a reload), so without this reset a button rewired
+  // by a previous role (e.g. aidan's nav-dashboard -> 'home') would stay
+  // stuck that way for a different role logged into next.
+  var navDashBtnDefault = document.getElementById('nav-dashboard');
+  if (navDashBtnDefault) navDashBtnDefault.setAttribute('onclick', "showTab('dashboard',this)");
+  var navDashLabelDefault = document.getElementById('nav-dashboard-label');
+  if (navDashLabelDefault) navDashLabelDefault.textContent = 'Dashboard';
+  var navReceiveBtnDefault = document.getElementById('nav-receive');
+  if (navReceiveBtnDefault) navReceiveBtnDefault.setAttribute('onclick', "openActionsTab(this)");
+  var navReceiveLabelDefault = document.getElementById('nav-receive-label');
+  if (navReceiveLabelDefault) navReceiveLabelDefault.textContent = 'Log';
+  var navOtherBtnDefault = document.getElementById('nav-other');
+  if (navOtherBtnDefault) navOtherBtnDefault.setAttribute('onclick', "showTab('other',this)");
+  var navOtherLabelDefault = document.getElementById('nav-other-label');
+  if (navOtherLabelDefault) navOtherLabelDefault.textContent = 'Other';
+  sd('receive-back-header', false);
+
   // Aidan-only rollout: Dashboard becomes a greeting/summary page ('home'),
   // Purchasing takes over the nav-receive slot and shows the unchanged PO
   // board that used to live under Dashboard, and Other becomes More (merged
@@ -2756,6 +2795,26 @@ function applyRole(role) {
     if (navOtherLabel) navOtherLabel.textContent = 'More';
   }
 
+  // Runner-only rollout: Runner's whole feature set (Receive PO, Quality
+  // Check, Cleanup Log, Runner Request, Material Inventory) becomes quick-
+  // action tiles on one Home screen, reached via the nav-dashboard slot
+  // (normally hidden for runner since canDash is false). nav-receive/
+  // nav-other are hidden entirely -- their tabs still exist in the DOM
+  // (other roles still use them) but Runner has no direct nav path to them
+  // anymore, only via the Home tiles above.
+  if (G.isRunnerHome) {
+    var navDashBtnR = document.getElementById('nav-dashboard');
+    if (navDashBtnR) {
+      navDashBtnR.style.display = '';
+      navDashBtnR.setAttribute('onclick', "showTab('runnerhome',this)");
+    }
+    var navDashLabelR = document.getElementById('nav-dashboard-label');
+    if (navDashLabelR) navDashLabelR.textContent = 'Home';
+    sd('nav-receive', false);
+    sd('nav-other', false);
+    sd('receive-back-header', true);
+  }
+
   // Show role badge in header
   var headerP = document.querySelector('.app-header p');
   if (headerP && role) {
@@ -2766,6 +2825,8 @@ function applyRole(role) {
   // Navigate to the correct default tab
   if (G.isAidan) {
     showTabDirect('home', document.getElementById('nav-dashboard'));
+  } else if (G.isRunnerHome) {
+    showTabDirect('runnerhome', document.getElementById('nav-dashboard'));
   } else if (!p.canDash && p.canReceive) {
     showTabDirect('receive', document.getElementById('nav-receive'));
   } else if (!p.canDash && !p.canReceive) {
@@ -2789,6 +2850,7 @@ function showTabDirect(name, btn) {
   if (!_navPop) history.pushState({ view: 'tab', tab: name }, '');
   if (name === 'account') loadAccount();
   if (name === 'home') initHomeTab();
+  if (name === 'runnerhome') initRunnerHomeTab();
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -2991,8 +3053,8 @@ function renderHomeQuickActions() {
   }).join('');
 }
 
-function renderHomeGreeting() {
-  var el = document.getElementById('home-greeting');
+function renderHomeGreeting(elId) {
+  var el = document.getElementById(elId || 'home-greeting');
   if (!el) return;
   var fullName = ((G.config && G.config.userName) || '').trim();
   var firstName = fullName ? fullName.split(/\s+/)[0] : '';
@@ -3173,6 +3235,37 @@ function initHomeTab() {
   loadHomeQualityWalks();
   // loadHomeJobsByPhase() is temporarily off the Home tab by request -- the
   // function/backend endpoint are left in place to re-enable later.
+}
+
+// ── Runner Home (pure-runner-only greeting/quick-actions screen) ───────────
+// Runner's entire feature surface is these 5 things -- unlike aidan's Home,
+// there's no attention list, quality walks, or search here, just the tiles.
+var RUNNER_HOME_TILES = [
+  { label: 'Receive PO',         swatch: 'ts-teal', path: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
+    action: function(){ showTabDirect('receive', document.getElementById('nav-dashboard')); } },
+  { label: 'Quality Check',      swatch: 'ts-teal', path: 'M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11',
+    action: function(){ openQualityCheck(); } },
+  { label: 'Runner Cleanup Log', swatch: 'ts-navy', path: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4',
+    action: function(){ openFormOverlay('cleanup-overlay'); } },
+  { label: 'Runner Request',     swatch: 'ts-navy', path: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4',
+    action: function(){ openFormOverlay('materialrequest-overlay'); } },
+  { label: 'Material Inventory', swatch: 'ts-teal', path: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4',
+    action: function(){ showOtherPanel('material-inventory'); } }
+];
+
+function renderRunnerHomeQuickActions() {
+  var el = document.getElementById('runner-home-quick-actions');
+  if (!el) return;
+  el.innerHTML = RUNNER_HOME_TILES.map(function(t, i) {
+    return '<div class="tile" onclick="RUNNER_HOME_TILES['+i+'].action()">' +
+      '<span class="tile-swatch '+t.swatch+'"><svg width="20" height="20" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="'+t.path+'"/></svg></span>' +
+      '<span class="tile-label">'+esc(t.label)+'</span></div>';
+  }).join('');
+}
+
+function initRunnerHomeTab() {
+  renderHomeGreeting('runner-home-greeting');
+  renderRunnerHomeQuickActions();
 }
 
 // ── Deliveries & Pickups summary card ────────────────────────────────────────
@@ -4400,7 +4493,8 @@ function showTab(name, btn) {
     other:     !G.perms.canOther,
     account:   false,
     home:      !G.isAidan,
-    more:      !G.isAidan
+    more:      !G.isAidan,
+    runnerhome: !G.isRunnerHome
   };
   if (blocked[name]) { showToast("You don't have access to that."); return; }
   showTabDirect(name, btn);
@@ -5988,7 +6082,8 @@ function resetOtherPanels() {
 }
 
 function showOtherHome() {
-  if (!_navPop) history.pushState({ view: 'tab', tab: (G.isAidan ? 'more' : 'other') }, '');
+  var backTab = G.isAidan ? 'more' : (G.isRunnerHome ? 'runnerhome' : 'other');
+  if (!_navPop) history.pushState({ view: 'tab', tab: backTab }, '');
   resetOtherPanels();
 }
 
@@ -9195,7 +9290,7 @@ window.addEventListener('popstate', function(e) {
   var state = e.state;
   if (!state) {
     // No state — we're at the very start; just re-push so app stays open
-    history.pushState({ view: 'tab', tab: (G.isAidan ? 'home' : 'dashboard') }, '');
+    history.pushState({ view: 'tab', tab: (G.isAidan ? 'home' : (G.isRunnerHome ? 'runnerhome' : 'dashboard')) }, '');
     _navPop = false;
     return;
   }
