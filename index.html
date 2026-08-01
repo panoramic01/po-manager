@@ -754,7 +754,7 @@
       </div>
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 0 16px">
+    <div id="receive-quick-tiles" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 0 16px">
 
       <div class="tile" onclick="openQualityCheck()">
         <span class="tile-swatch ts-teal"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></span>
@@ -786,6 +786,15 @@
         <span class="tile-label">Runner Request</span>
       </div>
 
+    </div>
+
+    <!-- Runner-only: replaces the tile grid above (those are already Home
+         quick-actions for Runner) with a quick-pick list of recent POs, so
+         Runner can tap straight into receiving one instead of typing a PO
+         number every time. -->
+    <div class="card" id="receive-recent-pos-card" style="display:none">
+      <div class="card-title">Recent Orders</div>
+      <div id="receive-recent-pos-list"></div>
     </div>
   </div>
 
@@ -2747,6 +2756,13 @@ function applyRole(role) {
   sd('other-card-payroll',       has(['admin', 'human_resources']));
   sd('other-card-new-project',   p.canCreate);
   sd('receive-po-card', p.canReceivePO);
+  // Runner reaches Receive PO from its own Home tile, where Quality
+  // Check/Cleanup Log/etc already have their own tiles -- swap the tile
+  // grid for a quick-pick list of recent orders instead. Both re-evaluate
+  // every applyRole() call (not just inside the isRunnerHome block below)
+  // so they reset correctly for every other role too.
+  sd('receive-quick-tiles', !G.isRunnerHome);
+  sd('receive-recent-pos-card', G.isRunnerHome);
   sd('acct-push-card', true);
   sd('acct-theme-card', G.isAidan);
 
@@ -2851,6 +2867,7 @@ function showTabDirect(name, btn) {
   if (name === 'account') loadAccount();
   if (name === 'home') initHomeTab();
   if (name === 'runnerhome') initRunnerHomeTab();
+  if (name === 'receive' && G.isRunnerHome) renderReceiveRecentPOs();
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -3872,6 +3889,34 @@ function quickReceive(poNum) {
   document.getElementById('r-ponum').value = poNum;
   document.getElementById('r-info').style.display = 'none';
   lookupPO();
+}
+
+// Runner-only: quick-pick row on the Receive PO tab's recent-orders list
+// (see receive-recent-pos-card). Unlike quickReceive(), we're already on
+// the receive tab when this fires, so it's just a prefill + lookup.
+function receiveRecentPOClick(poNum) {
+  var el = document.getElementById('r-ponum');
+  if (el) el.value = poNum;
+  lookupPO();
+}
+
+function receiveRecentRow(po) {
+  return '<div class="po-item" data-ponum="'+esc(po.poNum)+'" onclick="receiveRecentPOClick(\''+po.poNum+'\')" style="cursor:pointer">' +
+    '<div class="row-between">' +
+      '<div>' +
+        '<div class="po-main" style="margin:0;font-size:16px">'+esc(po.jobRef||po.vendor||'—')+'</div>' +
+        '<div class="po-sub" style="font-size:12px;margin-top:2px">PO# '+esc(po.poNum||'—')+'</div>' +
+      '</div>' +
+      badge(po.status) +
+    '</div>' +
+  '</div>';
+}
+
+function renderReceiveRecentPOs() {
+  var el = document.getElementById('receive-recent-pos-list');
+  if (!el) return;
+  var recent = (G.pos || []).slice(-10).reverse();
+  el.innerHTML = recent.length ? recent.map(receiveRecentRow).join('') : '<div class="empty">No orders yet.</div>';
 }
 
 function submitReceive() {
