@@ -180,8 +180,10 @@ function doPost(e) {
     else if (action === 'approveTimesheet')            result = approveTimesheet(payload);
     else if (action === 'unapproveTimesheet')          result = unapproveTimesheet(payload);
     else if (action === 'approveMyTimesheet')          result = approveMyTimesheet(payload);
+    else if (action === 'getMyPeriodDetail')           result = getMyPeriodDetail(payload);
     else if (action === 'getShiftForDate')               result = getShiftForDate(payload);
     else if (action === 'submitTimeCorrection')         result = submitTimeCorrection(payload);
+    else if (action === 'submitTimeCorrectionsBatch')   result = submitTimeCorrectionsBatch(payload);
     else if (action === 'getMyTimeCorrections')         result = getMyTimeCorrections(payload);
     else if (action === 'getTimeCorrectionQueue')       result = getTimeCorrectionQueue(payload);
     else if (action === 'approveTimeCorrection')        result = approveTimeCorrection(payload);
@@ -3093,12 +3095,6 @@ function formatPeriodLabel_(pStart, pEnd) {
   return MONTH_ABBRS[pStart.getMonth()] + ' ' + pStart.getDate() + ' - ' + MONTH_ABBRS[pEnd.getMonth()] + ' ' + pEnd.getDate();
 }
 
-/** Walks d back to the most recent Friday (returns d unchanged if d is already a Friday). */
-function lastFridayOnOrBefore_(d) {
-  var diff = (d.getDay() - 5 + 7) % 7; // Friday = 5
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate() - diff);
-}
-
 // Overtime threshold. This split is advisory (for admin visibility before
 // payroll runs), not a certified payroll engine -- a week that straddles a
 // pay-period boundary is only evaluated against the days present in the
@@ -3324,21 +3320,13 @@ function getTimesheet(payload) {
 
     var otSplit = splitRegularOvertime_(myDayEntries);
 
-    var myApproval = getApprovalMap_(periodLabel)[email] || {};
-    var todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    var lastFriday = lastFridayOnOrBefore_(pEnd);
-
     return {
       myHours:      Math.round(myHours * 100) / 100,
       myRegularHours:  otSplit.regular,
       myOvertimeHours: otSplit.overtime,
       myDays:       myDays,
       periodLabel:  periodLabel,
-      allEmployees: allEmployees,
-      employeeApproved:     !!myApproval.employeeApprovedAt,
-      employeeApprovedAt:   myApproval.employeeApprovedAt || '',
-      employeeNote:         myApproval.employeeNote || '',
-      showApprovalReminder: todayMidnight.getTime() >= lastFriday.getTime() && !myApproval.employeeApprovedAt
+      allEmployees: allEmployees
     };
   } catch(e) { return { error: e.toString() }; }
 }
@@ -3689,13 +3677,15 @@ function approveTimesheet(payload) {
 }
 
 /**
- * Employee self-approval of their OWN current-period hours, with an optional
- * note. Unlike approveTimesheet this is never admin/HR-gated -- it's only
- * ever keyed to the caller's own email (never accepts an employeeEmail
- * param), which is what makes it safe to expose to any signed-in user.
- * Purely informational for payroll -- doesn't block or affect
- * approveTimesheet/unapproveTimesheet in any way. Idempotent/re-callable so
- * an employee can update their note later without "unapproving" first.
+ * Employee self-approval of their OWN hours for a CLOSED pay period (never
+ * the currently-open one -- periodOffset is clamped to always be negative),
+ * with an optional note. Unlike approveTimesheet this is never admin/HR-gated
+ * -- it's only ever keyed to the caller's own email (never accepts an
+ * employeeEmail param), which is what makes it safe to expose to any
+ * signed-in user. Purely informational for payroll -- doesn't block or
+ * affect approveTimesheet/unapproveTimesheet in any way. Idempotent/
+ * re-callable so an employee can update their note later without
+ * "unapproving" first.
  */
 function approveMyTimesheet(payload) {
   try {
@@ -3704,7 +3694,10 @@ function approveMyTimesheet(payload) {
     var email = auth.email;
     var note = (payload.note || '').toString().trim();
 
-    var periodLabel = formatPeriodLabel_(getPeriodBounds(new Date()).start, getPeriodBounds(new Date()).end);
+    var offset = parseInt(payload.periodOffset, 10);
+    if (isNaN(offset) || offset >= 0) offset = -1;
+    var bounds = getPeriodBoundsOffset_(new Date(), offset);
+    var periodLabel = formatPeriodLabel_(bounds.start, bounds.end);
     var sheet = ensureSheetWithHeaders_(PAYROLL_APPROVALS_SHEET, PAYROLL_APPROVALS_HEADERS);
 
     var lock = LockService.getScriptLock();
@@ -3727,6 +3720,82 @@ function approveMyTimesheet(payload) {
     } finally {
       lock.releaseLock();
     }
+  } catch(e) { return { error: e.toString() }; }
+}
+
+/**
+ * Day-by-day detail of the CALLER'S OWN hours for a given (closed) pay
+ * period -- powers the "Approve Hours" period-review screen. Every calendar
+ * day in the period is included (blank clockIn/clockOut for days with no
+ * shift on record), so a missed punch is visible and correctable, not just
+ * days that already have a row.
+ */
+function getMyPeriodDetail(payload) {
+  try {
+    var auth = requireVerifiedEmail_(payload);
+    if (auth.error) return auth;
+    var email = auth.email;
+    var tz = Session.getScriptTimeZone();
+
+    var offset = parseInt(payload.periodOffset, 10);
+    if (isNaN(offset) || offset >= 0) offset = -1;
+    var bounds = getPeriodBoundsOffset_(new Date(), offset);
+    var pStart = bounds.start, pEnd = bounds.end;
+    var periodLabel = formatPeriodLabel_(pStart, pEnd);
+
+    var byDate = {}; // 'yyyy-MM-dd' -> { clockIn, clockOut, hours }
+    var dayEntries = []; // for splitRegularOvertime_
+    var sh = getTimeSheet_();
+    var lastRow = sh.getLastRow();
+    if (lastRow >= 2) {
+      var data = sh.getRange(2, 1, lastRow - 1, 6).getValues();
+      for (var i = 0; i < data.length; i++) {
+        var rowEmail = (data[i][1] || '').toString().toLowerCase().trim();
+        if (rowEmail !== email) continue;
+        var rowDate = data[i][2] ? new Date(data[i][2]) : null;
+        if (!rowDate) continue;
+        var rd = new Date(rowDate.getFullYear(), rowDate.getMonth(), rowDate.getDate());
+        if (rd < pStart || rd > pEnd) continue;
+        var key = Utilities.formatDate(rd, tz, 'yyyy-MM-dd');
+        var rowHours = parseFloat(data[i][5]) || 0;
+        byDate[key] = {
+          clockIn:  data[i][3] ? Utilities.formatDate(new Date(data[i][3]), tz, 'HH:mm') : '',
+          clockOut: data[i][4] ? Utilities.formatDate(new Date(data[i][4]), tz, 'HH:mm') : '',
+          hours: rowHours
+        };
+        dayEntries.push({ date: rd, hours: rowHours });
+      }
+    }
+
+    var days = [];
+    var totalHours = 0;
+    for (var d = new Date(pStart); d.getTime() <= pEnd.getTime(); d.setDate(d.getDate() + 1)) {
+      var key = Utilities.formatDate(d, tz, 'yyyy-MM-dd');
+      var entry = byDate[key] || { clockIn: '', clockOut: '', hours: 0 };
+      totalHours += entry.hours;
+      days.push({
+        date: key,
+        dayLabel: MONTH_ABBRS[d.getMonth()] + ' ' + d.getDate(),
+        clockIn: entry.clockIn,
+        clockOut: entry.clockOut,
+        hours: entry.hours
+      });
+    }
+
+    var otSplit = splitRegularOvertime_(dayEntries);
+    var myApproval = getApprovalMap_(periodLabel)[email] || {};
+
+    return {
+      periodLabel: periodLabel,
+      periodOffset: offset,
+      totalHours: Math.round(totalHours * 100) / 100,
+      regularHours: otSplit.regular,
+      overtimeHours: otSplit.overtime,
+      days: days,
+      employeeApproved: !!myApproval.employeeApprovedAt,
+      employeeApprovedAt: myApproval.employeeApprovedAt || '',
+      employeeNote: myApproval.employeeNote || ''
+    };
   } catch(e) { return { error: e.toString() }; }
 }
 
@@ -3769,20 +3838,22 @@ function unapproveTimesheet(payload) {
 }
 
 // ── Pay-period approval reminder (time-based trigger) ─────────────────────────
-// Fires daily but only actually sends a push on the day that is the last
-// Friday of the current pay period, to whichever employees haven't yet
-// self-approved (via approveMyTimesheet) that period. The in-app banner
-// (see getTimesheet's showApprovalReminder) is computed independently on
-// every load, so a missed/failed push doesn't hide the reminder.
+// Fires daily but only actually sends a push on the day a new pay period
+// starts (i.e. the day right after one just closed), about the period that
+// just ended, to whichever employees haven't yet self-approved it (via
+// approveMyTimesheet). The in-app "Approve Hours" card (see
+// getMyPeriodDetail) is computed independently on every Account-tab load,
+// so a missed/failed push doesn't hide the prompt.
 function checkPayPeriodApprovalReminder() {
   try {
-    var bounds = getPeriodBounds(new Date());
-    var lastFriday = lastFridayOnOrBefore_(bounds.end);
     var today = new Date();
     today = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    if (today.getTime() !== lastFriday.getTime()) return;
+    var yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+    var todayBounds = getPeriodBounds(today);
+    var yesterdayBounds = getPeriodBounds(yesterday);
+    if (todayBounds.start.getTime() === yesterdayBounds.start.getTime()) return; // not a period-boundary day
 
-    var periodLabel = formatPeriodLabel_(bounds.start, bounds.end);
+    var periodLabel = formatPeriodLabel_(yesterdayBounds.start, yesterdayBounds.end);
     var approvalMap = getApprovalMap_(periodLabel);
     var roster = getAssignableEmployees().employees || [];
     var targets = roster.map(function(r) { return (r.email || '').toString().toLowerCase().trim(); })
@@ -3969,6 +4040,73 @@ function submitTimeCorrection(payload) {
         'pending', '', '', ''
       ]);
       return { success: true };
+    } finally {
+      lock.releaseLock();
+    }
+  } catch(e) { return { error: e.toString() }; }
+}
+
+/**
+ * Submits corrections for MULTIPLE days at once (e.g. from the period-review
+ * screen where an employee edits several days' times before submitting),
+ * sharing one reason across the whole batch. Each item becomes its own
+ * 'pending' row in the same Time Corrections sheet submitTimeCorrection
+ * writes to -- reviewed/approved individually by admin exactly like a
+ * single-day request, no changes needed on the admin side.
+ */
+function submitTimeCorrectionsBatch(payload) {
+  try {
+    var auth = requireVerifiedEmail_(payload);
+    if (auth.error) return auth;
+    var email = auth.email;
+    var name  = (payload.name || email).toString();
+    var reason = (payload.reason || '').toString().trim();
+    var corrections = Array.isArray(payload.corrections) ? payload.corrections : [];
+
+    if (!reason) return { error: 'Please explain why these corrections are needed.' };
+    if (!corrections.length) return { error: 'No changed days to submit.' };
+
+    var tz = Session.getScriptTimeZone();
+    var todayMidnight = new Date();
+    todayMidnight = new Date(todayMidnight.getFullYear(), todayMidnight.getMonth(), todayMidnight.getDate());
+
+    var items = [];
+    for (var c = 0; c < corrections.length; c++) {
+      var item = corrections[c] || {};
+      var dateStr  = (item.date || '').toString().trim();
+      var clockIn  = (item.clockIn  || '').toString().trim();
+      var clockOut = (item.clockOut || '').toString().trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return { error: 'Invalid date in corrections: ' + dateStr };
+      if (!clockIn && !clockOut) continue; // nothing changed for this day, skip
+
+      var dp = dateStr.split('-');
+      var targetMidnight = new Date(parseInt(dp[0], 10), parseInt(dp[1], 10) - 1, parseInt(dp[2], 10));
+      if (targetMidnight.getTime() > todayMidnight.getTime()) return { error: 'Shift date cannot be in the future: ' + dateStr };
+
+      items.push({ dateStr: dateStr, targetMidnight: targetMidnight, clockIn: clockIn, clockOut: clockOut });
+    }
+    if (!items.length) return { error: 'No changed days to submit.' };
+
+    var sheet = getTimeCorrectionsSheet_();
+    var tsSheet = getTimeSheet_();
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(10000)) return { error: 'Server is busy - try again in a moment.' };
+    try {
+      items.forEach(function(it) {
+        var originalIn = '', originalOut = '';
+        var matchRow = findTimeTrackingRowForDate_(email, it.targetMidnight);
+        if (matchRow !== -1) {
+          var existing = tsSheet.getRange(matchRow, 4, 1, 2).getValues()[0];
+          originalIn  = existing[0] ? Utilities.formatDate(new Date(existing[0]), tz, 'h:mm a') : '';
+          originalOut = existing[1] ? Utilities.formatDate(new Date(existing[1]), tz, 'h:mm a') : '';
+        }
+        sheet.appendRow([
+          Utilities.getUuid(), new Date(), name, email, it.dateStr,
+          originalIn, originalOut, it.clockIn, it.clockOut, reason,
+          'pending', '', '', ''
+        ]);
+      });
+      return { success: true, count: items.length };
     } finally {
       lock.releaseLock();
     }

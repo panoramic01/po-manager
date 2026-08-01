@@ -1479,17 +1479,15 @@
           </div>
           <div id="acct-my-days" style="border-top:1px solid var(--c-border-soft);padding-top:8px"></div>
           <button onclick="openTimeCorrectionForm()" style="width:100%;margin-top:12px;background:none;border:1.5px solid var(--c-navy);color:var(--c-navy);border-radius:9px;padding:10px;font-size:13px;font-weight:700;cursor:pointer">Request a Correction</button>
-
-          <div id="acct-approval-banner" style="display:none;background:var(--sh-amber-bg);color:#7a4a00;border-radius:9px;padding:10px 12px;font-size:12.5px;font-weight:600;margin-top:12px">Please check and approve your hours for this pay period.</div>
-
-          <div style="border-top:1px solid var(--c-border-soft);margin-top:12px;padding-top:12px">
-            <div id="acct-approval-status" style="display:none;font-size:12.5px;font-weight:700;color:#1a7a3c;margin-bottom:8px"></div>
-            <label class="form-label" style="display:block;margin-bottom:6px">Notes (optional)</label>
-            <textarea id="acct-approval-note" class="form-control" placeholder="Anything payroll should know about this period..." style="min-height:60px;margin-bottom:10px"></textarea>
-            <button id="acct-approve-hours-btn" onclick="doApproveMyHours()" style="width:100%;background:var(--c-navy);color:#fff;border:none;border-radius:9px;padding:11px;font-size:13px;font-weight:700;cursor:pointer">Approve My Hours</button>
-          </div>
         </div>
       </div>
+    </div>
+
+    <!-- Approve Hours (prior, now-closed pay period) -->
+    <div id="acct-period-approval-card" onclick="openPeriodReview()" style="background:var(--sh-amber-bg);border-radius:14px;padding:16px 20px;box-shadow:0 1px 4px var(--c-shadow-sm);margin-bottom:16px;cursor:pointer">
+      <div id="acct-period-approval-eyebrow" style="font-size:12px;font-weight:700;color:#7a4a00;text-transform:uppercase;letter-spacing:0.4px">Approve Hours</div>
+      <div id="acct-period-approval-label" style="font-size:16px;font-weight:800;color:#7a4a00;margin-top:2px"></div>
+      <div id="acct-period-approval-cta" style="font-size:12px;color:#7a4a00;margin-top:4px">Tap to review and approve &rarr;</div>
     </div>
 
     <!-- Time Off summary -->
@@ -1895,6 +1893,15 @@
     </div>
   </div>
   <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;background:var(--c-bg)" id="po-detail-body"></div>
+</div>
+
+<!-- Period Review (employee approve-my-hours flow) -->
+<div class="cleanup-overlay" id="period-review-overlay" style="display:none">
+  <div class="cleanup-header">
+    <h2 id="period-review-title">Approve Hours</h2>
+    <button class="cleanup-close" onclick="closePeriodReview()">Close</button>
+  </div>
+  <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;background:var(--c-bg)" id="period-review-body"></div>
 </div>
 
 <!-- Photo Lightbox -->
@@ -8830,6 +8837,7 @@ window.addEventListener('popstate', function(e) {
 // ── Account Tab ───────────────────────────────────────────────────────────────
 var _acctClockedIn = false;
 var _acctClockInterval = null;
+var _myPeriodDetailCache = null;
 
 // ── Settings panel ──────────────────────────────────────────────────────────
 function openAcctSettings() {
@@ -8906,18 +8914,28 @@ function loadAccount() {
     } else {
       daysEl.innerHTML = '<p style="font-size:13px;color:var(--c-ink-faint);margin:0">No hours recorded yet this period.</p>';
     }
+  }, function(){});
 
-    var banner = document.getElementById('acct-approval-banner');
-    if (banner) banner.style.display = d.showApprovalReminder ? '' : 'none';
-    var noteEl = document.getElementById('acct-approval-note');
-    if (noteEl) noteEl.value = d.employeeNote || '';
-    var statusEl = document.getElementById('acct-approval-status');
-    var approveBtn = document.getElementById('acct-approve-hours-btn');
-    if (statusEl) {
-      statusEl.style.display = d.employeeApproved ? '' : 'none';
-      statusEl.textContent = d.employeeApproved ? ('✓ Approved ' + d.employeeApprovedAt) : '';
+  // Load prior-period detail, for the "Approve Hours" card + review overlay
+  gasCall('getMyPeriodDetail', { periodOffset: -1 }, function(d) {
+    if (d.error) return;
+    _myPeriodDetailCache = d;
+    var card = document.getElementById('acct-period-approval-card');
+    var eyebrow = document.getElementById('acct-period-approval-eyebrow');
+    var label = document.getElementById('acct-period-approval-label');
+    var cta = document.getElementById('acct-period-approval-cta');
+    if (label) label.textContent = d.periodLabel || '';
+    if (d.employeeApproved) {
+      if (card) card.style.background = '#e6f7ec';
+      if (eyebrow) { eyebrow.textContent = 'Approved'; eyebrow.style.color = '#1a7a3c'; }
+      if (label) label.style.color = '#1a7a3c';
+      if (cta) { cta.textContent = '✓ Approved ' + d.employeeApprovedAt + ' — tap to view or update'; cta.style.color = '#1a7a3c'; }
+    } else {
+      if (card) card.style.background = 'var(--sh-amber-bg)';
+      if (eyebrow) { eyebrow.textContent = 'Approve Hours'; eyebrow.style.color = '#7a4a00'; }
+      if (label) label.style.color = '#7a4a00';
+      if (cta) { cta.textContent = 'Tap to review and approve →'; cta.style.color = '#7a4a00'; }
     }
-    if (approveBtn) approveBtn.textContent = d.employeeApproved ? 'Update' : 'Approve My Hours';
   }, function(){});
 
   // Load PTO balance
@@ -9114,16 +9132,90 @@ function doPunchAcct() {
   });
 }
 
-function doApproveMyHours() {
-  var btn = document.getElementById('acct-approve-hours-btn');
-  var noteEl = document.getElementById('acct-approval-note');
+function openPeriodReview() {
+  var d = _myPeriodDetailCache;
+  if (!d) { showToast('Still loading, try again in a moment'); return; }
+
+  document.getElementById('period-review-title').textContent = 'Approve Hours: ' + (d.periodLabel || '');
+
+  var otText = d.overtimeHours ? ' (' + d.overtimeHours + ' OT)' : '';
+  var approvedLine = d.employeeApproved
+    ? '<div style="background:#e6f7ec;color:#1a7a3c;border-radius:9px;padding:10px 12px;font-size:12.5px;font-weight:700;margin-bottom:14px">&#10003; Approved ' + esc(d.employeeApprovedAt) + '</div>'
+    : '';
+
+  var daysHtml = (d.days || []).map(function(day, i) {
+    return '<div style="background:var(--c-surface);border-radius:10px;padding:12px 14px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,0.07)">'
+      + '<div style="font-size:13px;font-weight:700;color:var(--c-ink);margin-bottom:8px">' + esc(day.dayLabel) + (day.hours ? ' <span style="font-weight:600;color:var(--c-ink-soft)">&mdash; ' + day.hours + ' hrs</span>' : '') + '</div>'
+      + '<div style="display:flex;gap:10px">'
+      + '<div style="flex:1"><label style="font-size:11px;color:var(--c-ink-soft);display:block;margin-bottom:3px">Clock In</label><input type="time" class="form-control" id="pr-in-' + i + '" value="' + esc(day.clockIn) + '"></div>'
+      + '<div style="flex:1"><label style="font-size:11px;color:var(--c-ink-soft);display:block;margin-bottom:3px">Clock Out</label><input type="time" class="form-control" id="pr-out-' + i + '" value="' + esc(day.clockOut) + '"></div>'
+      + '</div></div>';
+  }).join('');
+
+  document.getElementById('period-review-body').innerHTML =
+    approvedLine
+    + '<div style="background:var(--c-navy);color:#fff;border-radius:12px;padding:14px 18px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center">'
+    + '<span style="font-size:13px;font-weight:600">Total Hours</span>'
+    + '<span style="font-size:22px;font-weight:800">' + d.totalHours + otText + '</span></div>'
+    + '<div style="font-size:13px;font-weight:700;color:var(--c-navy);margin-bottom:8px">Days</div>'
+    + daysHtml
+    + '<div style="margin-top:16px">'
+    + '<label class="form-label" style="display:block;margin-bottom:6px">Reason for changes (if any)</label>'
+    + '<textarea id="pr-reason" class="form-control" placeholder="Explain any times you changed above..." style="min-height:50px;margin-bottom:10px"></textarea>'
+    + '<button onclick="doSubmitPeriodCorrections()" style="width:100%;background:none;border:1.5px solid var(--c-navy);color:var(--c-navy);border-radius:9px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:16px">Submit Corrections</button>'
+    + '</div>'
+    + '<div style="border-top:1px solid var(--c-border-soft);padding-top:14px">'
+    + '<label class="form-label" style="display:block;margin-bottom:6px">Notes for payroll (optional)</label>'
+    + '<textarea id="pr-note" class="form-control" placeholder="Anything payroll should know about this period..." style="min-height:60px;margin-bottom:10px">' + esc(d.employeeNote || '') + '</textarea>'
+    + '<button id="pr-approve-btn" onclick="doApprovePeriodHours()" style="width:100%;background:var(--c-navy);color:#fff;border:none;border-radius:9px;padding:11px;font-size:13px;font-weight:700;cursor:pointer">' + (d.employeeApproved ? 'Update' : 'Approve My Hours') + '</button>'
+    + '</div>';
+
+  document.getElementById('period-review-overlay').style.display = 'flex';
+}
+
+function closePeriodReview() {
+  document.getElementById('period-review-overlay').style.display = 'none';
+}
+
+function doSubmitPeriodCorrections() {
+  var d = _myPeriodDetailCache;
+  if (!d) return;
+  var reasonEl = document.getElementById('pr-reason');
+  var reason = reasonEl ? reasonEl.value.trim() : '';
+  var corrections = [];
+  (d.days || []).forEach(function(day, i) {
+    var inEl = document.getElementById('pr-in-' + i);
+    var outEl = document.getElementById('pr-out-' + i);
+    var newIn = inEl ? inEl.value : '';
+    var newOut = outEl ? outEl.value : '';
+    if (newIn !== (day.clockIn || '') || newOut !== (day.clockOut || '')) {
+      corrections.push({ date: day.date, clockIn: newIn, clockOut: newOut });
+    }
+  });
+  if (!corrections.length) { showToast('No changes to submit'); return; }
+  if (!reason) { showToast('Please explain what changed'); return; }
+  gasCall('submitTimeCorrectionsBatch', { corrections: corrections, reason: reason }, function(r) {
+    if (r && r.success) {
+      showToast(r.count + ' correction' + (r.count === 1 ? '' : 's') + ' submitted');
+      closePeriodReview();
+      loadAccount();
+    } else {
+      showToast('Error: ' + ((r && r.error) || 'Could not submit'));
+    }
+  }, function() { showToast('Could not connect'); });
+}
+
+function doApprovePeriodHours() {
+  var btn = document.getElementById('pr-approve-btn');
+  var noteEl = document.getElementById('pr-note');
   var note = noteEl ? noteEl.value : '';
   var orig = btn.textContent;
   btn.disabled = true; btn.textContent = 'Saving...';
-  gasCall('approveMyTimesheet', { note: note }, function(r) {
+  gasCall('approveMyTimesheet', { note: note, periodOffset: -1 }, function(r) {
     btn.disabled = false;
     if (r && r.success) {
       showToast('Hours approved');
+      closePeriodReview();
       loadAccount();
     } else {
       btn.textContent = orig;
