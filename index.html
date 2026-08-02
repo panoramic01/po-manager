@@ -8556,7 +8556,7 @@ var QC_WALK_TYPES = [
 ];
 
 var QC_TRADES = ['Vinyl', 'Lap Siding', 'Board and Batten', 'Stucco', 'Brick', 'Stone',
-                  'Soffit and Fascia', 'Windows and Doors', 'Gutters and Downspouts', 'Paint and Finishes'];
+                  'Soffit and Fascia', 'Gutters and Downspouts', 'Paint and Finishes'];
 
 var QC_SECTIONS_BY_WALK = {
 
@@ -8567,6 +8567,7 @@ var QC_SECTIONS_BY_WALK = {
       'Window and door rough openings confirmed square, level, and flashed by others before material install begins',
       'Concrete foundation lines checked for level and square; ledge heights match plan',
       'Correct material (style, color, dye lot/batch) delivered and staged on site; matches PO and spec',
+      'Confirm correct window/door units staged (size, style, color) match plan',
       'Key exterior material placement layout confirmed (starter lines, control joints, water table, reveal lines) before crews start cutting — this is priority #1'
     ]},
     { id: 'flashing', name: 'Flashing & Weatherproofing', trade: null, alwaysInclude: true, items: [
@@ -8642,11 +8643,6 @@ var QC_SECTIONS_BY_WALK = {
       'Confirm color/finish matches spec',
       'Confirm birdbox design specs'
     ]},
-    { id: 'windowsdoors', name: 'Windows and Doors', trade: 'Windows and Doors', items: [
-      'Rough openings confirmed square and level',
-      'Flashing sequence reviewed with crew before install',
-      'Confirm correct window/door units staged (size, style, color) match plan'
-    ]},
     { id: 'guttersdownspouts', name: 'Gutters and Downspouts', trade: 'Gutters and Downspouts', items: [
       'Fascia confirmed straight and pitched correctly for drainage',
       'Downspout locations planned away from foundation, walkways, and entries',
@@ -8665,6 +8661,7 @@ var QC_SECTIONS_BY_WALK = {
       'Fastener schedule followed: correct spacing, type, and depth (not over- or under-driven)',
       'Material color/batch consistent with rest of elevation, no mixed dye lots',
       'No beauty issues introduced today (dings, bends, blemishes, damage)',
+      'Window and door trim installed securely with no gaps',
       "Upcoming challenges noted: any rough framing, concrete, or window layout issues discovered today that affect tomorrow's work"
     ]},
     { id: 'flashing', name: 'Flashing & Weatherproofing', trade: null, alwaysInclude: true, items: [
@@ -8747,12 +8744,6 @@ var QC_SECTIONS_BY_WALK = {
       'Transitions to roofline sealed as work progresses',
       'No dents, bends, or paint blemishes in installed material'
     ]},
-    { id: 'windowsdoors', name: 'Windows and Doors', trade: 'Windows and Doors', items: [
-      'Flashing and caulking installed watertight as each unit is set',
-      'Trim securely installed with no gaps',
-      'Fastener schedule followed around trim and nailing flanges',
-      'No scratches, dents, or damage to units at time of install'
-    ]},
     { id: 'guttersdownspouts', name: 'Gutters and Downspouts', trade: 'Gutters and Downspouts', items: [
       'Gutters securely attached with correct pitch for drainage',
       'Downspouts securely attached and routed away from foundation',
@@ -8770,6 +8761,7 @@ var QC_SECTIONS_BY_WALK = {
     { id: 'completeness', name: 'Project Completeness & Cleanliness', trade: null, alwaysInclude: true, items: [
       'Verify all work in scope has been completed (all trades, finishing details, corbels/shutters, etc.)',
       'Confirm key exterior material placement is correct across all elevations (final check)',
+      'Verify trim around windows and doors is securely installed, free of gaps, and free of scratches, dents, or other damage',
       'Clean project site of rubbish, waste material, litter, and other foreign substances',
       'Remove tools, construction equipment, machinery, and surplus material from the jobsite',
       'Sweep paved areas broom clean; remove petrochemical spills, stains, and other foreign deposits from flatwork',
@@ -8857,12 +8849,6 @@ var QC_SECTIONS_BY_WALK = {
       'Verify paint or finish is uniform and free of chips or scratches',
       'Inspect all transitions to the roofline to ensure they are properly sealed',
       'Check for bends, dents, or dings in fascia'
-    ]},
-    { id: 'windowsdoors', name: 'Windows and Doors', trade: 'Windows and Doors', items: [
-      'Inspect flashing and caulking around windows and doors for watertight seals',
-      'Verify trim pieces are securely installed and free of gaps',
-      'Ensure no visible scratches, dents, or other damage',
-      'Verify fastener schedule was followed around trim and flanges'
     ]},
     { id: 'guttersdownspouts', name: 'Gutters and Downspouts', trade: 'Gutters and Downspouts', items: [
       'Confirm gutters are securely attached',
