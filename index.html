@@ -8559,7 +8559,7 @@ var QC_WALK_TYPES = [
   { id: 'closeout', label: 'Closeout Walk' }
 ];
 
-var QC_TRADES = ['Vinyl', 'Lap Siding', 'Board and Batten', 'Stucco', 'Brick', 'Stone',
+var QC_TRADES = ['Vinyl', 'Hardboard Siding', 'Custom Siding', 'Stucco', 'Brick', 'Stone',
                   'Soffit and Fascia', 'Gutters and Downspouts', 'Paint and Finishes'];
 
 var QC_SECTIONS_BY_WALK = {
@@ -8607,16 +8607,23 @@ var QC_SECTIONS_BY_WALK = {
       'J-channel and starter strip layout planned around windows, corners, and penetrations',
       'Confirm color/style matches spec and is consistent across the full order'
     ]},
-    { id: 'lapsiding', name: 'Lap Siding', trade: 'Lap Siding', items: [
+    { id: 'hardboardsiding', name: 'Hardboard Siding', trade: 'Hardboard Siding', items: [
       'Sheathing/WRB inspected, no damage or gaps',
-      'Level starting line struck for the first course',
-      'Confirm color/style/batch matches spec and is consistent across the full order',
-      'Confirm layout pattern'
-    ]},
-    { id: 'boardbatten', name: 'Board and Batten', trade: 'Board and Batten', items: [
-      'Substrate sound and batten spacing layout marked out',
+      'Level starting line struck for the first course (lap profile)',
+      'Substrate sound and batten spacing layout marked out (board-and-batten profile)',
       'Panel union locations identified for z-flashing or caulk plan',
-      'Confirm color/style/batch matches spec'
+      'Confirm layout pattern',
+      'Confirm color/style/batch matches spec and is consistent across the full order'
+    ]},
+    { id: 'customsiding', name: 'Custom Siding', trade: 'Custom Siding', items: [
+      'Manufacturer installation instructions obtained and reviewed with crew before starting (material-specific, not standard trade practice)',
+      'Substrate, furring, or rainscreen requirements confirmed per this material\'s spec',
+      'Fastener type, spacing, and penetration depth confirmed per manufacturer spec',
+      'Expansion/clearance gaps confirmed per manufacturer spec',
+      'Mockup or sample panel reviewed and approved by GC/client before full installation begins',
+      'Sealant and flashing compatibility with this material confirmed (avoid galvanic corrosion or chemical incompatibility)',
+      'Confirm correct material (style, color, finish, batch) delivered matches approved sample/spec',
+      'Handling/storage plan in place to protect limited-quantity or long-lead material from damage'
     ]},
     { id: 'stucco', name: 'Stucco', trade: 'Stucco', items: [
       'Substrate (sheathing, paper, lath) inspected before scratch coat',
@@ -8689,21 +8696,25 @@ var QC_SECTIONS_BY_WALK = {
       'Fastener spacing and depth correct, not overdriven',
       'Color/batch consistent with adjoining panels'
     ]},
-    { id: 'lapsiding', name: 'Lap Siding', trade: 'Lap Siding', items: [
-      'Courses level and properly aligned',
-      'Overlap consistent per manufacturer spec',
-      'Expansion gap of 1/8" verified and consistent course to course',
+    { id: 'hardboardsiding', name: 'Hardboard Siding', trade: 'Hardboard Siding', items: [
+      'Courses level and properly aligned (lap profile)',
+      'Overlap consistent per manufacturer spec (lap profile)',
+      'Expansion gap of 1/8" verified and consistent course to course (lap profile)',
+      'Battens evenly spaced and securely fastened (board-and-batten profile)',
+      'Panel union locations have z-flashing or caulk installed where required',
       'Fasteners not overdriven; spacing per schedule',
-      'Joints and edges sealed at time of install',
-      'No cracks, splits, or warping in panels installed today',
-      'Color/batch consistent'
+      'Joints, seams, and edges sealed at time of install',
+      'No cracks, splits, warping, or gaps in panels/boards installed today',
+      'Color/batch consistent with adjoining panels'
     ]},
-    { id: 'boardbatten', name: 'Board and Batten', trade: 'Board and Batten', items: [
-      'Battens evenly spaced and securely fastened',
-      'Panel unions have z-flashing or caulk installed where required',
-      'No warping, cracks, or gaps in boards installed today',
-      'Seams sealed as installed',
-      'Color/batch consistent, uniform appearance'
+    { id: 'customsiding', name: 'Custom Siding', trade: 'Custom Siding', items: [
+      "Installation follows this material's manufacturer instructions (not standard trade practice) for today's work",
+      'Fasteners correct type, spacing, and depth per manufacturer spec, not overdriven',
+      'Expansion/clearance gaps correct and consistent per manufacturer spec',
+      'No damage, blemishes, or defects introduced in material installed today',
+      'Color/finish/batch consistent with approved sample',
+      'Joints and seams sealed per manufacturer-approved sealant/method',
+      "Manufacturer-required install photos/documentation captured today (if required for warranty)"
     ]},
     { id: 'stucco', name: 'Stucco', trade: 'Stucco', items: [
       "Application even and smooth, correct coat thickness for today's pass",
@@ -8791,23 +8802,24 @@ var QC_SECTIONS_BY_WALK = {
       'Verify fastener spacing and depth are correct (no over- or under-driving)',
       'Confirm color/batch is uniform across all elevations, no mixed dye lots'
     ]},
-    { id: 'lapsiding', name: 'Lap Siding', trade: 'Lap Siding', items: [
-      'Ensure panels are level and properly aligned',
-      'Verify overlapping is consistent and per manufacturer guidelines',
-      'Verify expansion gaps of 1/8"; check consistency and uniformity of expansion gaps',
-      'Inspect for secure fastening without overdriving nails',
-      'Check for visible damage such as cracks, splits, or warping',
-      'Ensure proper sealing at joints and edges',
-      'Confirm color/batch is uniform across all elevations'
-    ]},
-    { id: 'boardbatten', name: 'Board and Batten', trade: 'Board and Batten', items: [
-      'Confirm battens are evenly spaced and securely fastened',
-      'Check boards for warping, cracks, or gaps',
-      'Inspect all seams for proper sealing',
-      'Verify uniformity in appearance and alignment',
+    { id: 'hardboardsiding', name: 'Hardboard Siding', trade: 'Hardboard Siding', items: [
+      'Panels/boards level, properly aligned, and uniform in appearance',
+      'Verify overlap is consistent and per manufacturer guidelines (lap profile)',
+      'Verify expansion gaps of 1/8" are consistent and uniform (lap profile)',
+      'Confirm battens are evenly spaced and securely fastened (board-and-batten profile)',
       'Inspect panel unions for z-flashing or caulk',
-      'Verify fastener spacing and depth are correct',
-      'Confirm color/batch is uniform, no mixed material'
+      'Inspect fastening: secure, correct spacing/depth, no overdriving',
+      'Check for visible damage: cracks, splits, warping, or gaps',
+      'Inspect all seams and joints for proper sealing',
+      'Confirm color/batch is uniform across all elevations, no mixed material'
+    ]},
+    { id: 'customsiding', name: 'Custom Siding', trade: 'Custom Siding', items: [
+      'Final appearance matches approved mockup/sample; no unapproved substitutions or field improvisations',
+      'Verify fastener schedule, gaps, and sealants followed manufacturer spec throughout',
+      'Check for damage, blemishes, or defects across all installed material',
+      'Confirm color/finish/batch consistent across all elevations',
+      'Confirm manufacturer-required documentation/photos complete for warranty registration',
+      'Confirm any manufacturer-required third-party inspection was completed (if applicable)'
     ]},
     { id: 'stucco', name: 'Stucco', trade: 'Stucco', items: [
       'Verify even and smooth application of stucco',
