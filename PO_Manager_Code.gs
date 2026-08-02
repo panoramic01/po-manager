@@ -2747,13 +2747,19 @@ function submitQualityCheck(payload) {
     var tz            = Session.getScriptTimeZone();
     var date          = Utilities.formatDate(new Date(), tz, 'MM/dd/yyyy');
 
-    var lines = ['Walk Type: ' + walkTypeLabel, 'Submitted by: ' + submitter, 'Trade(s): ' + tradesStr, ''];
+    var lines = ['Walk Type: ' + walkTypeLabel, 'Submitted by: ' + submitter, 'Trade(s): ' + tradesStr];
+    if (payload.equipmentOnsite === true || payload.equipmentOnsite === false) {
+      lines.push('Equipment On Site: ' + (payload.equipmentOnsite ? 'Yes' : 'No'));
+    }
+    lines.push('');
     var flagged = [];
     sections.forEach(function(s) {
       var icon = s.status === 'flag' ? 'FLAG' : (s.status === 'na' ? 'N/A' : 'PASS');
       lines.push('[' + icon + '] ' + s.name + (s.notes ? ' - ' + s.notes : ''));
       if (s.status === 'flag') flagged.push(s);
     });
+    var generalNotes = (payload.generalNotes || '').toString().trim();
+    if (generalNotes) lines.push('', 'General Notes: ' + generalNotes);
 
     var sub = asanaRequest('post', '/tasks/' + jobGid + '/subtasks', {
       name:      'Quality Check [' + walkTypeLabel + '] - ' + date,

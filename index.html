@@ -2111,6 +2111,10 @@
         <label class="form-label">Which walk is this?</label>
         <div class="chip-row" id="qc-walktype-chips" style="flex-wrap:wrap;overflow-x:visible"></div>
       </div>
+      <div class="form-group" id="qc-equipment-group" style="display:none">
+        <label class="form-label">Is large equipment (booms/scaffolding) on site?</label>
+        <div class="chip-row" id="qc-equipment-chips" style="flex-wrap:wrap;overflow-x:visible"></div>
+      </div>
       <div class="form-group" style="position:relative">
         <label class="form-label">Job</label>
         <input type="text" class="form-control" id="qc-job-input" placeholder="Search jobs…"
@@ -8570,18 +8574,13 @@ var QC_SECTIONS_BY_WALK = {
       'Confirm correct window/door units staged (size, style, color) match plan',
       'Key exterior material placement layout confirmed (starter lines, control joints, water table, reveal lines) before crews start cutting — this is priority #1'
     ]},
-    { id: 'flashing', name: 'Flashing & Weatherproofing', trade: null, alwaysInclude: true, items: [
-      'Roof-to-wall intersections identified and kick-out flashing planned at every point a sloped roof meets a wall plane',
-      'Step flashing sequence reviewed at roof-wall junctions before siding starts',
+    { id: 'flashing_sealants', name: 'Flashing & Sealants', trade: null, alwaysInclude: true, items: [
       'Head/transition flashing sequence planned at points where two different cladding materials meet',
       'Window and door flashing sequence (pan, sill, jamb, head) reviewed with crew before units are set',
-      'Ice-and-water shield integration at roof-wall junctions confirmed with roofing trade'
-    ]},
-    { id: 'sealants', name: 'Sealants & Caulking', trade: null, alwaysInclude: true, items: [
+      'Ice-and-water shield integration at roof-wall junctions confirmed with roofing trade',
+      'Flashing gap of 5/16" confirmed in the plan',
       "Sealant type confirmed correct for each substrate pairing (polyurethane, silicone, paintable acrylic per manufacturer spec)",
-      'Sealant color(s) confirmed to match adjacent materials',
-      "Locations requiring backer rod identified (gaps exceeding sealant manufacturer's tolerance)",
-      'Weep paths and drainage gaps identified that must NOT be sealed shut'
+      "Locations requiring backer rod identified (gaps exceeding sealant manufacturer's tolerance)"
     ]},
     { id: 'lookahead', name: 'Look-Ahead / Upcoming Challenges', trade: null, alwaysInclude: true, items: [
       'Flag any rough framing errors found (out of square, out of plane, missing blocking) for GC correction before install',
@@ -8591,7 +8590,7 @@ var QC_SECTIONS_BY_WALK = {
       'Look for missing components (windows, doors, vents, 4-wall protrusions)',
       'Confirm wire and pipe stub out locations in soffit and walls'
     ]},
-    { id: 'equipment', name: 'Large Equipment (Booms & Scaffolding)', trade: null, alwaysInclude: true, items: [
+    { id: 'equipment', name: 'Large Equipment (Booms & Scaffolding)', trade: null, equipmentGate: true, items: [
       'Boom lifts/aerial lifts on site have a current inspection decal and manufacturer-required pre-use inspection completed',
       'Ground/surface conditions confirmed level, stable, and clear of obstructions for outrigger or wheel placement',
       'Operators are certified/trained on the specific lift model being used',
@@ -8651,7 +8650,8 @@ var QC_SECTIONS_BY_WALK = {
     { id: 'paintfinishes', name: 'Paint and Finishes', trade: 'Paint and Finishes', items: [
       'Surfaces to be painted confirmed clean, dry, and properly prepped',
       'Color/sheen confirmed correct per spec before starting'
-    ]}
+    ]},
+    { id: 'general_notes', name: 'General Notes', trade: null, alwaysInclude: true, notesOnly: true }
   ],
 
   daily: [
@@ -8664,21 +8664,15 @@ var QC_SECTIONS_BY_WALK = {
       'Window and door trim installed securely with no gaps',
       "Upcoming challenges noted: any rough framing, concrete, or window layout issues discovered today that affect tomorrow's work"
     ]},
-    { id: 'flashing', name: 'Flashing & Weatherproofing', trade: null, alwaysInclude: true, items: [
-      'Kick-out flashing installed at every roof-to-wall intersection encountered today',
-      'Step flashing continuous and properly lapped (shingle-style, water sheds outward/downhill)',
+    { id: 'flashing_sealants', name: 'Flashing & Sealants', trade: null, alwaysInclude: true, items: [
       'Head/transition flashing installed at all points where different cladding materials meet today',
       'Window and door flashing (pan, sill, jamb, head) installed in correct sequence before trim covers it',
-      'No flashing gaps or reverse laps that would direct water behind the cladding'
-    ]},
-    { id: 'sealants', name: 'Sealants & Caulking', trade: null, alwaysInclude: true, items: [
+      'Flashing has the proper 5/16" gap',
       'Correct sealant type used for each substrate pairing installed today',
       'Backer rod installed where gaps exceed sealant tolerance',
-      'Joints tooled smooth, no gaps, pinholes, or excess squeeze-out',
-      'Color match confirmed against adjacent material',
-      'Weep paths and drainage gaps left open, not accidentally sealed shut'
+      'Joints tooled smooth, no gaps, pinholes, or excess squeeze-out'
     ]},
-    { id: 'equipment', name: 'Large Equipment (Booms & Scaffolding)', trade: null, alwaysInclude: true, items: [
+    { id: 'equipment', name: 'Large Equipment (Booms & Scaffolding)', trade: null, equipmentGate: true, items: [
       'Boom lift/aerial lift pre-use inspection completed today; no damage, leaks, or warning indicators before use',
       'Ground conditions checked before each repositioning; outriggers/wheels on a stable, level surface',
       'Fall protection worn and anchored whenever working from an aerial lift platform',
@@ -8754,7 +8748,8 @@ var QC_SECTIONS_BY_WALK = {
       'Color and texture uniform across surfaces completed today',
       'No drips, streaks, or missed areas',
       'Touch-ups needed logged in notes'
-    ]}
+    ]},
+    { id: 'general_notes', name: 'General Notes', trade: null, alwaysInclude: true, notesOnly: true }
   ],
 
   closeout: [
@@ -8779,18 +8774,13 @@ var QC_SECTIONS_BY_WALK = {
       'Capture HQ still images of any defects or potential areas of concern',
       'Confirm all installations match Exterior Key'
     ]},
-    { id: 'flashing', name: 'Flashing & Weatherproofing', trade: null, alwaysInclude: true, items: [
-      'Verify kick-out flashing is present and correctly directing water at every roof-to-wall intersection',
-      'Verify step flashing is continuous with no gaps along all roof-wall junctions',
+    { id: 'flashing_sealants', name: 'Flashing & Sealants', trade: null, alwaysInclude: true, items: [
       'Verify head/transition flashing is present at every point two different materials meet',
       'Verify window and door flashing is complete and watertight (no shortcuts visible from the exterior)',
-      'Confirm no flashing was covered, removed, or damaged by later trades'
-    ]},
-    { id: 'sealants', name: 'Sealants & Caulking', trade: null, alwaysInclude: true, items: [
+      'Confirm no flashing was covered, removed, or damaged by later trades',
+      'Verify flashing has the proper 5/16" gap',
       'Verify correct sealant type was used at each substrate pairing',
       'Inspect all sealant joints for gaps, pinholes, or cracking',
-      'Verify sealant color match is consistent across all elevations',
-      'Confirm weep paths and drainage gaps were not sealed shut',
       "Confirm sealant has fully cured per manufacturer's timeline before final walk"
     ]},
     { id: 'vinyl', name: 'Vinyl', trade: 'Vinyl', items: [
@@ -8859,7 +8849,8 @@ var QC_SECTIONS_BY_WALK = {
       'Inspect all painted or finished surfaces for uniformity in color and texture',
       'Check for drips, streaks, or missed areas',
       'Check for blemishes or touch-up areas needing attention'
-    ]}
+    ]},
+    { id: 'general_notes', name: 'General Notes', trade: null, alwaysInclude: true, notesOnly: true }
   ]
 };
 
@@ -8867,17 +8858,21 @@ var G_asanaJobs = null;
 var G_qcSelectedTrades = [];
 var G_qcWalkType = null;
 var G_qcItemStatus = {};
+var G_qcEquipmentOnsite = null;
 
 function qcResetForm() {
   G_qcSelectedTrades = [];
   G_qcWalkType = null;
   G_qcItemStatus = {};
+  G_qcEquipmentOnsite = null;
   var ji = document.getElementById('qc-job-input');   if (ji) ji.value = '';
   var jg = document.getElementById('qc-job-gid');     if (jg) jg.value = '';
   var sd = document.getElementById('qc-submitter-display');
   if (sd) sd.textContent = (G.config && G.config.userName) || G.userEmail || '';
+  var eg = document.getElementById('qc-equipment-group'); if (eg) eg.style.display = 'none';
   buildWalkTypeChips();
   buildTradeChips();
+  buildEquipmentChips();
   qcGoToStep1();
 }
 
@@ -8892,6 +8887,27 @@ function buildWalkTypeChips() {
 function qcSelectWalkType(walkType, btn) {
   G_qcWalkType = walkType;
   var siblings = document.querySelectorAll('#qc-walktype-chips [data-walktype]');
+  siblings.forEach(function(b) { b.classList.toggle('active', b === btn); });
+  var eg = document.getElementById('qc-equipment-group');
+  if (eg) eg.style.display = qcWalkUsesEquipment(walkType) ? '' : 'none';
+}
+
+function qcWalkUsesEquipment(walkType) {
+  return (QC_SECTIONS_BY_WALK[walkType] || []).some(function(sec) { return sec.equipmentGate; });
+}
+
+function buildEquipmentChips() {
+  var el = document.getElementById('qc-equipment-chips');
+  if (!el) return;
+  el.innerHTML = ['Yes', 'No'].map(function(label) {
+    var val = label === 'Yes';
+    return '<button type="button" class="chip" data-equipment="' + val + '" onclick="qcSelectEquipment(' + val + ', this)">' + label + '</button>';
+  }).join('');
+}
+
+function qcSelectEquipment(val, btn) {
+  G_qcEquipmentOnsite = val;
+  var siblings = document.querySelectorAll('#qc-equipment-chips [data-equipment]');
   siblings.forEach(function(b) { b.classList.toggle('active', b === btn); });
 }
 
@@ -8920,6 +8936,9 @@ function qcGoToStep2() {
   var jobGid  = (document.getElementById('qc-job-gid') || {}).value || '';
   if (!G_qcWalkType) { alert('Please select which walk this is.'); return; }
   if (!jobGid)        { alert('Please select a job.'); return; }
+  if (qcWalkUsesEquipment(G_qcWalkType) && G_qcEquipmentOnsite === null) {
+    alert('Please confirm whether large equipment is on site.'); return;
+  }
 
   renderQcSections();
   document.getElementById('qc-step1').style.display = 'none';
@@ -8989,6 +9008,7 @@ function qcSelectJob(gid, name) {
 function qcCurrentSections() {
   var all = QC_SECTIONS_BY_WALK[G_qcWalkType] || [];
   return all.filter(function(sec) {
+    if (sec.equipmentGate) return G_qcEquipmentOnsite === true;
     return sec.alwaysInclude || G_qcSelectedTrades.indexOf(sec.trade) !== -1;
   });
 }
@@ -8999,6 +9019,13 @@ function renderQcSections() {
   G_qcItemStatus = {};
   var sections = qcCurrentSections();
   el.innerHTML = sections.map(function(sec) {
+    if (sec.notesOnly) {
+      return '<div style="margin-bottom:14px;background:var(--c-surface);border-radius:10px;padding:4px 14px 12px;box-shadow:0 1px 3px rgba(0,0,0,0.07)">' +
+        '<p style="font-size:11px;font-weight:700;color:var(--c-navy);letter-spacing:.5px;text-transform:uppercase;margin:10px 0 4px">' + sec.name + '</p>' +
+        '<textarea id="qc-generalnotes" placeholder="Any additional notes about this walk..." rows="4" ' +
+          'style="width:100%;padding:8px;border:1px solid var(--c-border);border-radius:6px;font-size:13px;resize:vertical;box-sizing:border-box"></textarea>' +
+      '</div>';
+    }
     var items = sec.items.map(function(item, idx) {
       var itemId = sec.id + '_' + idx;
       G_qcItemStatus[itemId] = 'pass';
@@ -9050,6 +9077,7 @@ function submitQualityCheck() {
   // Collect section results (only from sections actually shown - i.e. always-shown + selected trades)
   var sections = [];
   qcCurrentSections().forEach(function(sec) {
+    if (sec.notesOnly) return;
     sec.items.forEach(function(item, idx) {
       var itemId  = sec.id + '_' + idx;
       var status  = G_qcItemStatus[itemId] || 'pass';
@@ -9057,13 +9085,16 @@ function submitQualityCheck() {
       sections.push({ name: item, status: status, notes: notesEl ? notesEl.value.trim() : '' });
     });
   });
+  var generalNotesEl = document.getElementById('qc-generalnotes');
+  var generalNotes = generalNotesEl ? generalNotesEl.value.trim() : '';
 
   var btn = document.getElementById('qc-submit-btn');
   btn.disabled = true; btn.textContent = 'Submitting...';
 
   gasCall('submitQualityCheck',
     { jobGid: jobGid, jobName: jobName, submitter: submitter, walkType: G_qcWalkType, walkTypeLabel: walkTypeLabel,
-      trades: G_qcSelectedTrades.slice(), sections: sections },
+      trades: G_qcSelectedTrades.slice(), sections: sections, generalNotes: generalNotes,
+      equipmentOnsite: qcWalkUsesEquipment(G_qcWalkType) ? G_qcEquipmentOnsite : null },
     function(r) {
       btn.disabled = false; btn.textContent = 'Submit Quality Check';
       var res = document.getElementById('qc-result');
