@@ -2891,6 +2891,9 @@ function applyRole(role) {
   // The correction-request button stayed on Account though (runner-only).
   sd('acct-timeclock-card', false);
   sd('acct-correction-card', G.isRunnerHome);
+  // Approve Hours is self-approval of your own tracked hours -- only
+  // meaningful for whoever clocks in (runner) plus aidan's own account.
+  sd('acct-period-approval-card', G.isRunnerHome || G.isAidan);
   sd('acct-push-card', true);
   sd('acct-theme-card', G.isAidan);
 
@@ -9754,26 +9757,30 @@ function loadAccount() {
   renderPushUI();
 
   // Load prior-period detail, for the "Approve Hours" card + review overlay
-  gasCall('getMyPeriodDetail', { periodOffset: -1 }, function(d) {
-    if (d.error) return;
-    _myPeriodDetailCache = d;
-    var card = document.getElementById('acct-period-approval-card');
-    var eyebrow = document.getElementById('acct-period-approval-eyebrow');
-    var label = document.getElementById('acct-period-approval-label');
-    var cta = document.getElementById('acct-period-approval-cta');
-    if (label) label.textContent = d.periodLabel || '';
-    if (d.employeeApproved) {
-      if (card) card.style.background = '#e6f7ec';
-      if (eyebrow) { eyebrow.textContent = 'Approved'; eyebrow.style.color = '#1a7a3c'; }
-      if (label) label.style.color = '#1a7a3c';
-      if (cta) { cta.textContent = '✓ Approved ' + d.employeeApprovedAt + ' — tap to view or update'; cta.style.color = '#1a7a3c'; }
-    } else {
-      if (card) card.style.background = 'var(--sh-amber-bg)';
-      if (eyebrow) { eyebrow.textContent = 'Approve Hours'; eyebrow.style.color = '#7a4a00'; }
-      if (label) label.style.color = '#7a4a00';
-      if (cta) { cta.textContent = 'Tap to review and approve →'; cta.style.color = '#7a4a00'; }
-    }
-  }, function(){});
+  // -- card itself is hidden for everyone but runner/aidan (see applyRole()),
+  // skip the fetch too rather than populate a card no one will see.
+  if (G.isRunnerHome || G.isAidan) {
+    gasCall('getMyPeriodDetail', { periodOffset: -1 }, function(d) {
+      if (d.error) return;
+      _myPeriodDetailCache = d;
+      var card = document.getElementById('acct-period-approval-card');
+      var eyebrow = document.getElementById('acct-period-approval-eyebrow');
+      var label = document.getElementById('acct-period-approval-label');
+      var cta = document.getElementById('acct-period-approval-cta');
+      if (label) label.textContent = d.periodLabel || '';
+      if (d.employeeApproved) {
+        if (card) card.style.background = '#e6f7ec';
+        if (eyebrow) { eyebrow.textContent = 'Approved'; eyebrow.style.color = '#1a7a3c'; }
+        if (label) label.style.color = '#1a7a3c';
+        if (cta) { cta.textContent = '✓ Approved ' + d.employeeApprovedAt + ' — tap to view or update'; cta.style.color = '#1a7a3c'; }
+      } else {
+        if (card) card.style.background = 'var(--sh-amber-bg)';
+        if (eyebrow) { eyebrow.textContent = 'Approve Hours'; eyebrow.style.color = '#7a4a00'; }
+        if (label) label.style.color = '#7a4a00';
+        if (cta) { cta.textContent = 'Tap to review and approve →'; cta.style.color = '#7a4a00'; }
+      }
+    }, function(){});
+  }
 
   // Load PTO balance
   gasCall('getPTOData', { email: email, role: G.role }, function(d) {
