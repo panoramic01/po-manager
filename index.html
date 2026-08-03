@@ -2473,7 +2473,7 @@ function gasCall(action, payload, onSuccess, onFailure, opts) {
   tryFetch();
 }
 function friendlyUploadError(err) {
-  if (err && err.name === 'AbortError') return 'Upload timed out - check your connection and try again.';
+  if (err && err.name === 'AbortError') return "Taking longer than expected - check above before uploading again, it may have gone through.";
   if (err instanceof TypeError) return 'Cannot reach the server - check your connection and try again.';
   return 'Something went wrong - try again, and tell the office if it keeps happening.';
 }
@@ -3301,7 +3301,7 @@ function loadHomeJobsByPhase() {
         '<span style="font-size:13px;font-weight:600;color:var(--c-ink)">' + esc(s.name) + '</span>' +
         '<span class="badge bd-blue">' + s.jobs.length + '</span></div>';
     }).join('');
-  }, function() { el.innerHTML = '<div class="empty">Could not load jobs.</div>'; });
+  }, function() { el.innerHTML = '<div class="empty">Could not load jobs.</div>'; }, { retry: true, timeoutMs: 45000 });
 }
 
 // Most recent Quality Check walks across all jobs -- see
@@ -4017,10 +4017,15 @@ function submitNewProject() {
     } else {
       showToast('Error:' + res.error);
     }
-  }, function() {
+  }, function(err) {
     setBtnState('new-project-btn', 'Submit Project', false);
-    showToast('Error:Error creating project');
-  });
+    console.error('createProject failed:', err);
+    if (err && err.name === 'AbortError') {
+      showToast("Taking longer than expected - check Asana/Drive before creating it again, it may have gone through.");
+    } else {
+      showToast('Error:Error creating project');
+    }
+  }, { timeoutMs: 45000 });
 }
 
 function clearNewProject() {
@@ -4614,10 +4619,16 @@ function submitCreateSubPO(parentPoNum) {
     } else {
       showToast('Error:' + res.error);
     }
-  }, function() {
+  }, function(err) {
     setBtnState('sp-create-btn', 'Create Sub-PO', false);
-    showToast('Error:Error creating sub-PO');
-  });
+    console.error('createSubPO failed:', err);
+    if (err && err.name === 'AbortError') {
+      loadData();
+      showToast("Taking longer than expected - check the dashboard before creating it again, it may have gone through.");
+    } else {
+      showToast('Error:Error creating sub-PO');
+    }
+  }, { timeoutMs: 45000 });
 }
 
 // ── Edit Modal ────────────────────────────────────────────────────────────────
@@ -5191,7 +5202,7 @@ function handlePhotoSlot(input) {
       slot.className = 'photo-slot';
       slot.onclick = function() { openPhotoSlot(idx); };
       slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:var(--c-danger)">' + friendlyUploadError(err) + '</span></div>';
-    });
+    }, { timeoutMs: 90000 });
   }, function(err) {
     clearTimeout(_uploadTimeout);
     clearTimeout(_imgTimeout);
@@ -5279,7 +5290,7 @@ function uploadIssuedFile(file) {
     }, function(err) {
       statusEl.textContent = friendlyUploadError(err);
       statusEl.className   = 'photo-status error';
-    });
+    }, { timeoutMs: 90000 });
   }, function(err) {
     statusEl.textContent = 'Could not read file — try a different one';
     statusEl.className   = 'photo-status error';
@@ -5328,7 +5339,7 @@ function uploadInvoiceFile(file) {
     }, function(err) {
       statusEl.textContent = friendlyUploadError(err);
       statusEl.className   = 'photo-status error';
-    });
+    }, { timeoutMs: 90000 });
   }, function(err) {
     statusEl.textContent = 'Could not read file — try a different one';
     statusEl.className   = 'photo-status error';
@@ -5375,7 +5386,7 @@ function handleSuccessIssuedFile(input) {
     }, function(err) {
       statusEl.textContent = friendlyUploadError(err);
       statusEl.className   = 'photo-status error';
-    });
+    }, { timeoutMs: 90000 });
   }, function(err) {
     statusEl.textContent = 'Could not read file — try a different one';
     statusEl.className   = 'photo-status error';
@@ -6792,7 +6803,10 @@ function loadJobDashboard() {
     renderQualityWalksCard(r.quality, daysLiveFrom(r.meta.startDate));
     renderJobCostCard(r.cost, r.missingCount);
     document.getElementById('jc-results').style.display = 'block';
-  }, function() { document.getElementById('jc-loading').style.display = 'none'; showToast('Connection error — redeploy GAS'); });
+  }, function(err) {
+    document.getElementById('jc-loading').style.display = 'none';
+    showToast(err && err.name === 'AbortError' ? 'Taking longer than expected - try again.' : 'Connection error — redeploy GAS');
+  }, { retry: true, timeoutMs: 45000 });
 }
 
 function renderJobInfoCard(meta) {

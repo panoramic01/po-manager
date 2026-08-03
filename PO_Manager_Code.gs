@@ -328,6 +328,7 @@ function createPO(data) {
     if (!lock.tryLock(10000)) {
       return { success: false, error: "Server is busy - try again in a moment." };
     }
+    var nextRow, poNumber;
     try {
       var sheet = getSheet();
       var now   = new Date();
@@ -336,8 +337,8 @@ function createPO(data) {
       var qtr   = Math.ceil((now.getMonth() + 1) / 3);
       var paddedQtr = ("0" + qtr).slice(-2);
 
-      var nextRow  = sheet.getLastRow() + 1;
-      var poNumber = year + "-" + paddedQtr + "-" + Utilities.formatString("%03d", nextRow);
+      nextRow  = sheet.getLastRow() + 1;
+      poNumber = year + "-" + paddedQtr + "-" + Utilities.formatString("%03d", nextRow);
       var today    = Utilities.formatDate(now, tz, "MM/dd/yyyy");
       var status   = data.status || "Pending Pickup";
 
@@ -358,14 +359,17 @@ function createPO(data) {
       if (status === "Pending Pickup") {
         sheet.getRange(nextRow, 9).setValue(today);
       }
-
-      sendPushNotification(OWNER_EMAILS, 'New PO Created: ' + poNumber,
-        'By ' + (data.orderedBy || auth.email) + ' - ' + (data.jobRef || '') + ' / ' + (data.vendor || ''), '/');
-
-      return { success: true, poNumber: poNumber, rowIndex: nextRow };
     } finally {
       lock.releaseLock();
     }
+
+    // Sent after the lock is released -- it's a live network round-trip
+    // (even parallelized across recipients/devices) and holding the lock
+    // for it only makes concurrent PO submissions wait longer than needed.
+    sendPushNotification(OWNER_EMAILS, 'New PO Created: ' + poNumber,
+      'By ' + (data.orderedBy || auth.email) + ' - ' + (data.jobRef || '') + ' / ' + (data.vendor || ''), '/');
+
+    return { success: true, poNumber: poNumber, rowIndex: nextRow };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -395,6 +399,7 @@ function createSubPO(data) {
     if (!lock.tryLock(10000)) {
       return { success: false, error: "Server is busy - try again in a moment." };
     }
+    var nextRow, subPoNumber, jobRef;
     try {
       var sheet   = getSheet();
       var lastRow = sheet.getLastRow();
@@ -418,13 +423,13 @@ function createSubPO(data) {
       }
 
       var nextLetter  = String.fromCharCode(maxLetterCode + 1);
-      var subPoNumber = basePoNumber + nextLetter;
+      subPoNumber = basePoNumber + nextLetter;
 
       var parentVals = sheet.getRange(parentRow, 1, 1, 4).getValues()[0];
       var builder    = parentVals[2];
-      var jobRef     = parentVals[3];
+      jobRef         = parentVals[3];
 
-      var nextRow = lastRow + 1;
+      nextRow = lastRow + 1;
       var now     = new Date();
       var tz      = Session.getScriptTimeZone();
       var today   = Utilities.formatDate(now, tz, "MM/dd/yyyy");
@@ -445,14 +450,15 @@ function createSubPO(data) {
       if (status === "Pending Pickup") {
         sheet.getRange(nextRow, 9).setValue(today);
       }
-
-      sendPushNotification(OWNER_EMAILS, 'Sub-PO Created: ' + subPoNumber,
-        'By ' + (data.orderedBy || auth.email) + ' - ' + (jobRef || '') + ' / ' + (data.vendor || ''), '/');
-
-      return { success: true, poNumber: subPoNumber, rowIndex: nextRow };
     } finally {
       lock.releaseLock();
     }
+
+    // Sent after the lock is released, same reasoning as createPO.
+    sendPushNotification(OWNER_EMAILS, 'Sub-PO Created: ' + subPoNumber,
+      'By ' + (data.orderedBy || auth.email) + ' - ' + (jobRef || '') + ' / ' + (data.vendor || ''), '/');
+
+    return { success: true, poNumber: subPoNumber, rowIndex: nextRow };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -2570,6 +2576,16 @@ function getJobsByPhase(payload) {
     var auth = authorizeCaller(payload, ['admin']);
     if (!auth.ok) return { error: auth.error, code: auth.code };
 
+    // Same slow up-to-10-page Asana pagination as getAsanaJobs() (plus a
+    // sections lookup on top) -- cached the same way so repeat callers don't
+    // re-pay that cost every time.
+    var cache = CacheService.getScriptCache();
+    var cacheKey = 'asana_jobs_by_phase_v1';
+    try {
+      var cached = cache.get(cacheKey);
+      if (cached) return JSON.parse(cached);
+    } catch (e) { /* fall through and fetch fresh */ }
+
     var sectionsResult = asanaRequest('get', '/projects/' + ASANA_EXT_SCHED + '/sections?opt_fields=gid,name');
     if (sectionsResult.errors) return { error: sectionsResult.errors[0].message };
     var sections = (sectionsResult.data || []).map(function(s) { return { gid: s.gid, name: s.name, jobs: [] }; });
@@ -2595,7 +2611,9 @@ function getJobsByPhase(payload) {
         break;
       }
     }
-    return { sections: sections };
+    var response = { sections: sections };
+    try { cache.put(cacheKey, JSON.stringify(response), 180); } catch (e) { /* over cache size limit -- fine, just skip caching */ }
+    return response;
   } catch(e) { return { error: e.toString() }; }
 }
 
