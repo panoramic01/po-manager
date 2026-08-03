@@ -158,6 +158,7 @@ function doPost(e) {
     else if (action === 'getJobsByPhase')               result = getJobsByPhase(payload);
     else if (action === 'getRecentQualityWalks')        result = getRecentQualityWalks(payload);
     else if (action === 'submitQualityCheck')           result = submitQualityCheck(payload);
+    else if (action === 'getQualityWalkPhotos')         result = getQualityWalkPhotos(payload);
     else if (action === 'submitOfficeNote')             result = submitOfficeNote(payload);
     else if (action === 'getAssignableEmployees')       result = getAssignableEmployees(payload);
     else if (action === 'saveOfficeNotePhoto')          result = saveOfficeNotePhoto(payload.base64Data, payload.mimeType, payload.filename);
@@ -1226,12 +1227,17 @@ function resolveBaseFolder(builder, jobRef) {
  *   'receivedPhoto' -> <base>/Received Photos/<poNum>
  * Unrecognized/missing docType falls back to the base folder itself.
  */
-function getTypedUploadFolder(baseFolder, docType, poNum) {
+function getTypedUploadFolder(baseFolder, docType, poNum, jobRef) {
   if (docType === 'issuedPO') return getOrCreateChildFolder(baseFolder, 'Issued POs');
   if (docType === 'invoice')  return getOrCreateChildFolder(baseFolder, 'Invoices');
   if (docType === 'receivedPhoto') {
     var photosFolder = getOrCreateChildFolder(baseFolder, 'Received Photos');
     return poNum ? getOrCreateChildFolder(photosFolder, poNum) : photosFolder;
+  }
+  if (docType === 'qualityWalk') {
+    var qwFolder = getOrCreateChildFolder(baseFolder, 'Quality Walks');
+    var safeJobRef = (jobRef || '').toString().trim().slice(0, 100);
+    return safeJobRef ? getOrCreateChildFolder(qwFolder, safeJobRef) : qwFolder;
   }
   return baseFolder;
 }
@@ -1315,7 +1321,7 @@ function savePhotoToDrive(base64Data, mimeType, filename, builder, jobRef, docTy
     // generic catch below.
     var folder, file;
     try {
-      folder = getTypedUploadFolder(base.folder, docType, poNum);
+      folder = getTypedUploadFolder(base.folder, docType, poNum, jobRef);
       var bytes = Utilities.base64Decode(base64Data);
       var blob  = Utilities.newBlob(bytes, mimeType, filename);
       file = folder.createFile(blob);
@@ -2517,6 +2523,42 @@ function asanaRequest(method, endpoint, payload) {
 }
 
 /**
+ * Uploads a base64-encoded file as a native Asana attachment on a task or
+ * subtask. Asana's attachments endpoint takes multipart/form-data, not the
+ * JSON body asanaRequest() sends, so this builds its own UrlFetchApp call --
+ * passing a Blob in `payload` makes Apps Script generate the multipart body
+ * and boundary automatically (no Content-Type header needed here). Any
+ * failure (bad gid, oversized file, Asana outage) is swallowed into
+ * {success:false} rather than thrown, since callers upload several photos
+ * in a loop and one bad attachment shouldn't block the rest -- the photo is
+ * already safe in Drive regardless of this call's outcome.
+ */
+var ASANA_ATTACHMENT_ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
+var ASANA_ATTACHMENT_MAX_BASE64_LEN = 12000000; // ~9MB decoded -- comfortably above the client's compressed JPEGs, well under UrlFetchApp/Asana limits
+
+function asanaUploadAttachment(taskGid, base64Data, mimeType, filename) {
+  try {
+    if (!base64Data || base64Data.length > ASANA_ATTACHMENT_MAX_BASE64_LEN) {
+      return { success: false, error: 'Photo too large to attach.' };
+    }
+    var safeMimeType = ASANA_ATTACHMENT_ALLOWED_MIME_TYPES.indexOf(mimeType) !== -1 ? mimeType : 'image/jpeg';
+    var safeFilename = (filename || 'photo.jpg').toString().replace(/[^A-Za-z0-9_.\- ]/g, '').slice(0, 120) || 'photo.jpg';
+    var blob = Utilities.newBlob(Utilities.base64Decode(base64Data), safeMimeType, safeFilename);
+    var resp = UrlFetchApp.fetch(ASANA_API + '/tasks/' + taskGid + '/attachments', {
+      method: 'post',
+      headers: { 'Authorization': 'Bearer ' + getAsanaPAT() },
+      payload: { file: blob },
+      muteHttpExceptions: true
+    });
+    var json = JSON.parse(resp.getContentText());
+    if (json.errors) return { success: false, error: json.errors[0].message };
+    return { success: true, gid: json.data && json.data.gid };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+/**
  * Every caller of getAsanaJobs() pages through the full Exterior Master
  * Schedule project (up to 10 sequential Asana API round-trips) just to
  * populate a job picker -- that's the single slowest call in the app, and
@@ -2682,6 +2724,7 @@ function getQualityWalkHistory_(jobGid) {
       });
       var created = t.created_at ? new Date(t.created_at) : null;
       return {
+        gid:       t.gid,
         timestamp: created ? Utilities.formatDate(created, Session.getScriptTimeZone(), 'MM/dd/yy') : '',
         ts:        created ? created.getTime() : 0,
         walkType:  walkType,
@@ -2701,6 +2744,32 @@ function getQualityWalkHistory_(jobGid) {
     // swallow -- a Quality Walks read failure shouldn't break the rest of the Job Dashboard
   }
   return result;
+}
+
+/**
+ * Fetches the photos attached to a single Quality Check subtask, for the
+ * read-only walk detail view. Kept separate from getQualityWalkHistory_/
+ * getRecentQualityWalks (rather than bulk-fetched alongside them) since
+ * attachments need their own Asana API call per subtask -- doing that for
+ * every walk in a history list would be N+1 and slow the list down for a
+ * gallery most walks don't even have. Called only when a user actually
+ * opens a walk's detail view.
+ */
+function getQualityWalkPhotos(payload) {
+  try {
+    var auth = authorizeCaller(payload, ['admin', 'purchaser', 'site_manager']);
+    if (!auth.ok) return { photos: [], error: auth.error, code: auth.code };
+    var taskGid = (payload && payload.taskGid || '').toString().trim();
+    if (!taskGid) return { photos: [] };
+    var result = asanaRequest('get', '/tasks/' + taskGid + '/attachments?opt_fields=name,view_url,download_url');
+    if (result.errors) return { photos: [], error: result.errors[0].message };
+    var photos = (result.data || []).map(function(a) {
+      // download_url is a direct-binary link (embeddable as <img src>); view_url is
+      // Asana's authenticated page (not embeddable, but a nicer "open in Asana" link).
+      return { name: a.name || '', url: a.download_url || a.view_url || '', viewUrl: a.view_url || '' };
+    }).filter(function(p) { return p.url; });
+    return { photos: photos };
+  } catch (e) { return { photos: [], error: e.toString() }; }
 }
 
 /**
@@ -2751,6 +2820,7 @@ function getRecentQualityWalks(payload) {
         else naCount++;
       });
       return {
+        gid:          t.gid,
         jobName:      t.parent ? t.parent.name : '',
         jobGid:       t.parent ? t.parent.gid : '',
         walkType:     walkType,
@@ -2775,8 +2845,12 @@ function getRecentQualityWalks(payload) {
   } catch (e) { return { error: e.toString() }; }
 }
 
+var QC_SUBMIT_MAX_PHOTOS = 30; // generous upper bound (legitimate UI max is 3 per flagged item + 3 general) -- just a backstop against a malformed/hostile payload
+
 function submitQualityCheck(payload) {
   try {
+    var auth = requireVerifiedEmail_(payload);
+    if (auth.error) return { error: auth.error, code: auth.code };
     var jobGid        = payload.jobGid;
     var jobName       = payload.jobName;
     var sections      = payload.sections;
@@ -2792,13 +2866,29 @@ function submitQualityCheck(payload) {
     }
     lines.push('');
     var flagged = [];
+    var allPhotos = []; // flat list of {base64Data, mimeType, filename} across every item + general, for the Asana attachment pass below
+    function photoNote(photos) {
+      var n = (photos || []).length;
+      return n ? (n + ' photo' + (n > 1 ? 's' : '') + ' attached') : '';
+    }
     sections.forEach(function(s) {
       var icon = s.status === 'flag' ? 'FLAG' : (s.status === 'na' ? 'N/A' : 'PASS');
-      lines.push('[' + icon + '] ' + s.name + (s.notes ? ' - ' + s.notes : ''));
+      var noteParts = [];
+      if (s.notes) noteParts.push(s.notes);
+      var pNote = photoNote(s.photos);
+      if (pNote) noteParts.push(pNote);
+      lines.push('[' + icon + '] ' + s.name + (noteParts.length ? ' - ' + noteParts.join(' — ') : ''));
       if (s.status === 'flag') flagged.push(s);
+      if (s.photos && s.photos.length) allPhotos = allPhotos.concat(s.photos);
     });
     var generalNotes = (payload.generalNotes || '').toString().trim();
-    if (generalNotes) lines.push('', 'General Notes: ' + generalNotes);
+    var generalPhotos = payload.generalPhotos || [];
+    var genPNote = photoNote(generalPhotos);
+    var genNoteParts = [];
+    if (generalNotes) genNoteParts.push(generalNotes);
+    if (genPNote) genNoteParts.push(genPNote);
+    if (genNoteParts.length) lines.push('', 'General Notes: ' + genNoteParts.join(' — '));
+    if (generalPhotos.length) allPhotos = allPhotos.concat(generalPhotos);
 
     var sub = asanaRequest('post', '/tasks/' + jobGid + '/subtasks', {
       name:      'Quality Check [' + walkTypeLabel + '] - ' + date,
@@ -2806,6 +2896,16 @@ function submitQualityCheck(payload) {
       completed: true
     });
     if (sub.errors) return { error: sub.errors[0].message };
+    var subtaskGid = sub.data && sub.data.gid;
+
+    var photosAttached = 0, photosFailed = 0;
+    if (subtaskGid) {
+      allPhotos.slice(0, QC_SUBMIT_MAX_PHOTOS).forEach(function(p) {
+        if (!p || !p.base64Data) return;
+        var res = asanaUploadAttachment(subtaskGid, p.base64Data, p.mimeType || 'image/jpeg', p.filename || 'photo.jpg');
+        if (res.success) photosAttached++; else photosFailed++;
+      });
+    }
 
     if (flagged.length > 0) {
       var offLines = ['Quality check flagged items for: ' + jobName + ' (' + date + ')', ''];
@@ -2819,7 +2919,7 @@ function submitQualityCheck(payload) {
       });
     }
 
-    return { success: true, flagged: flagged.length };
+    return { success: true, flagged: flagged.length, photosAttached: photosAttached, photosFailed: photosFailed };
   } catch(e) { return { error: e.toString() }; }
 }
 

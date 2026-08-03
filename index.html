@@ -2147,6 +2147,18 @@
   </div>
 </div>
 
+<!-- Shared photo capture inputs + source picker for Quality Check photo grids (one instance reused by every flag/general photo grid, since only one slot can be active at a time) -->
+<input type="file" id="qc-photo-input" accept="image/*" style="display:none" onchange="qcHandlePhotoSlot(this)">
+<input type="file" id="qc-photo-input-camera" accept="image/*" capture="environment" style="display:none" onchange="qcHandlePhotoSlot(this)">
+<div id="qc-photo-source-picker" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(0,0,0,0.45)" onclick="qcClosePhotoSourcePicker()">
+  <div style="position:absolute;bottom:0;left:0;right:0;background:var(--c-surface);border-radius:16px 16px 0 0;padding:16px 16px 32px" onclick="event.stopPropagation()">
+    <div style="width:40px;height:4px;background:#ddd;border-radius:2px;margin:0 auto 16px"></div>
+    <button onclick="qcPickPhotoSource('camera')" style="display:block;width:100%;padding:14px;background:var(--c-navy);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:600;margin-bottom:10px;cursor:pointer">Take Photo</button>
+    <button onclick="qcPickPhotoSource('library')" style="display:block;width:100%;padding:14px;background:#f0f3fa;color:var(--c-navy);border:none;border-radius:10px;font-size:15px;font-weight:600;margin-bottom:10px;cursor:pointer">Choose from Library</button>
+    <button onclick="qcClosePhotoSourcePicker()" style="display:block;width:100%;padding:14px;background:#f7f7f7;color:var(--c-ink-soft);border:none;border-radius:10px;font-size:15px;cursor:pointer">Cancel</button>
+  </div>
+</div>
+
 <!-- Quality Walk Detail Overlay (read-only, opened from the Job Dashboard) -->
 <div class="cleanup-overlay" id="quality-walk-detail-overlay" style="display:none">
   <div class="cleanup-header">
@@ -2483,6 +2495,21 @@ function friendlyServerError(errText) {
     return 'Server is busy - wait a few seconds and try again.';
   }
   return errText || 'Something went wrong.';
+}
+
+/**
+ * For gasCall onFailure handlers on write/create/update/delete actions.
+ * Apps Script keeps executing server-side even after the client's fetch
+ * times out and aborts, so a bare "Error" on an AbortError is often wrong --
+ * the action may have actually gone through a few seconds later. Callers
+ * should pass the err their onFailure received and the message they'd
+ * otherwise show.
+ */
+function abortAwareError(err, fallbackMsg) {
+  if (err && err.name === 'AbortError') {
+    return 'Taking longer than expected - check before trying again, it may have already gone through.';
+  }
+  return fallbackMsg;
 }
 
 function empErrorMessage(r) {
@@ -4150,9 +4177,9 @@ function uploadOfficeNotePhoto(file) {
       }
       if (G.officeNotePhotosUploading === 0) setBtnState('office-note-btn', 'Submit', false);
       updateOfficeNotePhotoStatus();
-    }, function() {
+    }, function(err) {
       G.officeNotePhotosUploading = Math.max(0, (G.officeNotePhotosUploading || 0) - 1);
-      showToast('Error:Photo upload failed — check connection');
+      showToast('Error:' + abortAwareError(err, 'Photo upload failed — check connection'));
       if (G.officeNotePhotosUploading === 0) setBtnState('office-note-btn', 'Submit', false);
       updateOfficeNotePhotoStatus();
     });
@@ -4193,10 +4220,10 @@ function submitOfficeNote() {
     } else {
       showToast('Error:' + res.error);
     }
-  }, function() {
+  }, function(err) {
     setBtnState('office-note-btn', 'Submit', false);
-    showToast('Error:Error submitting note');
-  });
+    showToast('Error:' + abortAwareError(err, 'Error submitting note'));
+  }, { timeoutMs: 45000 });
 }
 
 // ── Receive PO ────────────────────────────────────────────────────────────────
@@ -4307,9 +4334,9 @@ function submitReceive() {
     }
   }, function(err) {
     setBtnState('receive-btn', '✓ Update PO', false);
-    showToast('Error:Update failed — check connection');
     console.error('updatePO error:', err);
-  });
+    showToast('Error:' + abortAwareError(err, 'Update failed — check connection'));
+  }, { timeoutMs: 45000 });
 }
 
 // ── Search ───────────────────────────────────────────────────────────────────
@@ -4890,7 +4917,7 @@ function submitEdit() {
     } else {
       showToast('Error:' + (res.error||'Save failed'));
     }
-  }, function(){ showToast('Error:Error saving changes'); });
+  }, function(err){ showToast('Error:' + abortAwareError(err, 'Error saving changes')); }, { timeoutMs: 45000 });
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
@@ -5219,6 +5246,146 @@ function handlePhotoSlot(input) {
   });
 }
 
+// ── Quality Check Photo Grids (per-flag + general, up to 3 photos each) ─────
+// Mirrors the PO-received photo-slot pattern above, but keyed by a widget id
+// (a flagged item's itemId, or 'general' for the bottom section) since a
+// Quality Check can have several of these grids on screen at once, unlike
+// the single always-one-instance PO-received grid above. One shared source
+// picker + hidden inputs (#qc-photo-input / #qc-photo-input-camera /
+// #qc-photo-source-picker, in the HTML near the Quality Check overlay) are
+// reused across every grid since only one slot can be actively capturing.
+var G_qcPhotos = {};        // key -> [ {url, base64, mimeType, filename} | null, ... ], max 3 slots
+var G_qcPhotoActive = null; // { key, idx } of the slot currently awaiting a file pick
+
+function qcPhotoCamSvg() {
+  return '<svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0118.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><circle cx="12" cy="13" r="3" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/></svg>';
+}
+
+function qcRenderPhotoGrid(key) {
+  var grid = document.getElementById('qc-photos-' + key);
+  if (!grid) return;
+  if (!G_qcPhotos[key]) G_qcPhotos[key] = [null, null, null];
+  grid.innerHTML = G_qcPhotos[key].map(function(p, idx) {
+    if (p) {
+      return '<div class="photo-slot ps-filled" id="qc-photo-slot-' + key + '-' + idx + '">'
+        + '<img src="' + esc(driveThumbUrl(p.url)) + '" alt="photo">'
+        + '<button class="ps-remove" onclick="qcRemovePhotoSlot(\'' + key + '\',' + idx + ');event.stopPropagation()">×</button>'
+        + '<div class="ps-status done">✓</div></div>';
+    }
+    return '<div class="photo-slot" id="qc-photo-slot-' + key + '-' + idx + '" onclick="qcOpenPhotoSlot(\'' + key + '\',' + idx + ')">'
+      + '<div class="ps-add-icon">' + qcPhotoCamSvg() + '<span>+</span></div></div>';
+  }).join('');
+}
+
+function qcOpenPhotoSlot(key, idx) {
+  if (G_qcPhotos[key] && G_qcPhotos[key][idx]) return;
+  G_qcPhotoActive = { key: key, idx: idx };
+  document.getElementById('qc-photo-source-picker').style.display = '';
+}
+function qcClosePhotoSourcePicker() {
+  document.getElementById('qc-photo-source-picker').style.display = 'none';
+}
+function qcPickPhotoSource(source) {
+  qcClosePhotoSourcePicker();
+  var id = source === 'camera' ? 'qc-photo-input-camera' : 'qc-photo-input';
+  var inp = document.getElementById(id);
+  inp.value = '';
+  inp.click();
+}
+function qcRemovePhotoSlot(key, idx) {
+  if (!G_qcPhotos[key]) return;
+  G_qcPhotos[key][idx] = null;
+  qcRenderPhotoGrid(key);
+}
+function setQcSubmitBtnUploadState() {
+  var btn = document.getElementById('qc-submit-btn');
+  if (!btn) return;
+  if (G.qcUploadsInProgress > 0) {
+    btn.disabled = true;
+    btn.textContent = 'Uploading photo… wait';
+  } else {
+    btn.disabled = false;
+    btn.textContent = 'Submit Quality Check';
+  }
+}
+function qcHandlePhotoSlot(input) {
+  var file = input.files && input.files[0];
+  if (!file || !G_qcPhotoActive) return;
+  var key = G_qcPhotoActive.key, idx = G_qcPhotoActive.idx;
+  var slot = document.getElementById('qc-photo-slot-' + key + '-' + idx);
+  if (!slot) return;
+  G.qcUploadsInProgress = (G.qcUploadsInProgress || 0) + 1;
+  setQcSubmitBtnUploadState();
+  slot.className = 'photo-slot ps-uploading';
+  slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:10px;color:var(--c-navy)">Loading…</span></div>';
+  var resetSlotToAdd = function(msg) {
+    slot.className = 'photo-slot';
+    slot.setAttribute('onclick', "qcOpenPhotoSlot('" + key + "'," + idx + ")");
+    slot.innerHTML = '<div class="ps-add-icon">' + (msg ? '<span style="font-size:9px;color:var(--c-danger)">' + msg + '</span>' : qcPhotoCamSvg() + '<span>+</span>') + '</div>';
+  };
+  var _uploadTimeout = setTimeout(function() {
+    if (slot.className.indexOf('ps-uploading') !== -1 && slot.innerHTML.indexOf('Loading') !== -1) {
+      G.qcUploadsInProgress = Math.max(0, G.qcUploadsInProgress - 1);
+      setQcSubmitBtnUploadState();
+      resetSlotToAdd('Timed out — tap to retry');
+    }
+  }, 45000);
+  var _imgTimeout = setTimeout(function() {
+    G.qcUploadsInProgress = Math.max(0, G.qcUploadsInProgress - 1);
+    setQcSubmitBtnUploadState();
+    resetSlotToAdd('Taking too long — tap to retry');
+  }, 30000);
+  readAndCompressFile(file, function(dataUrl, mimeType) {
+    clearTimeout(_uploadTimeout);
+    clearTimeout(_imgTimeout);
+    var base64 = dataUrl.split(',')[1];
+    var ext = mimeType === 'image/jpeg' ? 'jpg' : (file.name.split('.').pop() || 'bin');
+    var jobName = (document.getElementById('qc-job-input') || {}).value || 'job';
+    var filename = 'QC-' + (key === 'general' ? 'General' : 'Flag') + '-' + (idx + 1) + '-' + new Date().toISOString().slice(0,10) + '.' + ext;
+    slot.className = 'photo-slot ps-filled ps-uploading';
+    slot.innerHTML = '<img src="' + dataUrl + '" alt="photo"><div class="ps-status uploading">Uploading…</div>';
+    var _driveTimeout = setTimeout(function() {
+      if (slot.className.indexOf('ps-uploading') !== -1) {
+        G.qcUploadsInProgress = Math.max(0, G.qcUploadsInProgress - 1);
+        setQcSubmitBtnUploadState();
+        resetSlotToAdd('Timed out — tap to retry');
+      }
+    }, 90000);
+    gasCall('savePhotoToDrive', {
+      base64Data: base64, mimeType: mimeType, filename: filename,
+      builder: '', jobRef: jobName, docType: 'qualityWalk'
+    }, function(res) {
+      clearTimeout(_driveTimeout);
+      G.qcUploadsInProgress = Math.max(0, G.qcUploadsInProgress - 1);
+      setQcSubmitBtnUploadState();
+      if (res.success) {
+        if (!G_qcPhotos[key]) G_qcPhotos[key] = [null, null, null];
+        G_qcPhotos[key][idx] = { url: res.url, base64: base64, mimeType: mimeType, filename: filename };
+        qcRenderPhotoGrid(key);
+      } else {
+        console.error('savePhotoToDrive failed:', res.error);
+        resetSlotToAdd(res.noDriveId ? 'No Drive ID — contact Purchaser' : friendlyServerError(res.error));
+      }
+    }, function(err) {
+      clearTimeout(_driveTimeout);
+      G.qcUploadsInProgress = Math.max(0, G.qcUploadsInProgress - 1);
+      setQcSubmitBtnUploadState();
+      resetSlotToAdd(friendlyUploadError(err));
+    }, { timeoutMs: 90000 });
+  }, function(err) {
+    clearTimeout(_uploadTimeout);
+    clearTimeout(_imgTimeout);
+    G.qcUploadsInProgress = Math.max(0, G.qcUploadsInProgress - 1);
+    setQcSubmitBtnUploadState();
+    var msg = (err && err.message === 'heic-convert-failed')
+      ? 'Could not convert this photo — try again'
+      : (err && err.message === 'decode-failed')
+      ? 'Format not supported — try another photo'
+      : 'Could not read file — try a different photo';
+    resetSlotToAdd(msg);
+  });
+}
+
 /**
  * Handles file upload for the Issued PO field in the Edit modal.
  * Accepts images (compressed via canvas) and PDFs (uploaded raw).
@@ -5417,10 +5584,10 @@ function saveIssuedPOForLastCreated(value, statusEl) {
       statusEl.textContent = 'Save failed:' + res.error;
       statusEl.className   = 'photo-status error';
     }
-  }, function() {
-    statusEl.textContent = 'Save error — check connection';
+  }, function(err) {
+    statusEl.textContent = abortAwareError(err, 'Save error — check connection');
     statusEl.className   = 'photo-status error';
-  });
+  }, { timeoutMs: 45000 });
 }
 
 function retakePhoto() {
@@ -5611,10 +5778,10 @@ function submitPricingEdit() {
       showToast('Error:' + (res.error || 'Save failed'));
       if (saveBtn) { saveBtn.textContent = 'Save Prices'; saveBtn.disabled = false; }
     }
-  }, function() {
-    showToast('Error:Error saving prices');
+  }, function(err) {
+    showToast('Error:' + abortAwareError(err, 'Error saving prices'));
     if (saveBtn) { saveBtn.textContent = 'Save Prices'; saveBtn.disabled = false; }
-  });
+  }, { timeoutMs: 45000 });
 }
 
 // ── Reset photo UI whenever the user looks up a new PO
@@ -5725,9 +5892,9 @@ function submitQuickStatus(newStatus) {
   renderDashboard();
   runSearch();
 
-  gasCall('updatePO', { rowIndex: rowIndex, updates: { status: newStatus } }, null, function() {
-    showToast('Error:Error saving status — refresh to sync');
-  });
+  gasCall('updatePO', { rowIndex: rowIndex, updates: { status: newStatus } }, null, function(err) {
+    showToast('Error:' + abortAwareError(err, 'Error saving status — refresh to sync'));
+  }, { timeoutMs: 45000 });
 }
 
 // ── Form Overlays (Cleanup / Reimbursement / Credit Card / Material Request) ───
@@ -5956,10 +6123,10 @@ function submitContactEdit() {
       showToast('Error:' + (res.error || 'Save failed'));
       if (btn) { btn.textContent = 'Save'; btn.disabled = false; }
     }
-  }, function() {
-    showToast('Error:Error saving contact');
+  }, function(err) {
+    showToast('Error:' + abortAwareError(err, 'Error saving contact'));
     if (btn) { btn.textContent = 'Save'; btn.disabled = false; }
-  });
+  }, { timeoutMs: 45000 });
 }
 
 function doDeleteContact(idx) {
@@ -5980,10 +6147,10 @@ function doDeleteContact(idx) {
       showToast('Error: ' + (res.error || 'Delete failed'));
       if (btn) { btn.textContent = 'Delete Contact'; btn.disabled = false; }
     }
-  }, function() {
-    showToast('Error: Could not connect');
+  }, function(err) {
+    showToast('Error: ' + abortAwareError(err, 'Could not connect'));
     if (btn) { btn.textContent = 'Delete Contact'; btn.disabled = false; }
-  });
+  }, { timeoutMs: 45000 });
 }
 
 // ── Add Contact ───────────────────────────────────────────────────────────────
@@ -6027,9 +6194,9 @@ function doAddContact() {
     } else {
       showToast('Error: ' + (res.error || 'Save failed'));
     }
-  }, function() {
-    showToast('Error: Could not connect');
-  });
+  }, function(err) {
+    showToast('Error: ' + abortAwareError(err, 'Could not connect'));
+  }, { timeoutMs: 45000 });
 }
 
 // ── Inventory (fleet + field assets) ───────────────────────────────────────────
@@ -6236,9 +6403,9 @@ function doAddAsset() {
     } else {
       showToast('Error: ' + (res.error || 'Save failed'));
     }
-  }, function() {
-    showToast('Error: Could not connect');
-  });
+  }, function(err) {
+    showToast('Error: ' + abortAwareError(err, 'Could not connect'));
+  }, { timeoutMs: 45000 });
 }
 
 // ── Edit Asset + Maintenance Log ────────────────────────────────────────────────
@@ -6307,10 +6474,10 @@ function submitAssetEdit() {
       showToast('Error:' + (res.error || 'Save failed'));
       if (btn) { btn.textContent = 'Save'; btn.disabled = false; }
     }
-  }, function() {
-    showToast('Error:Error saving asset');
+  }, function(err) {
+    showToast('Error:' + abortAwareError(err, 'Error saving asset'));
     if (btn) { btn.textContent = 'Save'; btn.disabled = false; }
-  });
+  }, { timeoutMs: 45000 });
 }
 
 function doDeleteAsset(idx) {
@@ -6331,10 +6498,10 @@ function doDeleteAsset(idx) {
       showToast('Error: ' + (res.error || 'Delete failed'));
       if (btn) { btn.textContent = 'Delete Asset'; btn.disabled = false; }
     }
-  }, function() {
-    showToast('Error: Could not connect');
+  }, function(err) {
+    showToast('Error: ' + abortAwareError(err, 'Could not connect'));
     if (btn) { btn.textContent = 'Delete Asset'; btn.disabled = false; }
-  });
+  }, { timeoutMs: 45000 });
 }
 
 function loadAssetMaintenanceLog(assetRowIndex) {
@@ -6386,9 +6553,9 @@ function doAddMaintenanceLog() {
     } else {
       showToast('Error: ' + (res.error || 'Save failed'));
     }
-  }, function() {
-    showToast('Error: Could not connect');
-  });
+  }, function(err) {
+    showToast('Error: ' + abortAwareError(err, 'Could not connect'));
+  }, { timeoutMs: 45000 });
 }
 
 // ── Swipe to Receive ──────────────────────────────────────────────────────────
@@ -6661,9 +6828,9 @@ function submitMaterialLog() {
     } else {
       showToast('Error: ' + (res.error || 'Save failed'));
     }
-  }, function() {
-    showToast('Error: Could not connect');
-  });
+  }, function(err) {
+    showToast('Error: ' + abortAwareError(err, 'Could not connect'));
+  }, { timeoutMs: 45000 });
 }
 
 function deleteMaterialLog(rowIndex) {
@@ -6671,7 +6838,7 @@ function deleteMaterialLog(rowIndex) {
   gasCall('deleteMaterialLogEntry', { rowIndex: rowIndex }, function(res) {
     if (res.success) { showToast('Entry deleted'); loadMaterialInventory(); }
     else { showToast('Error: ' + (res.error || 'Delete failed')); }
-  }, function() { showToast('Error: Could not connect'); });
+  }, function(err) { showToast('Error: ' + abortAwareError(err, 'Could not connect')); }, { timeoutMs: 45000 });
 }
 
 
@@ -6894,8 +7061,32 @@ function openQualityWalkDetail(idx, list) {
     + '</div>'
     + '<div style="background:var(--c-surface);border-radius:12px;padding:4px 20px 2px">'
     + (itemsHtml || '<div class="empty">No item detail available for this walk.</div>')
-    + '</div>';
+    + '</div>'
+    + '<div id="qwd-photos" style="margin-top:12px"></div>';
   document.getElementById('quality-walk-detail-overlay').style.display = 'flex';
+  // Photos are fetched from Asana on demand (not bundled into the history
+  // list above) since each walk needs its own attachments API call --
+  // fine one-at-a-time here, but N+1 if done for every walk in a list.
+  // The gallery container is captured now (not re-queried by id inside the
+  // callback) so a fast open-A/close/open-B doesn't let A's late response
+  // render into B's now-current #qwd-photos element.
+  if (q.gid) {
+    var galleryEl = document.getElementById('qwd-photos');
+    gasCall('getQualityWalkPhotos', { taskGid: q.gid }, function(r) {
+      var photos = (r && r.photos) || [];
+      if (!photos.length || !galleryEl) return;
+      galleryEl.innerHTML =
+        '<div style="background:var(--c-surface);border-radius:12px;padding:14px 16px">'
+        + '<p style="font-size:11px;font-weight:700;color:var(--c-navy);letter-spacing:.5px;text-transform:uppercase;margin:0 0 8px">Photos</p>'
+        + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">'
+        + photos.map(function(p) {
+            return '<a href="' + esc(p.viewUrl || p.url) + '" target="_blank" style="display:block;border-radius:8px;overflow:hidden;aspect-ratio:1">'
+              + '<img src="' + esc(p.url) + '" alt="' + esc(p.name) + '" style="width:100%;height:100%;object-fit:cover" onerror="this.closest(\'a\').style.display=\'none\'">'
+              + '</a>';
+          }).join('')
+        + '</div></div>';
+    }, function() { /* photo gallery is a nice-to-have -- fail silently if Asana is slow/unavailable */ });
+  }
 }
 
 function closeQualityWalkDetail() {
@@ -7407,7 +7598,7 @@ function runReconcile() {
   gasCall('reconcileStatement', { invoiceNumbers: invoices }, function(res) {
     if (res.error) { showToast('Error: ' + res.error); return; }
     renderReconcileResults(res.matched || [], res.unmatched || []);
-  }, function() { showToast('Connection error. Try again.'); });
+  }, function() { showToast('Connection error. Try again.'); }, { retry: true, timeoutMs: 45000 });
 }
 
 function renderReconcileResults(matched, unmatched) {
@@ -8280,9 +8471,9 @@ function mrConfirmSaveHistory() {
   if (ov) ov.remove();
   gasCall('saveMaterialHistory', { rows: window._mrHistoryRows }, function(r) {
     showToast(r && r.saved ? 'Saved ' + r.saved + ' row(s) to Material Report History' : 'Saved to history!');
-  }, function() {
-    showToast('Failed to save to history — check GAS logs');
-  });
+  }, function(err) {
+    showToast(abortAwareError(err, 'Failed to save to history — check GAS logs'));
+  }, { timeoutMs: 45000 });
 }
 
 // ── Estimate Comparison Step ──────────────────────────────────────────────
@@ -8561,10 +8752,10 @@ function mrSaveEstHistory() {
         saveBtn.style.background = '#1F3971';
       }, 3000);
     }
-  }, function() {
+  }, function(err) {
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save to History'; saveBtn.style.background = '#1F3971'; }
-    showToast('Failed to save — check GAS logs');
-  });
+    showToast(abortAwareError(err, 'Failed to save — check GAS logs'));
+  }, { timeoutMs: 45000 });
 }
 
 
@@ -8897,6 +9088,9 @@ function qcResetForm() {
   G_qcWalkType = null;
   G_qcItemStatus = {};
   G_qcEquipmentOnsite = null;
+  G_qcPhotos = {};
+  G.qcUploadsInProgress = 0;
+  setQcSubmitBtnUploadState();
   var ji = document.getElementById('qc-job-input');   if (ji) ji.value = '';
   var jg = document.getElementById('qc-job-gid');     if (jg) jg.value = '';
   var sd = document.getElementById('qc-submitter-display');
@@ -9049,10 +9243,18 @@ function qcCurrentSections() {
   });
 }
 
+function qcPhotoGridHtml(key) {
+  return '<div style="margin-top:8px">' +
+    '<p style="font-size:11px;color:var(--c-ink-soft);margin:0 0 4px">Photos (up to 3)</p>' +
+    '<div id="qc-photos-' + key + '" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px"></div>' +
+  '</div>';
+}
+
 function renderQcSections() {
   var el = document.getElementById('qc-sections');
   if (!el) return;
   G_qcItemStatus = {};
+  G_qcPhotos = {};
   var sections = qcCurrentSections();
   el.innerHTML = sections.map(function(sec) {
     if (sec.notesOnly) {
@@ -9060,6 +9262,7 @@ function renderQcSections() {
         '<p style="font-size:11px;font-weight:700;color:var(--c-navy);letter-spacing:.5px;text-transform:uppercase;margin:10px 0 4px">' + sec.name + '</p>' +
         '<textarea id="qc-generalnotes" placeholder="Any additional notes about this walk..." rows="4" ' +
           'style="width:100%;padding:8px;border:1px solid var(--c-border);border-radius:6px;font-size:13px;resize:vertical;box-sizing:border-box"></textarea>' +
+        qcPhotoGridHtml('general') +
       '</div>';
     }
     var items = sec.items.map(function(item, idx) {
@@ -9078,6 +9281,7 @@ function renderQcSections() {
           '<textarea placeholder="Notes..." rows="2" ' +
             'style="width:100%;padding:8px;border:1px solid var(--c-border);border-radius:6px;font-size:13px;resize:none;box-sizing:border-box" ' +
             'id="qc-notesval-' + itemId + '"></textarea>' +
+          qcPhotoGridHtml(itemId) +
         '</div>' +
       '</div>';
     }).join('');
@@ -9086,6 +9290,11 @@ function renderQcSections() {
       items +
     '</div>';
   }).join('');
+  qcRenderPhotoGrid('general');
+  sections.forEach(function(sec) {
+    if (sec.notesOnly) return;
+    sec.items.forEach(function(item, idx) { qcRenderPhotoGrid(sec.id + '_' + idx); });
+  });
 }
 
 function qcToggle(btn, val) {
@@ -9109,6 +9318,13 @@ function submitQualityCheck() {
 
   if (!G_qcWalkType) { alert('Please select which walk this is.'); return; }
   if (!jobGid)        { alert('Please select a job.'); return; }
+  if (G.qcUploadsInProgress > 0) { alert('Please wait for photo uploads to finish.'); return; }
+
+  function collectPhotos(key) {
+    return (G_qcPhotos[key] || []).filter(Boolean).map(function(p) {
+      return { base64Data: p.base64, mimeType: p.mimeType, filename: p.filename };
+    });
+  }
 
   // Collect section results (only from sections actually shown - i.e. always-shown + selected trades)
   var sections = [];
@@ -9118,18 +9334,19 @@ function submitQualityCheck() {
       var itemId  = sec.id + '_' + idx;
       var status  = G_qcItemStatus[itemId] || 'pass';
       var notesEl = document.getElementById('qc-notesval-' + itemId);
-      sections.push({ name: item, status: status, notes: notesEl ? notesEl.value.trim() : '' });
+      sections.push({ name: item, status: status, notes: notesEl ? notesEl.value.trim() : '', photos: collectPhotos(itemId) });
     });
   });
   var generalNotesEl = document.getElementById('qc-generalnotes');
   var generalNotes = generalNotesEl ? generalNotesEl.value.trim() : '';
+  var generalPhotos = collectPhotos('general');
 
   var btn = document.getElementById('qc-submit-btn');
   btn.disabled = true; btn.textContent = 'Submitting...';
 
   gasCall('submitQualityCheck',
     { jobGid: jobGid, jobName: jobName, submitter: submitter, walkType: G_qcWalkType, walkTypeLabel: walkTypeLabel,
-      trades: G_qcSelectedTrades.slice(), sections: sections, generalNotes: generalNotes,
+      trades: G_qcSelectedTrades.slice(), sections: sections, generalNotes: generalNotes, generalPhotos: generalPhotos,
       equipmentOnsite: qcWalkUsesEquipment(G_qcWalkType) ? G_qcEquipmentOnsite : null },
     function(r) {
       btn.disabled = false; btn.textContent = 'Submit Quality Check';
@@ -9142,6 +9359,9 @@ function submitQualityCheck() {
         res.style.background = '#e6f4ea'; res.style.color = '#1e7e34';
         res.innerHTML = '✓ Quality check submitted and completed in Asana.';
       }
+      if (r.photosFailed > 0) {
+        res.innerHTML += ' ' + r.photosFailed + ' photo' + (r.photosFailed > 1 ? 's' : '') + ' saved to Drive but did not attach to Asana.';
+      }
       // Reset form back to step 1 for the next check
       setTimeout(function() {
         qcResetForm();
@@ -9152,8 +9372,9 @@ function submitQualityCheck() {
       btn.disabled = false; btn.textContent = 'Submit Quality Check';
       var res = document.getElementById('qc-result');
       res.style.display = ''; res.style.background = 'var(--bd-red-bg)'; res.style.color = 'var(--c-danger)';
-      res.innerHTML = 'Error: ' + err;
-    }
+      res.innerHTML = 'Error: ' + abortAwareError(err, err);
+    },
+    { timeoutMs: 45000 }
   );
 }
 
@@ -9275,9 +9496,9 @@ function doSubmitPTO() {
     }
   }, function(e) {
     btn.disabled = false; btn.textContent = 'Submit Request'; btn.style.opacity = '1';
-    errEl.textContent = 'Could not connect. Try again.';
+    errEl.textContent = abortAwareError(e, 'Could not connect. Try again.');
     errEl.style.display = 'block';
-  });
+  }, { timeoutMs: 45000 });
 }
 
 function renderPTOHistory(requests) {
@@ -9316,9 +9537,9 @@ function doCancelPTORequest(taskGid) {
     } else {
       showToast('Error: ' + ((r && r.error) || 'Cancel failed'));
     }
-  }, function() {
-    showToast('Error: Could not connect');
-  });
+  }, function(err) {
+    showToast('Error: ' + abortAwareError(err, 'Could not connect'));
+  }, { timeoutMs: 45000 });
 }
 
 function renderPTOQueue(queue) {
@@ -9358,7 +9579,7 @@ function doApprovePTO(taskGid, empEmail, days, btn) {
         btn.disabled = false; btn.textContent = orig;
         showToast('Error: ' + ((r && r.error) || 'unknown'));
       }
-    }, function() { btn.disabled = false; btn.textContent = orig; showToast('Could not connect'); });
+    }, function(err) { btn.disabled = false; btn.textContent = orig; showToast(abortAwareError(err, 'Could not connect')); }, { timeoutMs: 45000 });
 }
 
 function doDenyPTO(taskGid, btn) {
@@ -9374,7 +9595,7 @@ function doDenyPTO(taskGid, btn) {
         btn.disabled = false; btn.textContent = orig;
         showToast('Error: ' + ((r && r.error) || 'unknown'));
       }
-    }, function() { btn.disabled = false; btn.textContent = orig; showToast('Could not connect'); });
+    }, function(err) { btn.disabled = false; btn.textContent = orig; showToast(abortAwareError(err, 'Could not connect')); }, { timeoutMs: 45000 });
 }
 
 
@@ -10341,7 +10562,7 @@ function doPTOOverviewApprove(gid, email, days, btn) {
     if (r.error) { showToast('Error: ' + r.error); btn.disabled = false; btn.textContent = 'Approve'; return; }
     showToast('Approved');
     loadPTOOverview();
-  }, function() { btn.disabled = false; btn.textContent = 'Approve'; showToast('Could not connect'); });
+  }, function(err) { btn.disabled = false; btn.textContent = 'Approve'; showToast(abortAwareError(err, 'Could not connect')); }, { timeoutMs: 45000 });
 }
 
 function doPTOOverviewDeny(gid, email, btn) {
@@ -10351,7 +10572,7 @@ function doPTOOverviewDeny(gid, email, btn) {
     if (r.error) { showToast('Error: ' + r.error); btn.disabled = false; btn.textContent = 'Deny'; return; }
     showToast('Denied');
     loadPTOOverview();
-  }, function() { btn.disabled = false; btn.textContent = 'Deny'; showToast('Could not connect'); });
+  }, function(err) { btn.disabled = false; btn.textContent = 'Deny'; showToast(abortAwareError(err, 'Could not connect')); }, { timeoutMs: 45000 });
 }
 
 // ── Payroll Summary ───────────────────────────────────────────────────────────
