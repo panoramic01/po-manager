@@ -2510,7 +2510,26 @@ function asanaRequest(method, endpoint, payload) {
   return JSON.parse(resp.getContentText());
 }
 
+/**
+ * Every caller of getAsanaJobs() pages through the full Exterior Master
+ * Schedule project (up to 10 sequential Asana API round-trips) just to
+ * populate a job picker -- that's the single slowest call in the app, and
+ * with several UI panels (Quality Check, Job Dashboard) all hitting it
+ * independently, that latency added up often enough to blow past the
+ * client's fetch timeout even though the request would have succeeded a
+ * few seconds later. A short script-cache means only the first caller in
+ * any 3-minute window pays the Asana pagination cost; everyone else gets
+ * an instant response. Job lists don't change second-to-second, so a few
+ * minutes of staleness is an easy trade.
+ */
 function getAsanaJobs() {
+  var cache = CacheService.getScriptCache();
+  var cacheKey = 'asana_jobs_v1';
+  try {
+    var cached = cache.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+  } catch (e) { /* fall through and fetch fresh */ }
+
   try {
     var jobs   = [];
     var offset = null;
@@ -2530,7 +2549,9 @@ function getAsanaJobs() {
         break;
       }
     }
-    return { jobs: jobs };
+    var response = { jobs: jobs };
+    try { cache.put(cacheKey, JSON.stringify(response), 180); } catch (e) { /* e.g. over the 100KB cache limit -- fine, just skip caching */ }
+    return response;
   } catch(e) { return { error: e.toString() }; }
 }
 

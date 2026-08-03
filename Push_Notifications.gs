@@ -133,46 +133,65 @@ function sendPushNotification(targetEmails, title, body, url) {
     return { sent: 0, failed: emails.length };
   }
 
-  var sent = 0, failed = 0;
+  // One entry per (email, token) pair, built up front so the FCM calls
+  // below can go out as a single parallel batch instead of one-by-one --
+  // sequential UrlFetchApp.fetch() calls here used to sit directly in the
+  // critical path of createPO/createSubPO (every recipient x every device),
+  // which could push a PO submission's total response time past the
+  // client's fetch timeout even though the PO row itself had already been
+  // written. fetchAll() dispatches every request concurrently, so total
+  // latency is roughly that of the single slowest recipient instead of the
+  // sum of all of them.
+  var jobs = [];
   emails.forEach(function(email) {
-    var tokens = tokensByEmail[email] || [];
-    tokens.forEach(function(token) {
-      try {
-        var resp = UrlFetchApp.fetch(
-          'https://fcm.googleapis.com/v1/projects/' + FCM_PROJECT_ID + '/messages:send',
-          {
-            method: 'post',
-            contentType: 'application/json',
-            headers: { Authorization: 'Bearer ' + accessToken },
-            payload: JSON.stringify({
-              message: {
-                token: token,
-                data: {
-                  title: title || 'Panoramic Ops',
-                  body: body || '',
-                  url: url || '/'
-                }
-              }
-            }),
-            muteHttpExceptions: true
-          }
-        );
-        var code = resp.getResponseCode();
-        if (code === 200) {
-          sent++;
-        } else {
-          failed++;
-          var errText = resp.getContentText();
-          if (code === 404 || errText.indexOf('UNREGISTERED') !== -1 || errText.indexOf('INVALID_ARGUMENT') !== -1) {
-            deletePushTokenRow_(token);
-          }
-          logError_('sendPushNotification', 'FCM send failed (' + code + '): ' + errText, { email: email });
-        }
-      } catch (e) {
-        failed++;
-        logError_('sendPushNotification', e.toString(), { email: email });
-      }
+    (tokensByEmail[email] || []).forEach(function(token) {
+      jobs.push({ email: email, token: token });
     });
+  });
+  if (!jobs.length) return { sent: 0, failed: 0 };
+
+  var requests = jobs.map(function(job) {
+    return {
+      url: 'https://fcm.googleapis.com/v1/projects/' + FCM_PROJECT_ID + '/messages:send',
+      method: 'post',
+      contentType: 'application/json',
+      headers: { Authorization: 'Bearer ' + accessToken },
+      payload: JSON.stringify({
+        message: {
+          token: job.token,
+          data: {
+            title: title || 'Panoramic Ops',
+            body: body || '',
+            url: url || '/'
+          }
+        }
+      }),
+      muteHttpExceptions: true
+    };
+  });
+
+  var sent = 0, failed = 0;
+  var responses;
+  try {
+    responses = UrlFetchApp.fetchAll(requests);
+  } catch (e) {
+    logError_('sendPushNotification', 'fetchAll failed: ' + e.toString(), { targetEmails: emails });
+    return { sent: 0, failed: jobs.length };
+  }
+
+  responses.forEach(function(resp, i) {
+    var job = jobs[i];
+    var code = resp.getResponseCode();
+    if (code === 200) {
+      sent++;
+    } else {
+      failed++;
+      var errText = resp.getContentText();
+      if (code === 404 || errText.indexOf('UNREGISTERED') !== -1 || errText.indexOf('INVALID_ARGUMENT') !== -1) {
+        deletePushTokenRow_(job.token);
+      }
+      logError_('sendPushNotification', 'FCM send failed (' + code + '): ' + errText, { email: job.email });
+    }
   });
 
   return { sent: sent, failed: failed };

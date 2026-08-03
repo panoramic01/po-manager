@@ -1132,7 +1132,7 @@
             <div style="position:relative;flex:1">
               <input id="jc-job-input" placeholder="Search jobs…" autocomplete="off"
                      oninput="jcJobFilterDebounced(this.value); document.getElementById('jc-job-gid').value='';"
-                     onfocus="jcJobFilter(this.value)"
+                     onfocus="openJobDashboardPanel(); jcJobFilter(this.value)"
                      style="width:100%;padding:10px 12px;border:1px solid var(--c-border);border-radius:8px;font-size:14px;outline:none;box-sizing:border-box">
               <input type="hidden" id="jc-job-gid" value="">
               <div id="jc-job-dropdown" style="display:none;position:absolute;left:0;right:0;top:100%;background:var(--c-surface);border:1px solid var(--c-border);border-radius:8px;margin-top:4px;max-height:220px;overflow-y:auto;z-index:20;box-shadow:0 4px 12px rgba(0,0,0,0.12)"></div>
@@ -2120,7 +2120,7 @@
         <input type="text" class="form-control" id="qc-job-input" placeholder="Search jobs…"
                autocomplete="off"
                oninput="qcJobFilterDebounced(this.value); document.getElementById('qc-job-gid').value='';"
-               onfocus="qcJobFilter(this.value)">
+               onfocus="loadQualityJobs(); qcJobFilter(this.value)">
         <input type="hidden" id="qc-job-gid" value="">
         <div id="qc-job-dropdown" style="display:none;position:absolute;left:0;right:0;top:100%;background:var(--c-surface);border:1px solid var(--c-border);border-radius:8px;margin-top:4px;max-height:220px;overflow-y:auto;z-index:20;box-shadow:0 4px 12px rgba(0,0,0,0.12)"></div>
       </div>
@@ -3850,10 +3850,16 @@ function submitCreate() {
     } else {
       showToast('Error:' + res.error);
     }
-  }, function() {
+  }, function(err) {
     setBtnState('create-btn', 'Create PO', false);
-    showToast('Error:Error creating PO');
-  });
+    console.error('createPO failed:', err);
+    if (err && err.name === 'AbortError') {
+      loadData();
+      showToast("Taking longer than expected - check the dashboard before creating it again, it may have gone through.");
+    } else {
+      showToast('Error:Error creating PO');
+    }
+  }, { timeoutMs: 45000 });
 }
 
 function clearCreate() {
@@ -6730,8 +6736,8 @@ function openJobDashboardPanel() {
     if (inp2) { inp2.placeholder = 'Search jobs…'; jcJobFilter(inp2.value); }
   }, function() {
     var inp2 = document.getElementById('jc-job-input');
-    if (inp2) inp2.placeholder = 'Error loading jobs';
-  });
+    if (inp2) inp2.placeholder = 'Could not load jobs - tap to retry';
+  }, { retry: true, timeoutMs: 45000 });
 }
 
 function jcJobFilter(q) {
@@ -8972,6 +8978,10 @@ function closeQualityCheck() {
 
 function loadQualityPanel() {
   renderQcSections();
+  loadQualityJobs();
+}
+
+function loadQualityJobs() {
   if (G_asanaJobs) { populateJobSelect(G_asanaJobs); return; }
   var inp = document.getElementById('qc-job-input');
   if (inp) inp.placeholder = 'Loading jobs...';
@@ -8980,8 +8990,8 @@ function loadQualityPanel() {
     populateJobSelect(G_asanaJobs);
   }, function(err) {
     var inp = document.getElementById('qc-job-input');
-    if (inp) inp.placeholder = 'Error loading jobs';
-  });
+    if (inp) inp.placeholder = 'Could not load jobs - tap to retry';
+  }, { retry: true, timeoutMs: 45000 });
 }
 
 function populateJobSelect(jobs) {
