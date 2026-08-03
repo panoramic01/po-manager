@@ -9243,6 +9243,13 @@ function qcCurrentSections() {
   });
 }
 
+function qcAllItemsChecked() {
+  return qcCurrentSections().every(function(sec) {
+    if (sec.notesOnly) return true;
+    return sec.items.every(function(item, idx) { return !!G_qcItemStatus[sec.id + '_' + idx]; });
+  });
+}
+
 function qcPhotoGridHtml(key) {
   return '<div style="margin-top:8px">' +
     '<p style="font-size:11px;color:var(--c-ink-soft);margin:0 0 4px">Photos (up to 3)</p>' +
@@ -9267,7 +9274,6 @@ function renderQcSections() {
     }
     var items = sec.items.map(function(item, idx) {
       var itemId = sec.id + '_' + idx;
-      G_qcItemStatus[itemId] = 'pass';
       return '<div style="padding:10px 0;border-bottom:1px solid var(--c-border-soft)">' +
         '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">' +
           '<span style="font-size:13px;color:var(--c-ink);flex:1">' + item + '</span>' +
@@ -9318,6 +9324,7 @@ function submitQualityCheck() {
 
   if (!G_qcWalkType) { alert('Please select which walk this is.'); return; }
   if (!jobGid)        { alert('Please select a job.'); return; }
+  if (!qcAllItemsChecked()) { alert('Please mark every item Pass, Flag, or N/A before submitting.'); return; }
   if (G.qcUploadsInProgress > 0) { alert('Please wait for photo uploads to finish.'); return; }
 
   function collectPhotos(key) {
@@ -10101,7 +10108,7 @@ function saveProfile() {
     } else {
       showToast('Error: ' + ((r && r.error) || 'Could not save'));
     }
-  }, function() { btn.disabled = false; btn.textContent = 'Save Changes'; showToast('Could not connect'); });
+  }, function(err) { btn.disabled = false; btn.textContent = 'Save Changes'; showToast(abortAwareError(err, 'Could not connect')); }, { timeoutMs: 45000 });
 }
 
 // -- Push Notifications (aidan role only -- test rollout) ----------------------
@@ -10152,7 +10159,7 @@ function enablePush() {
           showToast('Error: ' + ((r && r.error) || 'Could not save subscription'));
         }
         renderPushUI();
-      }, function() { btn.disabled = false; showToast('Could not connect'); renderPushUI(); });
+      }, function(err) { btn.disabled = false; showToast(abortAwareError(err, 'Could not connect')); renderPushUI(); }, { timeoutMs: 45000 });
     }, function() {
       btn.disabled = false;
       showToast('Could not enable push notifications');
@@ -10339,7 +10346,7 @@ function doSavePeriodReview() {
         btn.textContent = orig;
         showToast('Error: ' + ((r && r.error) || 'Could not save'));
       }
-    }, function() { btn.disabled = false; btn.textContent = orig; showToast('Could not connect'); });
+    }, function(err) { btn.disabled = false; btn.textContent = orig; showToast(abortAwareError(err, 'Could not connect')); }, { timeoutMs: 45000 });
   };
 
   if (!corrections.length) {
@@ -10353,7 +10360,7 @@ function doSavePeriodReview() {
       btn.disabled = false; btn.textContent = orig;
       showToast('Error: ' + ((r && r.error) || 'Could not submit corrections'));
     }
-  }, function() { btn.disabled = false; btn.textContent = orig; showToast('Could not connect'); });
+  }, function(err) { btn.disabled = false; btn.textContent = orig; showToast(abortAwareError(err, 'Could not connect')); }, { timeoutMs: 45000 });
 }
 
 function handlePeriodPdfFile(input) {
@@ -10373,7 +10380,7 @@ function handlePeriodPdfFile(input) {
         if (statusEl) statusEl.textContent = 'Upload failed';
         showToast('Error: ' + ((res && res.error) || 'Could not upload'));
       }
-    }, function() { if (statusEl) statusEl.textContent = 'Upload failed'; showToast('Could not connect'); });
+    }, function(err) { if (statusEl) statusEl.textContent = 'Upload failed'; showToast(abortAwareError(err, 'Could not connect')); }, { timeoutMs: 90000 });
   }, function() { if (statusEl) statusEl.textContent = 'Could not read file'; });
 }
 
@@ -10467,7 +10474,7 @@ function doAddEmployee() {
     showToast(name + ' added');
     document.getElementById('emp-add-form').style.display = 'none';
     loadEmpMgr();
-  }, function() { showToast('Could not connect'); });
+  }, function(err) { showToast(abortAwareError(err, 'Could not connect')); }, { timeoutMs: 45000 });
 }
 
 function doUpdateEmployee(i) {

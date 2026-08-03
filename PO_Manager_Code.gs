@@ -2909,14 +2909,27 @@ function submitQualityCheck(payload) {
 
     if (flagged.length > 0) {
       var offLines = ['Quality check flagged items for: ' + jobName + ' (' + date + ')', ''];
+      var flaggedPhotos = []; // photos on flagged items only -- also attached to this Office Task copy, not just the subtask
       flagged.forEach(function(f) {
-        offLines.push('- ' + f.name + (f.notes ? ': ' + f.notes : ''));
+        var fNoteParts = [];
+        if (f.notes) fNoteParts.push(f.notes);
+        var fPNote = photoNote(f.photos);
+        if (fPNote) fNoteParts.push(fPNote);
+        offLines.push('- ' + f.name + (fNoteParts.length ? ': ' + fNoteParts.join(' — ') : ''));
+        if (f.photos && f.photos.length) flaggedPhotos = flaggedPhotos.concat(f.photos);
       });
-      asanaRequest('post', '/tasks', {
+      var officeTask = asanaRequest('post', '/tasks', {
         projects: [ASANA_OFFICE_TASKS],
         name:     'Quality Check - ' + jobName + ' - ' + date,
         notes:    offLines.join('\n')
       });
+      var officeTaskGid = officeTask.data && officeTask.data.gid;
+      if (officeTaskGid) {
+        flaggedPhotos.slice(0, QC_SUBMIT_MAX_PHOTOS).forEach(function(p) {
+          if (!p || !p.base64Data) return;
+          asanaUploadAttachment(officeTaskGid, p.base64Data, p.mimeType || 'image/jpeg', p.filename || 'photo.jpg');
+        });
+      }
     }
 
     return { success: true, flagged: flagged.length, photosAttached: photosAttached, photosFailed: photosFailed };
