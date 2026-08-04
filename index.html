@@ -202,6 +202,7 @@
     .po-num  { font-size: 14px; font-weight: 700; color: var(--c-navy); font-family: monospace; }
     .po-main { font-size: 19px; font-weight: 700; margin: 5px 0 4px; color: var(--c-ink); }
     .po-sub  { font-size: 15px; color: var(--c-ink-soft); }
+    .po-created { font-size: 11px; color: var(--c-ink-faint); margin-top: 2px; }
     .po-note { font-size: 14px; color: var(--c-ink-soft); margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--c-border-soft); font-style: italic; }
     .po-actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; align-items: center; }
     .po-amount { font-size: 16px; font-family: monospace; font-weight: 700; color: var(--c-navy); }
@@ -3747,7 +3748,7 @@ function recentOrderRow(po) {
     '<div class="row-between">' +
       '<div>' +
         '<div class="po-main" style="margin:0;font-size:16px">'+(po.jobRef||po.vendor||'\u2014')+'</div>' +
-        '<div class="po-sub" style="font-size:12px;margin-top:2px">PO# '+(po.poNum||'\u2014')+'</div>' +
+        '<div class="po-sub" style="font-size:12px;margin-top:2px">PO# '+(po.poNum||'\u2014')+(po.dateIssued?' \u00b7 Created '+po.dateIssued:'')+'</div>' +
       '</div>' +
       badge(po.status) +
     '</div>' +
@@ -3831,6 +3832,7 @@ function poCard(po, type, tokens) {
         '<span class="po-num">'+highlightText(po.poNum, tokens)+'</span>' +
       '</span>' + amt +
     '</div>' +
+    (po.dateIssued ? '<div class="po-created">Created ' + esc(po.dateIssued) + '</div>' : '') +
     '<div class="po-main">'+(po.jobRef?highlightText(po.jobRef, tokens):'—')+'</div>' +
     '<div class="po-sub">'+(po.vendor?highlightText(po.vendor, tokens):'—')+(po.builder?' · '+highlightText(po.builder, tokens):'')+dateStr+'</div>' +
     (po.notes ? '<div class="po-note">'+highlightText(po.notes, tokens)+'</div>' : '') +
@@ -4613,6 +4615,7 @@ function showPODetail(poNum) {
     buildDocLinks(po) +
     '<div style="background:var(--c-surface);border-radius:12px;padding:2px 16px;margin-bottom:12px">' +
       '<div class="po-detail-row"><span class="badge '+badgeCls(po.status)+'">'+esc(po.status)+'</span></div>' +
+      poDetailRow('Created', po.dateIssued) +
       poDetailRow('Builder', po.builder) +
       poDetailRow('Job Reference', po.jobRef) +
       poDetailRow('Vendor', po.vendor) +
