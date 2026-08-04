@@ -3069,7 +3069,7 @@ function renderDashboard() {
     futureDel:[], futurePick:[],        // date set but > 7 days out
     overdueDel:[], overduePick:[],
     missingDel:[], missingPick:[],      // truly no date
-    reconcile:[], ordered:[], inProd:[], draft:[],
+    reconcile:[], ordered:[], inProd:[], draft:[], delivered:[],
     complete:[], invoiceMissing:[], needsReview:[], canceled:[], other:[]
   };
 
@@ -3083,18 +3083,21 @@ function renderDashboard() {
     var isInProd      = sl === 'being made' || sl === 'pending delivery to supplier';
     var isOrd         = sl === 'ordered' || sl === 'currently picking up';
     var isDraft       = sl === 'draft';
-    var isComplete    = sl === 'complete' || sl === 'delivered';
+    var isDelivered   = sl === 'delivered';
+    var isComplete    = sl === 'complete';
     var isInvoiceMiss = sl === 'invoice missing';
     var isNeedsReview = sl === 'needs review';
     var isCanceled    = sl === 'canceled';
 
+    // Open = everything still outstanding — i.e. not Complete, Canceled, or Draft.
     if (isRTR)         { buckets.reconcile.push(po);      return; }
     if (isInProd)      { buckets.inProd.push(po);         return; }
     if (isOrd)         { buckets.ordered.push(po);        return; }
     if (isDraft)       { buckets.draft.push(po);          return; }
-    if (isComplete)    { buckets.complete.push(po);       return; }
+    if (isDelivered)   { buckets.delivered.push(po);      return; }
     if (isInvoiceMiss) { buckets.invoiceMissing.push(po); return; }
     if (isNeedsReview) { buckets.needsReview.push(po);    return; }
+    if (isComplete)    { buckets.complete.push(po);       return; }
     if (isCanceled)    { buckets.canceled.push(po);       return; }
     if (!isPD && !isPP) { buckets.other.push(po); return; } // unmapped status — never drop silently
 
@@ -3120,9 +3123,11 @@ function renderDashboard() {
   var missingTotal = buckets.missingDel.length + buckets.missingPick.length;
 
   var draftCount     = buckets.draft.length;
-  var openTabCount   = openDateCount + buckets.ordered.length + buckets.inProd.length;
-  var completedCount = buckets.needsReview.length + buckets.invoiceMissing.length +
-                        buckets.reconcile.length + buckets.complete.length + buckets.other.length;
+  var openTabCount   = openDateCount + buckets.ordered.length + buckets.inProd.length +
+                        buckets.reconcile.length + buckets.delivered.length +
+                        buckets.invoiceMissing.length + buckets.needsReview.length +
+                        buckets.other.length;
+  var completedCount = buckets.complete.length;
   var canceledCount  = buckets.canceled.length;
 
   G.dashCounts  = { all: G.pos.length, draft: draftCount, open: openTabCount,
@@ -3190,29 +3195,34 @@ function renderDashboard() {
       h += secHead('Needs a Date (' + missingAll.length + ')', 'sh-amber');
       missingAll.forEach(function(po){ h += poCard(po,'missing'); });
     }
-  }
 
-  // Completed — Needs Review / Invoice Missing / Ready to Reconcile / Complete / Other
-  if (t === 'completed' || t === 'all') {
-    if (buckets.needsReview.length) {
-      h += secHead('Needs Review (' + buckets.needsReview.length + ')', 'sh-amber');
-      buckets.needsReview.forEach(function(po){ h += poCard(po,'needs-review'); });
+    if (buckets.delivered.length) {
+      h += secHead('Delivered (' + buckets.delivered.length + ')', 'sh-teal');
+      buckets.delivered.forEach(function(po){ h += poCard(po,'delivered'); });
     }
     if (buckets.invoiceMissing.length) {
       h += secHead('Invoice Missing (' + buckets.invoiceMissing.length + ')', 'sh-red');
       buckets.invoiceMissing.forEach(function(po){ h += poCard(po,'invoice-missing'); });
     }
+    if (buckets.needsReview.length) {
+      h += secHead('Needs Review (' + buckets.needsReview.length + ')', 'sh-amber');
+      buckets.needsReview.forEach(function(po){ h += poCard(po,'needs-review'); });
+    }
     if (buckets.reconcile.length) {
       h += secHead('Ready to Reconcile (' + buckets.reconcile.length + ')', 'sh-teal');
       buckets.reconcile.forEach(function(po){ h += poCard(po,'reconcile'); });
     }
-    if (buckets.complete.length) {
-      h += secHead('Complete (' + buckets.complete.length + ')', 'sh-indigo');
-      buckets.complete.forEach(function(po){ h += poCard(po,'complete'); });
-    }
     if (buckets.other.length) {
       h += secHead('Other (' + buckets.other.length + ')', 'sh-indigo');
       buckets.other.forEach(function(po){ h += poCard(po, po.status.toLowerCase().replace(/ /g,'-')); });
+    }
+  }
+
+  // Completed — Complete only
+  if (t === 'completed' || t === 'all') {
+    if (buckets.complete.length) {
+      h += secHead('Complete (' + buckets.complete.length + ')', 'sh-indigo');
+      buckets.complete.forEach(function(po){ h += poCard(po,'complete'); });
     }
   }
 
@@ -3795,6 +3805,7 @@ function poChip(type) {
     'needs-review'    : { bg: 'var(--bd-amber-bg)', fg: 'var(--bd-amber-fg)', glyph: '?' },
     'invoice-missing' : { bg: 'var(--bd-red-bg)', fg: 'var(--bd-red-fg)', glyph: '!' },
     'reconcile': { bg: 'var(--sh-teal-bg)', fg: 'var(--c-navy)', glyph: '↻' },
+    'delivered': { bg: 'var(--sh-teal-bg)', fg: 'var(--c-navy)', glyph: '✓' },
     'delivery' : { bg: 'var(--sh-green-bg)', fg: 'var(--c-navy)', glyph: '→' },
     'pickup'   : { bg: 'var(--sh-blue-bg)', fg: 'var(--c-navy)', glyph: '↑' },
     'ordered'  : { bg: 'var(--sh-indigo-bg)', fg: 'var(--bd-indigo-fg)', glyph: '●' },
