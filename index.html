@@ -3748,7 +3748,7 @@ function recentOrderRow(po) {
     '<div class="row-between">' +
       '<div>' +
         '<div class="po-main" style="margin:0;font-size:16px">'+(po.jobRef||po.vendor||'\u2014')+'</div>' +
-        '<div class="po-sub" style="font-size:12px;margin-top:2px">PO# '+(po.poNum||'\u2014')+(po.dateIssued?' \u00b7 Created '+po.dateIssued:'')+'</div>' +
+        '<div class="po-sub" style="font-size:12px;margin-top:2px">PO# '+(po.poNum||'\u2014')+(po.dateIssued?' \u00b7 Created '+po.dateIssued:'')+(po.orderedBy?' by '+po.orderedBy:'')+'</div>' +
       '</div>' +
       badge(po.status) +
     '</div>' +
@@ -3832,7 +3832,7 @@ function poCard(po, type, tokens) {
         '<span class="po-num">'+highlightText(po.poNum, tokens)+'</span>' +
       '</span>' + amt +
     '</div>' +
-    (po.dateIssued ? '<div class="po-created">Created ' + esc(po.dateIssued) + '</div>' : '') +
+    (po.dateIssued ? '<div class="po-created">Created ' + esc(po.dateIssued) + (po.orderedBy ? ' by ' + esc(po.orderedBy) : '') + '</div>' : '') +
     '<div class="po-main">'+(po.jobRef?highlightText(po.jobRef, tokens):'—')+'</div>' +
     '<div class="po-sub">'+(po.vendor?highlightText(po.vendor, tokens):'—')+(po.builder?' · '+highlightText(po.builder, tokens):'')+dateStr+'</div>' +
     (po.notes ? '<div class="po-note">'+highlightText(po.notes, tokens)+'</div>' : '') +
@@ -4616,6 +4616,7 @@ function showPODetail(poNum) {
     '<div style="background:var(--c-surface);border-radius:12px;padding:2px 16px;margin-bottom:12px">' +
       '<div class="po-detail-row"><span class="badge '+badgeCls(po.status)+'">'+esc(po.status)+'</span></div>' +
       poDetailRow('Created', po.dateIssued) +
+      poDetailRow('Created By', po.orderedBy) +
       poDetailRow('Builder', po.builder) +
       poDetailRow('Job Reference', po.jobRef) +
       poDetailRow('Vendor', po.vendor) +
