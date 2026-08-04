@@ -444,9 +444,11 @@ function createSubPO(data) {
       sheet.getRange(nextRow, 6).setValue(data.vendorInvoice || "");
       sheet.getRange(nextRow, 7).setValue(status);
       sheet.getRange(nextRow, 8).setValue(data.invoiceTotal  || "");
+      sheet.getRange(nextRow, 10).setValue(data.issuedPO        || "");
       sheet.getRange(nextRow, 12).setValue(data.notes           || "");
       sheet.getRange(nextRow, 13).setValue(data.additionalNotes || "");
       sheet.getRange(nextRow, 14).setValue(getFirstName(data.orderedBy));
+      sheet.getRange(nextRow, 15).setValue(data.invoiceFile     || "");
 
       if (status === "Pending Pickup") {
         sheet.getRange(nextRow, 9).setValue(today);

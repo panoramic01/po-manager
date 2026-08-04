@@ -270,6 +270,18 @@
     }
     .chip.active { background: var(--c-navy); color: white; }
 
+    /* ── Dashboard vendor/status filter ── */
+    .dash-filter-row { display: flex; gap: 8px; margin: 0 0 12px; align-items: center; }
+    .dash-filter-select {
+      flex: 1; min-width: 0; padding: 9px 30px 9px 12px; border: 1.5px solid var(--c-border);
+      border-radius: 9px; font-size: 13px; font-weight: 600; background: var(--c-surface); color: var(--c-ink);
+      appearance: none; -webkit-appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M5 7L0 2h10z' fill='%23888'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 10px center;
+    }
+    .dash-filter-select:focus { outline: none; border-color: var(--c-navy); }
+    .dash-filter-clear { white-space: nowrap; padding: 9px 14px; font-size: 13px; }
+
     /* ── Tile grid (Other tab, Receive tab quick actions) ── */
     .tile {
       background: var(--c-surface); border-radius: 12px; padding: 22px 12px; text-align: center;
@@ -669,6 +681,15 @@
       <button class="chip" id="sort-vendor"  onclick="setSort('vendor',this)">Vendor</button>
     </div>
     <div id="s-results" style="display:none"></div>
+    <div class="dash-filter-row" id="dash-filter-row" style="display:none">
+      <select class="dash-filter-select" id="dash-filter-vendor" onchange="applyDashFilters()">
+        <option value="">All Vendors</option>
+      </select>
+      <select class="dash-filter-select" id="dash-filter-status" onchange="applyDashFilters()">
+        <option value="">All Statuses</option>
+      </select>
+      <button class="btn btn-sm btn-secondary dash-filter-clear" id="dash-filter-clear" onclick="clearDashFilters()" style="display:none">Clear</button>
+    </div>
     <div class="loading" id="dash-loading">
       <div class="spinner"></div>
       <p>Loading POs…</p>
@@ -2345,6 +2366,8 @@ var G = {
   config:        { statusOptions: [], vendorOptions: [] },
   filter:        'all',
   dashTab:       'all',
+  dashVendorFilter: '',
+  dashStatusFilter: '',
   delPickTab:    'today-del',
   receivePO:     null,
   editRow:       null,
@@ -2709,6 +2732,8 @@ function fillSelects() {
   fillSelect('c-vendor',   vendorOpts,  1);
   fillSelect('c-status',   statusOpts,  0);
   fillSelect('np-builder', builderOpts, 1);
+  fillSelect('dash-filter-vendor', vendorOpts, 1);
+  fillSelect('dash-filter-status', statusOpts, 1);
 
   var cs = document.getElementById('c-status');
   if (cs) cs.value = 'Pending Pickup';
@@ -3075,7 +3100,11 @@ function renderDashboard() {
 
   var openDateCount = 0; // Pending Delivery/Pending Pickup POs (date-bucketed below)
 
-  G.pos.forEach(function(po) {
+  var dashPos = G.pos;
+  if (G.dashVendorFilter) dashPos = dashPos.filter(function(po){ return po.vendor === G.dashVendorFilter; });
+  if (G.dashStatusFilter) dashPos = dashPos.filter(function(po){ return po.status === G.dashStatusFilter; });
+
+  dashPos.forEach(function(po) {
     var sl = po.status.toLowerCase();
     var isPD          = sl === 'pending delivery';
     var isPP          = sl === 'pending pickup';
@@ -3130,7 +3159,7 @@ function renderDashboard() {
   var completedCount = buckets.complete.length;
   var canceledCount  = buckets.canceled.length;
 
-  G.dashCounts  = { all: G.pos.length, draft: draftCount, open: openTabCount,
+  G.dashCounts  = { all: dashPos.length, draft: draftCount, open: openTabCount,
                     completed: completedCount, canceled: canceledCount };
   G.dashBuckets = buckets;
 
@@ -3237,7 +3266,7 @@ function renderDashboard() {
     (t === 'open'       && !openTabCount) ||
     (t === 'completed'  && !completedCount) ||
     (t === 'canceled'   && !canceledCount) ||
-    (t === 'all'        && !G.pos.length);
+    (t === 'all'        && !dashPos.length);
   if (isEmptyTab) {
     h += '<div class="empty">No POs to show here.</div>';
   }
@@ -3756,6 +3785,22 @@ function renderTabBar() {
 function setDashTab(tabKey) {
   G.dashTab = tabKey;
   renderDashboard();
+}
+
+// Vendor/status filter row above the dashboard tab list (separate from the
+// search bar's own status chips, which only apply to text search results).
+function applyDashFilters() {
+  G.dashVendorFilter = document.getElementById('dash-filter-vendor').value;
+  G.dashStatusFilter = document.getElementById('dash-filter-status').value;
+  var clearBtn = document.getElementById('dash-filter-clear');
+  if (clearBtn) clearBtn.style.display = (G.dashVendorFilter || G.dashStatusFilter) ? 'inline-block' : 'none';
+  renderDashboard();
+}
+
+function clearDashFilters() {
+  document.getElementById('dash-filter-vendor').value = '';
+  document.getElementById('dash-filter-status').value = '';
+  applyDashFilters();
 }
 
 function secHead(t, cls) { return '<div class="sec-head '+cls+'">'+t+'</div>'; }
@@ -4465,6 +4510,7 @@ function runSearch() {
   var sortEl      = document.getElementById('s-sort');
   var delpickCard = document.getElementById('dash-delpick-card');
   var recentCard  = document.getElementById('dash-recent-card');
+  var filterRow   = document.getElementById('dash-filter-row');
 
   // Show filter chips whenever there's any search activity; sort only when text typed
   if (chipsEl) chipsEl.style.display = isSearching ? 'flex' : 'none';
@@ -4479,11 +4525,13 @@ function runSearch() {
     if (resultsEl)   resultsEl.style.display   = 'none';
     // Only reveal dash-content once data has loaded (spinner handles pre-load)
     if (dashContent) dashContent.style.display = G.pos.length ? 'block' : 'none';
+    if (filterRow)   filterRow.style.display   = G.pos.length ? 'flex'  : 'none';
     return;
   }
 
   if (resultsEl)   resultsEl.style.display   = 'block';
   if (dashContent) dashContent.style.display = 'none';
+  if (filterRow)   filterRow.style.display   = 'none';
 
   var results = fuzzySearch(
     G.pos.filter(function(po) { return G.filter === 'all' || po.status === G.filter; }),
@@ -4597,6 +4645,9 @@ function openSubPOForm(poNum) {
   var po = G.pos.find(function(p){ return p.poNum === poNum; });
   if (!po) return;
   G.detailMode = 'subpo';
+  // Sub-PO doesn't exist yet, so its own file-upload fields have no PO row
+  // to read builder/jobRef from -- stash the parent's for uploadSubPO*File().
+  G.subPOContext = { builder: po.builder, jobRef: po.jobRef, parentPoNum: poNum };
 
   var vendorOpts = (G.config.vendorOptions || []).map(function(v){
     return '<option value="'+esc(v)+'">'+esc(v)+'</option>';
@@ -4611,6 +4662,34 @@ function openSubPOForm(poNum) {
   if (editBtn) editBtn.style.display = 'none';
   var subpoBtn = document.getElementById('po-detail-subpo-btn');
   if (subpoBtn) subpoBtn.style.display = 'none';
+
+  var subIssuedField =
+    '<div class="form-group">' +
+      '<label class="form-label">Issued PO</label>' +
+      '<input type="url" class="form-control" id="sp-issued" placeholder="Paste link, or upload file below…" style="margin-bottom:10px">' +
+      '<input type="file" id="sp-issued-file" accept="image/*,.pdf" style="display:none" onchange="handleSubPOIssuedFile(this)">' +
+      '<div id="sp-issued-drop" onclick="document.getElementById(\'sp-issued-file\').click()" ' +
+        'style="background:var(--c-surface);border-radius:10px;padding:20px 16px;text-align:center;border:2px dashed var(--photo-bd);cursor:pointer;transition:background .15s,border-color .15s">' +
+        '<svg width="26" height="26" fill="none" stroke="var(--photo-accent)" stroke-width="1.5" viewBox="0 0 24 24" style="margin:0 auto 6px;display:block"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>' +
+        '<p style="font-size:13px;font-weight:600;color:var(--c-navy);margin:0 0 2px">Drop file here or tap to upload</p>' +
+        '<p style="font-size:11px;color:var(--c-ink-soft);margin:0">Image or PDF</p>' +
+      '</div>' +
+      '<p id="sp-issued-status" class="photo-status" style="margin-top:8px"></p>' +
+    '</div>';
+
+  var subInvoiceField = G.perms.canViewInvoice ?
+    '<div class="form-group">' +
+      '<label class="form-label">Invoice File</label>' +
+      '<input type="url" class="form-control" id="sp-invoicefile" placeholder="Paste link, or upload file below…" style="margin-bottom:10px">' +
+      '<input type="file" id="sp-invoicefile-file" accept="image/*,.pdf" style="display:none" onchange="handleSubPOInvoiceFile(this)">' +
+      '<div id="sp-invoicefile-drop" onclick="document.getElementById(\'sp-invoicefile-file\').click()" ' +
+        'style="background:var(--c-surface);border-radius:10px;padding:20px 16px;text-align:center;border:2px dashed var(--photo-bd);cursor:pointer;transition:background .15s,border-color .15s">' +
+        '<svg width="26" height="26" fill="none" stroke="var(--photo-accent)" stroke-width="1.5" viewBox="0 0 24 24" style="margin:0 auto 6px;display:block"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>' +
+        '<p style="font-size:13px;font-weight:600;color:var(--c-navy);margin:0 0 2px">Drop file here or tap to upload</p>' +
+        '<p style="font-size:11px;color:var(--c-ink-soft);margin:0">Image or PDF</p>' +
+      '</div>' +
+      '<p id="sp-invoicefile-status" class="photo-status" style="margin-top:8px"></p>' +
+    '</div>' : '';
 
   document.getElementById('po-detail-body').innerHTML =
     '<div style="background:var(--c-surface);border-radius:12px;padding:2px 16px;margin-bottom:12px">' +
@@ -4627,11 +4706,24 @@ function openSubPOForm(poNum) {
       '<select class="form-control" id="sp-status" onchange="toggleOtherVendor(\'sp-status\',\'sp-status-other\')">' + statusOpts + '</select>' +
       '<input type="text" class="form-control" id="sp-status-other" placeholder="Enter custom status…" style="margin-top:10px;display:none">') +
     fg('Invoice Total ($)','<input type="number" class="form-control" id="sp-total" placeholder="0.00" step="0.01" min="0">') +
+    subIssuedField +
+    subInvoiceField +
     fg('Notes','<textarea class="form-control" id="sp-notes" placeholder="Details about this order…"></textarea>') +
     '<div class="modal-actions">' +
       '<button class="btn btn-primary" style="flex:1" id="sp-create-btn" onclick="submitCreateSubPO(\''+esc(poNum)+'\')">Create Sub-PO</button>' +
       '<button class="btn btn-secondary" style="flex:0 0 auto" onclick="showPODetail(\''+esc(poNum)+'\')">Cancel</button>' +
     '</div>';
+
+  initSubPOFileDrops();
+}
+
+// Wires drag-and-drop onto the Sub-PO form's Issued PO / Invoice File
+// dropzones. Called after openSubPOForm() rebuilds #po-detail-body, so the
+// zones are always fresh — no idempotency guard needed. Mirrors
+// initEditFileDrops().
+function initSubPOFileDrops() {
+  wireDropZone('sp-issued-drop', uploadSubPOIssuedFile);
+  wireDropZone('sp-invoicefile-drop', uploadSubPOInvoiceFile);
 }
 
 function submitCreateSubPO(parentPoNum) {
@@ -4646,6 +4738,8 @@ function submitCreateSubPO(parentPoNum) {
     vendorInvoice:  trim('sp-invoice'),
     status:         getVendorValue('sp-status', 'sp-status-other'),
     invoiceTotal:   val('sp-total'),
+    issuedPO:       trim('sp-issued'),
+    invoiceFile:    G.perms.canViewInvoice ? trim('sp-invoicefile') : undefined,
     notes:          trim('sp-notes'),
     orderedBy:      G.config.userName || G.userEmail
   }, function(res) {
@@ -5507,6 +5601,107 @@ function uploadInvoiceFile(file) {
     }, function(res) {
       if (res.success) {
         document.getElementById('e-invoicefile').value = res.url;
+        statusEl.textContent = 'Uploaded — link filled in above';
+        statusEl.className   = 'photo-status done';
+      } else {
+        console.error('savePhotoToDrive/saveFileToFolderById failed:', res.error);
+        statusEl.textContent = friendlyServerError(res.error);
+        statusEl.className   = 'photo-status error';
+      }
+    }, function(err) {
+      statusEl.textContent = friendlyUploadError(err);
+      statusEl.className   = 'photo-status error';
+    }, { timeoutMs: 90000 });
+  }, function(err) {
+    statusEl.textContent = 'Could not read file — try a different one';
+    statusEl.className   = 'photo-status error';
+  });
+}
+
+/**
+ * Handles file upload for the Issued PO field on the Sub-PO creation form.
+ * Mirrors handleIssuedFile, but the Sub-PO doesn't have a row yet -- builder/
+ * jobRef/PO-number-for-filename come from G.subPOContext (set by
+ * openSubPOForm) instead of an editable form field.
+ */
+function handleSubPOIssuedFile(input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+  uploadSubPOIssuedFile(file);
+}
+
+function uploadSubPOIssuedFile(file) {
+  var statusEl = document.getElementById('sp-issued-status');
+  statusEl.textContent = file.size > 3 * 1024 * 1024
+    ? 'Uploading large file (' + (file.size / 1024 / 1024).toFixed(1) + ' MB) — this may take a bit…'
+    : 'Uploading…';
+  statusEl.className   = 'photo-status uploading';
+
+  var ctx     = G.subPOContext || {};
+  var poNum   = ctx.parentPoNum || 'sub-po';
+  var builder = ctx.builder || '';
+  var jobRef  = ctx.jobRef  || '';
+  var vendor  = getVendorValue('sp-vendor', 'sp-vendor-other');
+
+  readAndCompressFile(file, function(dataUrl, mimeType) {
+    var ext = mimeType === 'image/jpeg' ? 'jpg' : (file.name.split('.').pop() || 'bin');
+    var filename = buildDocFileName('Issued PO', vendor, poNum, ext);
+    gasCall('savePhotoToDrive', {
+      base64Data: dataUrl.split(',')[1], mimeType: mimeType, filename: filename,
+      builder: builder, jobRef: jobRef, docType: 'issuedPO'
+    }, function(res) {
+      if (res.success) {
+        document.getElementById('sp-issued').value = res.url;
+        statusEl.textContent = 'Uploaded — link filled in above';
+        statusEl.className   = 'photo-status done';
+      } else {
+        console.error('savePhotoToDrive/saveFileToFolderById failed:', res.error);
+        statusEl.textContent = friendlyServerError(res.error);
+        statusEl.className   = 'photo-status error';
+      }
+    }, function(err) {
+      statusEl.textContent = friendlyUploadError(err);
+      statusEl.className   = 'photo-status error';
+    }, { timeoutMs: 90000 });
+  }, function(err) {
+    statusEl.textContent = 'Could not read file — try a different one';
+    statusEl.className   = 'photo-status error';
+  });
+}
+
+/**
+ * Handles file upload for the Invoice File field on the Sub-PO creation
+ * form. Mirrors uploadSubPOIssuedFile but writes into #sp-invoicefile and
+ * uploads into the Invoices folder (docType: 'invoice').
+ */
+function handleSubPOInvoiceFile(input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+  uploadSubPOInvoiceFile(file);
+}
+
+function uploadSubPOInvoiceFile(file) {
+  var statusEl = document.getElementById('sp-invoicefile-status');
+  statusEl.textContent = file.size > 3 * 1024 * 1024
+    ? 'Uploading large file (' + (file.size / 1024 / 1024).toFixed(1) + ' MB) — this may take a bit…'
+    : 'Uploading…';
+  statusEl.className   = 'photo-status uploading';
+
+  var ctx     = G.subPOContext || {};
+  var poNum   = ctx.parentPoNum || 'sub-po';
+  var builder = ctx.builder || '';
+  var jobRef  = ctx.jobRef  || '';
+  var vendor  = getVendorValue('sp-vendor', 'sp-vendor-other');
+
+  readAndCompressFile(file, function(dataUrl, mimeType) {
+    var ext = mimeType === 'image/jpeg' ? 'jpg' : (file.name.split('.').pop() || 'bin');
+    var filename = buildDocFileName('Invoice', vendor, poNum, ext);
+    gasCall('savePhotoToDrive', {
+      base64Data: dataUrl.split(',')[1], mimeType: mimeType, filename: filename,
+      builder: builder, jobRef: jobRef, docType: 'invoice'
+    }, function(res) {
+      if (res.success) {
+        document.getElementById('sp-invoicefile').value = res.url;
         statusEl.textContent = 'Uploaded — link filled in above';
         statusEl.className   = 'photo-status done';
       } else {
