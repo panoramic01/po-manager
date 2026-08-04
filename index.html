@@ -2711,30 +2711,34 @@ function switchAccount() {
   setTimeout(function(){ document.getElementById('login-email').focus(); }, 300);
 }
 
+// Repopulates a <select>, keeping its first `keepFirst` static option(s)
+// (e.g. a "— Select —" placeholder) and replacing everything after them.
+// Safe to call more than once (e.g. once from cached config at boot, then
+// again once the background-refreshed config arrives) without duplicating
+// options. Preserves the current selection if it's still among the new
+// options, so re-running this under a form the user is mid-filling-out
+// (e.g. a background data refresh) doesn't silently clear their pick.
+function fillSelect(id, options, keepFirst) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  var current = el.value;
+  while (el.options.length > keepFirst) el.remove(el.options.length - 1);
+  options.forEach(function(v) {
+    el.insertAdjacentHTML('beforeend','<option value="'+esc(v)+'">'+esc(v)+'</option>');
+  });
+  if (current && options.indexOf(current) !== -1) el.value = current;
+}
+
 function fillSelects() {
   var vendorOpts  = (G.config.vendorOptions || []);
   var statusOpts  = (G.config.statusOptions || []);
   var builderOpts = (G.config.builderOptions || []);
 
-  // Repopulates a <select>, keeping its first `keepFirst` static option(s)
-  // (e.g. a "— Select —" placeholder) and replacing everything after them.
-  // Safe to call more than once (e.g. once from cached config at boot, then
-  // again once the background-refreshed config arrives) without duplicating
-  // options.
-  function fillSelect(id, options, keepFirst) {
-    var el = document.getElementById(id);
-    if (!el) return;
-    while (el.options.length > keepFirst) el.remove(el.options.length - 1);
-    options.forEach(function(v) {
-      el.insertAdjacentHTML('beforeend','<option value="'+esc(v)+'">'+esc(v)+'</option>');
-    });
-  }
-
-  fillSelect('c-vendor',   vendorOpts,  1);
   fillSelect('c-status',   statusOpts,  0);
   fillSelect('np-builder', builderOpts, 1);
   fillSelect('dash-filter-vendor', vendorOpts, 1);
   fillSelect('dash-filter-status', statusOpts, 1);
+  refreshVendorRanking(); // populates c-vendor with the top-10-ordered + Other list
 
   var cs = document.getElementById('c-status');
   if (cs) cs.value = 'Pending Pickup';
@@ -2754,6 +2758,30 @@ function fillSelects() {
     if (G.jobComboMap[combo]) return;
     G.jobComboMap[combo] = { builder: o.builder, job: o.job };
   });
+}
+
+// Ranks vendors by how often they've actually been ordered from (G.pos),
+// backfilled with the full config list (in its original order) for anyone
+// whose order history doesn't yet cover 10 distinct vendors, so the picker
+// never comes up short. Caches the result as G.topVendors -- consumed by
+// openEdit/openSubPOForm's own vendor dropdowns -- and refreshes the
+// Create-PO vendor select directly. "Other" is always pinned last so a
+// less-common vendor can still be typed in via getVendorValue()'s fallback.
+// Called from loadData() (order history changes) and fillSelects() (in case
+// config refreshed before G.pos did).
+function refreshVendorRanking() {
+  var counts = {};
+  G.pos.forEach(function(po) {
+    var v = (po.vendor || '').trim();
+    if (!v || v === 'Other') return;
+    counts[v] = (counts[v] || 0) + 1;
+  });
+  var ranked = Object.keys(counts).sort(function(a, b) { return counts[b] - counts[a]; });
+  (G.config.vendorOptions || []).forEach(function(v) {
+    if (v !== 'Other' && ranked.indexOf(v) === -1) ranked.push(v);
+  });
+  G.topVendors = ranked.slice(0, 10).concat(['Other']);
+  fillSelect('c-vendor', G.topVendors, 1);
 }
 
 function cJobFilter(q) {
@@ -2788,6 +2816,7 @@ function loadData() {
   if (cachedRaw) {
     try {
       G.pos = JSON.parse(cachedRaw) || [];
+      refreshVendorRanking();
       renderDashboard();
       runSearch();
       hideSplash();
@@ -2803,6 +2832,7 @@ function loadData() {
   gasCall('getSheetData', {}, function(pos) {
     G.pos = pos || [];
     try { localStorage.setItem('panoramic_ops_pos_cache', JSON.stringify(G.pos)); } catch(e) {}
+    refreshVendorRanking();
     renderDashboard();
     runSearch();
     hideSplash();
@@ -4653,7 +4683,7 @@ function openSubPOForm(poNum) {
   // to read builder/jobRef from -- stash the parent's for uploadSubPO*File().
   G.subPOContext = { builder: po.builder, jobRef: po.jobRef, parentPoNum: poNum };
 
-  var vendorOpts = (G.config.vendorOptions || []).map(function(v){
+  var vendorOpts = ((G.topVendors && G.topVendors.length) ? G.topVendors : (G.config.vendorOptions || [])).map(function(v){
     return '<option value="'+esc(v)+'">'+esc(v)+'</option>';
   }).join('');
   var statusOpts = (G.config.statusOptions || []).map(function(s){
@@ -4781,8 +4811,9 @@ function openEdit(poNum) {
   }).join('');
 
   // If the stored vendor isn't in the standard list, treat it as a custom entry
-  var isCustomVendor = po.vendor && G.config.vendorOptions.indexOf(po.vendor) === -1;
-  var vendorOpts = G.config.vendorOptions.map(function(v){
+  var editVendorList = (G.topVendors && G.topVendors.length) ? G.topVendors : G.config.vendorOptions;
+  var isCustomVendor = po.vendor && editVendorList.indexOf(po.vendor) === -1;
+  var vendorOpts = editVendorList.map(function(v){
     var selected = isCustomVendor ? v === 'Other' : v === po.vendor;
     return '<option value="'+esc(v)+'"'+(selected?' selected':'')+'>'+esc(v)+'</option>';
   }).join('');
