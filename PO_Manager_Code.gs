@@ -126,17 +126,17 @@ function doPost(e) {
     var payload = body.payload || {};
     var result;
 
-    if      (action === 'getConfig')        result = getConfig(payload.email);
+    if      (action === 'getConfig')        result = getConfig(payload);
     else if (action === 'verifyLogin')       result = verifyLogin(payload.email, payload.password);
     else if (action === 'verifyGoogleLogin') result = verifyGoogleLogin(payload.credential);
     else if (action === 'getSheetData')      result = getSheetData(payload);
     else if (action === 'createPO')          result = createPO(payload);
     else if (action === 'createSubPO')       result = createSubPO(payload);
     else if (action === 'updatePO')          result = updatePO(payload);
-    else if (action === 'findPOByNumber')    result = findPOByNumber(payload.poNum);
-    else if (action === 'savePhotoToDrive')  result = savePhotoToDrive(payload.base64Data, payload.mimeType, payload.filename, payload.builder, payload.jobRef, payload.docType, payload.poNum);
+    else if (action === 'findPOByNumber')    result = findPOByNumber(payload);
+    else if (action === 'savePhotoToDrive')  result = savePhotoToDrive(payload);
     else if (action === 'createProject')       result = createProjectAndTask(payload);
-    else if (action === 'saveFileToFolderById') result = saveFileToFolderById(payload.base64Data, payload.mimeType, payload.filename, payload.folderId);
+    else if (action === 'saveFileToFolderById') result = saveFileToFolderById(payload);
     else if (action === 'getPricingData')    result = getPricingData(payload);
     else if (action === 'updatePricing')     result = updatePricing(payload);
     else if (action === 'getContacts')         result = getContacts(payload);
@@ -161,7 +161,7 @@ function doPost(e) {
     else if (action === 'getQualityWalkPhotos')         result = getQualityWalkPhotos(payload);
     else if (action === 'submitOfficeNote')             result = submitOfficeNote(payload);
     else if (action === 'getAssignableEmployees')       result = getAssignableEmployees(payload);
-    else if (action === 'saveOfficeNotePhoto')          result = saveOfficeNotePhoto(payload.base64Data, payload.mimeType, payload.filename);
+    else if (action === 'saveOfficeNotePhoto')          result = saveOfficeNotePhoto(payload);
     else if (action === 'saveMileageCommissionPdf')     result = saveMileageCommissionPdf(payload);
     else if (action === 'getPTOData')                  result = getPTOData(payload);
     else if (action === 'submitPTORequest')             result = submitPTORequest(payload);
@@ -241,7 +241,7 @@ function doPost(e) {
  * privilege and gets the fields stripped, same as any other role.
  */
 function getSheetData(payload) {
-  var callerEmail = ((payload && payload.callerEmail) || '').toString().toLowerCase().trim();
+  var callerEmail = verifySessionEmail_(payload && payload.sessionToken) || '';
   var callerRoles = getRoleByEmail(callerEmail).effRoles;
   var canViewInvoice = hasAnyRole_(callerRoles, ['admin', 'purchaser']);
 
@@ -549,9 +549,12 @@ function updatePO(payload) {
 /**
  * Looks up a single PO by number. Returns the PO object or null.
  */
-function findPOByNumber(poNum) {
+function findPOByNumber(payload) {
   try {
+    var poNum = payload && payload.poNum;
     if (!poNum) return null;
+    var callerEmail = verifySessionEmail_(payload && payload.sessionToken) || '';
+    var canViewInvoice = hasAnyRole_(getRoleByEmail(callerEmail).effRoles, ['admin', 'purchaser']);
     var sheet  = getSheet();
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) return null;
@@ -569,7 +572,7 @@ function findPOByNumber(poNum) {
       try { legacyInvoiceLink = sheet.getRange(rowIndex, 1,  1, 1).getRichTextValues()[0][0].getLinkUrl() || ''; } catch(e2) {}
       try { issuedPOLink      = sheet.getRange(rowIndex, 10, 1, 1).getRichTextValues()[0][0].getLinkUrl() || ''; } catch(e2) {}
       if (!issuedPOLink) issuedPOLink = str(row[9]);
-      var invoiceFile = str(row[14]);
+      var invoiceFile = canViewInvoice ? str(row[14]) : "";
       return {
         rowIndex:      rowIndex,
         poNum:         (row[0] || '').toString().trim(),
@@ -579,12 +582,12 @@ function findPOByNumber(poNum) {
         vendor:        str(row[4]),
         vendorInvoice: str(row[5]),
         status:        str(row[6]).trim(),
-        invoiceTotal:  str(row[7]),
+        invoiceTotal:  canViewInvoice ? str(row[7]) : "",
         deliveryDate:  formatDateCell(row[8], tz),
         issuedPO:      str(row[9]),
         issuedPOLink:  issuedPOLink,
         invoiceFile:   invoiceFile,
-        invoiceLink:   invoiceFile || legacyInvoiceLink,
+        invoiceLink:   canViewInvoice ? (invoiceFile || legacyInvoiceLink) : "",
         receivedNote:  str(row[10]),
         notes:         str(row[11]),
         additionalNotes: str(row[12]),
@@ -697,20 +700,28 @@ function verifyGoogleLogin(idToken) {
 
 /**
  * Returns config (status/vendor lists) + role for a cached/returning user.
- * Only called after a successful verifyLogin() - email is trusted from localStorage.
+ * Also called pre-login (to pre-warm GAS, with an empty email) and can be
+ * called with any payload.email -- personal fields (name/phone/role) are
+ * only included once payload.sessionToken verifies to an actual session, so
+ * a caller can't read another user's name/phone/role just by supplying
+ * their email address.
  */
-function getConfig(email) {
-  var roleData = getRoleByEmail(email || '');
-  return {
+function getConfig(payload) {
+  var base = {
     statusOptions:  STATUS_OPTIONS,
     vendorOptions:  VENDOR_OPTIONS,
     builderOptions: getBuilderNames(),
-    jobOptions:     getRecentJobs(),
-    userRole:       roleData.role,
-    userEmail:      roleData.email,
-    userName:       roleData.name,
-    userPhone:      roleData.phone
+    jobOptions:     getRecentJobs()
   };
+  var verifiedEmail = verifySessionEmail_(payload && payload.sessionToken);
+  if (!verifiedEmail) return base;
+
+  var roleData = getRoleByEmail(verifiedEmail);
+  base.userRole  = roleData.role;
+  base.userEmail = roleData.email;
+  base.userName  = roleData.name;
+  base.userPhone = roleData.phone;
+  return base;
 }
 
 /**
@@ -864,7 +875,9 @@ function getBuilderNames() {
  */
 function updateProfile(payload) {
   try {
-    var email = (payload.email || '').toLowerCase().trim();
+    var auth = requireVerifiedEmail_(payload);
+    if (auth.error) return auth;
+    var email = auth.email;
     var name  = (payload.name  || '').toString().trim();
     var phone = (payload.phone || '').toString().trim();
     if (!email || !name) return { error: 'Missing email or name' };
@@ -1396,8 +1409,14 @@ function extractDriveFolderId(driveUrlOrId) {
   return null;
 }
 
-function savePhotoToDrive(base64Data, mimeType, filename, builder, jobRef, docType, poNum) {
+function savePhotoToDrive(payload) {
   try {
+    var auth = requireVerifiedEmail_(payload);
+    if (auth.error) return { success: false, error: auth.error, code: auth.code };
+
+    var base64Data = payload.base64Data, mimeType = payload.mimeType, filename = payload.filename,
+        builder = payload.builder, jobRef = payload.jobRef, docType = payload.docType, poNum = payload.poNum;
+
     var base = resolveBaseFolder(builder, jobRef);
     if (base.blocked) {
       return { success: false, noDriveId: true, error: 'No Drive ID found for this job - please add one to the Projects sheet or contact Purchaser.' };
@@ -1454,8 +1473,14 @@ function savePhotoToDrive(base64Data, mimeType, filename, builder, jobRef, docTy
  * match already existing in the "Projects" sheet -- used by the New Project
  * form's Home Plans upload, which happens before that sheet row exists.
  */
-function saveFileToFolderById(base64Data, mimeType, filename, folderIdOrLink) {
+function saveFileToFolderById(payload) {
   try {
+    var auth = requireVerifiedEmail_(payload);
+    if (auth.error) return { success: false, error: auth.error, code: auth.code };
+
+    var base64Data = payload.base64Data, mimeType = payload.mimeType, filename = payload.filename,
+        folderIdOrLink = payload.folderId;
+
     var folderId = extractDriveFolderId(folderIdOrLink);
     if (!folderId) {
       return { success: false, error: 'Could not read a folder ID from that Drive link.' };
@@ -1495,8 +1520,13 @@ function saveFileToFolderById(base64Data, mimeType, filename, folderIdOrLink) {
  * use). Filenames are timestamped since, unlike Home Plans, there's no
  * per-note stable name to dedupe against -- every upload is a distinct file.
  */
-function saveOfficeNotePhoto(base64Data, mimeType, filename) {
+function saveOfficeNotePhoto(payload) {
   try {
+    var auth = requireVerifiedEmail_(payload);
+    if (auth.error) return { success: false, error: auth.error, code: auth.code };
+
+    var base64Data = payload.base64Data, mimeType = payload.mimeType, filename = payload.filename;
+
     var folder = getOrCreateChildFolder(getPurchasingRootFolder(), 'Office Notes');
 
     var bytes = Utilities.base64Decode(base64Data);
@@ -2276,6 +2306,8 @@ function getVendorSpend(payload) {
 
 // ─── Material Report ─────────────────────────────────────────────────────────
 function categorizeInvoices(payload) {
+  var auth = authorizeCaller(payload, ['admin']);
+  if (!auth.ok) return { error: auth.error, code: auth.code };
   var apiKey = PropertiesService.getScriptProperties().getProperty('CLAUDE_API_KEY');
   if (!apiKey) return { error: 'CLAUDE_API_KEY not set in Script Properties' };
 
@@ -2380,6 +2412,8 @@ function categorizeInvoices(payload) {
 
 // ─── Suggest Categories (lightweight) ────────────────────────────────────────
 function suggestCategories(payload) {
+  var auth = authorizeCaller(payload, ['admin']);
+  if (!auth.ok) return { error: auth.error, code: auth.code };
   var apiKey = PropertiesService.getScriptProperties().getProperty('CLAUDE_API_KEY');
   if (!apiKey) return { error: 'CLAUDE_API_KEY not set in Script Properties' };
 
@@ -2450,6 +2484,8 @@ function suggestCategories(payload) {
 // ── Process estimate PO + match to invoice line items ──
 function processEstimateWithMatching(payload) {
   try {
+    var auth = authorizeCaller(payload, ['admin']);
+    if (!auth.ok) return { error: auth.error, code: auth.code };
     var estimateRows = payload.estimateRows || [];
     var invoiceItems = payload.invoiceItems || [];
     var apiKey = PropertiesService.getScriptProperties().getProperty('CLAUDE_API_KEY');
@@ -2503,6 +2539,8 @@ function processEstimateWithMatching(payload) {
 // ── Append approved rows to Material Report History tab ──
 function saveMaterialHistory(payload) {
   try {
+    var auth = authorizeCaller(payload, ['admin']);
+    if (!auth.ok) return { error: auth.error, code: auth.code };
     var rows = payload.rows || [];
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName('Material Report History');
@@ -3039,6 +3077,9 @@ function submitQualityCheck(payload) {
  * `assignee`, so no separate Asana-user-gid mapping is needed here.
  */
 function submitOfficeNote(payload) {
+  var auth = requireVerifiedEmail_(payload);
+  if (auth.error) return { success: false, error: auth.error, code: auth.code };
+
   var lock = LockService.getScriptLock();
   var haveLock = lock.tryLock(10000);
   try {
@@ -3194,8 +3235,10 @@ function createProjectAndTask(payload) {
  */
 function getPTOData(payload) {
   try {
-    var email = (payload.email || '').toString();
-    var callerRoles = getRoleByEmail(payload.callerEmail || email).effRoles;
+    var auth = requireVerifiedEmail_(payload);
+    if (auth.error) return auth;
+    var email = auth.email;
+    var callerRoles = getRoleByEmail(email).effRoles;
     var canSeeQueue = hasAnyRole_(callerRoles, ['admin', 'human_resources']);
 
     var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -3272,7 +3315,9 @@ function getPTOData(payload) {
  */
 function submitPTORequest(payload) {
   try {
-    var email  = payload.email;
+    var auth = requireVerifiedEmail_(payload);
+    if (auth.error) return auth;
+    var email  = auth.email;
     var name   = payload.name || email;
     var start  = payload.startDate;
     var end    = payload.endDate;
@@ -3399,8 +3444,9 @@ function denyPTO(payload) {
  */
 function cancelPTORequest(payload) {
   try {
-    var email = (payload.callerEmail || '').toString().toLowerCase().trim();
-    if (!email) return { error: 'You must be signed in to do this.', code: 'AUTH_REQUIRED' };
+    var auth = requireVerifiedEmail_(payload);
+    if (auth.error) return auth;
+    var email = auth.email;
     var taskGid = payload.taskGid;
     if (!taskGid) return { error: 'Missing taskGid' };
 
@@ -3764,8 +3810,10 @@ function getTimesheet(payload) {
  * Notes is visible to every role, and this only exposes name+email, none
  * of getEmployees' PTO/role data.
  */
-function getAssignableEmployees() {
+function getAssignableEmployees(payload) {
   try {
+    var auth = requireVerifiedEmail_(payload);
+    if (auth.error) return auth;
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sh = ss.getSheetByName(ROLES_SHEET);
     if (!sh) return { error: 'HR sheet not found' };
