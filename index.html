@@ -4128,6 +4128,8 @@ function submitNewProject() {
   }
 
   setBtnState('new-project-btn', 'Submitting…', true);
+  // Reused across retries after a timeout -- see submitCreate() for rationale.
+  if (!G.newProjectIdemKey) G.newProjectIdemKey = newIdemKey();
 
   gasCall('createProject', {
     builder:         builder,
@@ -4138,10 +4140,12 @@ function submitNewProject() {
     estimateDueDate: estimateDue,
     senderNotes:     trim('np-sender-notes'),
     homePlansUrl:    G.newProjectHomePlansUrl || '',
-    submittedBy:     (G.config && G.config.userName) || G.userEmail
+    submittedBy:     (G.config && G.config.userName) || G.userEmail,
+    idempotencyKey:  G.newProjectIdemKey
   }, function(res) {
     setBtnState('new-project-btn', 'Submit Project', false);
     if (res.success) {
+      G.newProjectIdemKey = null;
       var links = document.getElementById('new-project-success-links');
       links.innerHTML =
         '<a href="' + esc(res.asanaTaskUrl) + '" target="_blank" class="btn btn-secondary" style="width:100%;padding:14px;font-size:15px;border-radius:12px;text-decoration:none">View Asana Task</a>' +
@@ -4179,6 +4183,7 @@ function clearNewProject() {
 }
 
 function showNewProjectPanelForm() {
+  G.newProjectIdemKey = null;
   document.getElementById('new-project-form-card').style.display    = 'block';
   document.getElementById('new-project-success-card').style.display = 'none';
 }
@@ -7083,6 +7088,7 @@ function renderMaterialLog(log) {
 
 function showMaterialLogForm(type) {
   G.miPendingType = type;
+  G.matLogIdemKey = null;
   document.getElementById('mi-form-title').textContent = type === 'In' ? 'Log Material In' : 'Take Material Out';
   document.getElementById('mi-material').value = '';
   document.getElementById('mi-qty').value = '';
@@ -7104,8 +7110,11 @@ function submitMaterialLog() {
   if (!material) { showToast('Enter a material name'); return; }
   if (!qty || qty <= 0) { showToast('Enter a quantity greater than 0'); return; }
 
-  gasCall('logMaterialTransaction', { material: material, unit: unit, type: type, qty: qty, jobRef: jobRef, notes: notes }, function(res) {
+  if (!G.matLogIdemKey) G.matLogIdemKey = newIdemKey();
+
+  gasCall('logMaterialTransaction', { material: material, unit: unit, type: type, qty: qty, jobRef: jobRef, notes: notes, idempotencyKey: G.matLogIdemKey }, function(res) {
     if (res.success) {
+      G.matLogIdemKey = null;
       document.getElementById('mi-form').style.display = 'none';
       showToast(type === 'In' ? 'Material logged in!' : 'Material taken out!');
       loadMaterialInventory();
@@ -9368,6 +9377,7 @@ var G_qcItemStatus = {};
 var G_qcEquipmentOnsite = null;
 
 function qcResetForm() {
+  G.qcIdemKey = null;
   G_qcSelectedTrades = [];
   G_qcWalkType = null;
   G_qcItemStatus = {};
@@ -9634,11 +9644,14 @@ function submitQualityCheck() {
 
   var btn = document.getElementById('qc-submit-btn');
   btn.disabled = true; btn.textContent = 'Submitting...';
+  // Reused across retries after a timeout -- see submitCreate() for rationale.
+  if (!G.qcIdemKey) G.qcIdemKey = newIdemKey();
 
   gasCall('submitQualityCheck',
     { jobGid: jobGid, jobName: jobName, submitter: submitter, walkType: G_qcWalkType, walkTypeLabel: walkTypeLabel,
       trades: G_qcSelectedTrades.slice(), sections: sections, generalNotes: generalNotes, generalPhotos: generalPhotos,
-      equipmentOnsite: qcWalkUsesEquipment(G_qcWalkType) ? G_qcEquipmentOnsite : null },
+      equipmentOnsite: qcWalkUsesEquipment(G_qcWalkType) ? G_qcEquipmentOnsite : null,
+      idempotencyKey: G.qcIdemKey },
     function(r) {
       btn.disabled = false; btn.textContent = 'Submit Quality Check';
       var res = document.getElementById('qc-result');
@@ -9954,6 +9967,7 @@ function fmtISODate_(iso) {
 }
 
 function openTimeCorrectionForm() {
+  G.tcrIdemKey = null;
   var todayStr = new Date().toISOString().slice(0, 10);
   document.getElementById('edit-modal-title').textContent = 'Request a Time Correction';
   document.getElementById('edit-modal-body').innerHTML =
@@ -10010,12 +10024,16 @@ function submitTimeCorrectionRequest() {
   if (!reason) { errEl.textContent = 'Please explain why this correction is needed.'; errEl.style.display = 'block'; return; }
 
   btn.disabled = true; btn.textContent = 'Submitting...';
+  // Reused across retries after a timeout -- see submitCreate() for rationale.
+  if (!G.tcrIdemKey) G.tcrIdemKey = newIdemKey();
   gasCall('submitTimeCorrection', {
     date: date, clockIn: cin, clockOut: cout, reason: reason,
-    name: G.config.userName || G.userEmail
+    name: G.config.userName || G.userEmail,
+    idempotencyKey: G.tcrIdemKey
   }, function(r) {
     btn.disabled = false; btn.textContent = 'Submit';
     if (r && r.success) {
+      G.tcrIdemKey = null;
       showToast('Correction request submitted');
       closeEdit();
       loadTimeCorrectionHistory();
@@ -10545,6 +10563,7 @@ function openPeriodReview() {
   var d = _myPeriodDetailCache;
   if (!d) { showToast('Still loading, try again in a moment'); return; }
   _periodReviewPdfUrl = d.employeePdfUrl || '';
+  G.periodCorrectionsIdemKey = null;
 
   document.getElementById('period-review-title').textContent = 'Approve Hours: ' + (d.periodLabel || '');
 
@@ -10637,8 +10656,11 @@ function doSavePeriodReview() {
     finishApprove(null);
     return;
   }
-  gasCall('submitTimeCorrectionsBatch', { corrections: corrections, reason: reason }, function(r) {
+  // Reused across retries after a timeout -- see submitCreate() for rationale.
+  if (!G.periodCorrectionsIdemKey) G.periodCorrectionsIdemKey = newIdemKey();
+  gasCall('submitTimeCorrectionsBatch', { corrections: corrections, reason: reason, idempotencyKey: G.periodCorrectionsIdemKey }, function(r) {
     if (r && r.success) {
+      G.periodCorrectionsIdemKey = null;
       finishApprove(r.count + ' correction' + (r.count === 1 ? '' : 's') + ' submitted');
     } else {
       btn.disabled = false; btn.textContent = orig;

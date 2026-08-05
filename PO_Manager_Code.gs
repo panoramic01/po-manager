@@ -1436,6 +1436,24 @@ function savePhotoToDrive(payload) {
     var folder, file;
     try {
       folder = getTypedUploadFolder(base.folder, docType, poNum, jobRef);
+
+      // If a file with this exact name already exists in the target folder,
+      // reuse it instead of uploading a second copy -- same dedup
+      // saveFileToFolderById() already does. Callers' filenames here are
+      // either fully deterministic (buildDocFileName) or day-granular
+      // (ISO date, no time), so a same-day retry after a timeout still
+      // produces the same name.
+      var existing = folder.getFilesByName(filename);
+      if (existing.hasNext()) {
+        var existingFile = existing.next();
+        try {
+          if (existingFile.getSharingAccess() !== DriveApp.Access.ANYONE_WITH_LINK) {
+            existingFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+          }
+        } catch (sharingErr) {}
+        return { success: true, url: existingFile.getUrl(), duplicate: true };
+      }
+
       var bytes = Utilities.base64Decode(base64Data);
       var blob  = Utilities.newBlob(bytes, mimeType, filename);
       file = folder.createFile(blob);
@@ -1966,12 +1984,32 @@ function logMaterialTransaction(payload) {
     if (type !== 'In' && type !== 'Out') return { success: false, error: 'Type must be In or Out' };
     if (!qty || qty <= 0) return { success: false, error: 'Quantity must be greater than 0' };
 
-    var callerName = getRoleByEmail(auth.email).name || auth.email;
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(10000)) return { success: false, error: 'Server is busy - try again in a moment.' };
+    try {
+      // Idempotency guard -- see createPO() for the full rationale. A cache
+      // hit here means this exact submission already succeeded.
+      var idemKey = (payload.idempotencyKey || '').toString().trim();
+      var cache = CacheService.getScriptCache();
+      var cacheKey = idemKey ? ('idem_matlog_' + idemKey) : null;
+      if (cacheKey) {
+        var cached = null;
+        try { cached = cache.get(cacheKey); } catch (e) {}
+        if (cached) return JSON.parse(cached);
+      }
 
-    var sheet = ensureSheetWithHeaders_('Material Inventory Log', MATERIAL_LOG_HEADERS);
-    sheet.appendRow([new Date(), material, unit, type, qty, jobRef, notes, callerName]);
-    SpreadsheetApp.flush();
-    return { success: true, rowIndex: sheet.getLastRow() };
+      var callerName = getRoleByEmail(auth.email).name || auth.email;
+
+      var sheet = ensureSheetWithHeaders_('Material Inventory Log', MATERIAL_LOG_HEADERS);
+      sheet.appendRow([new Date(), material, unit, type, qty, jobRef, notes, callerName]);
+      SpreadsheetApp.flush();
+
+      var result = { success: true, rowIndex: sheet.getLastRow() };
+      if (cacheKey) { try { cache.put(cacheKey, JSON.stringify(result), 300); } catch (e) {} }
+      return result;
+    } finally {
+      lock.releaseLock();
+    }
   } catch(e) { return { success: false, error: e.toString() }; }
 }
 
@@ -2984,6 +3022,24 @@ function submitQualityCheck(payload) {
   try {
     var auth = requireVerifiedEmail_(payload);
     if (auth.error) return { error: auth.error, code: auth.code };
+
+    // Idempotency guard -- see createPO() for the full rationale. Only the
+    // check + the primary subtask-create call below are held under the
+    // lock (mirroring submitOfficeNote's single-Asana-call pattern) -- the
+    // lock is released before the slower photo-upload/flagged-item work so
+    // a multi-photo submission doesn't hold the global lock for its whole
+    // duration and block unrelated actions (createPO, clockIn, etc.).
+    var idemKey = (payload.idempotencyKey || '').toString().trim();
+    var cache = CacheService.getScriptCache();
+    var cacheKey = idemKey ? ('idem_qualitycheck_' + idemKey) : null;
+    var lock = cacheKey ? LockService.getScriptLock() : null;
+    var haveLock = lock ? lock.tryLock(10000) : false;
+    if (haveLock) {
+      var cached = null;
+      try { cached = cache.get(cacheKey); } catch (e) {}
+      if (cached) { lock.releaseLock(); return JSON.parse(cached); }
+    }
+
     var jobGid        = payload.jobGid;
     var jobName       = payload.jobName;
     var sections      = payload.sections;
@@ -3028,8 +3084,20 @@ function submitQualityCheck(payload) {
       notes:     lines.join('\n'),
       completed: true
     });
-    if (sub.errors) return { error: sub.errors[0].message };
+    if (sub.errors) {
+      if (haveLock) lock.releaseLock();
+      return { error: sub.errors[0].message };
+    }
     var subtaskGid = sub.data && sub.data.gid;
+
+    // The subtask now exists -- cache a success marker and release the lock
+    // before the slower photo-upload/flagged-item work below, which doesn't
+    // need lock protection since a retry is now recognized via this cache
+    // entry regardless of how long the rest of this request takes.
+    if (cacheKey) {
+      try { cache.put(cacheKey, JSON.stringify({ success: true, flagged: 0, photosAttached: 0, photosFailed: 0 }), 300); } catch (e) {}
+    }
+    if (haveLock) { lock.releaseLock(); haveLock = false; }
 
     var photosAttached = 0, photosFailed = 0;
     if (subtaskGid) {
@@ -3065,8 +3133,11 @@ function submitQualityCheck(payload) {
       }
     }
 
-    return { success: true, flagged: flagged.length, photosAttached: photosAttached, photosFailed: photosFailed };
+    var result = { success: true, flagged: flagged.length, photosAttached: photosAttached, photosFailed: photosFailed };
+    if (cacheKey) { try { cache.put(cacheKey, JSON.stringify(result), 300); } catch (e) {} }
+    return result;
   } catch(e) { return { error: e.toString() }; }
+  finally { if (haveLock) lock.releaseLock(); }
 }
 
 /**
@@ -3167,61 +3238,81 @@ function createProjectAndTask(payload) {
       return { success: false, error: 'Could not read a folder ID from the Google Drive Project Link.' };
     }
 
-    var tz    = Session.getScriptTimeZone();
-    var today = Utilities.formatDate(new Date(), tz, 'MM/dd/yyyy');
-    var taskName = builder + ', ' + jobName + ', ' + address;
-    var notes = [
-      'Builder Name: '   + builder,
-      'Job Name: '       + jobName,
-      'Address: '        + address,
-      'Google Maps: '    + googleMaps,
-      'Google Drive: '   + driveLink,
-      'Home Plans: '     + (homePlansUrl || 'None uploaded'),
-      'Long Lead-time for Materials: ' + (longLead || 'N/A'),
-      "Senders Email & Notes: " + (senderNotes || 'N/A'),
-      'Estimate Due Date: ' + estimateDueDate,
-      'Submitted by: '   + (submittedBy || 'N/A'),
-      'Submitted: '      + today
-    ].join('\n');
-
-    var created = asanaRequest('post', '/tasks', {
-      projects: [ASANA_EXT_SCHED],
-      name:     taskName,
-      notes:    notes,
-      due_on:   estimateDueDate // input type="date" already gives YYYY-MM-DD, what Asana expects
-    });
-    if (created.errors) return { success: false, error: created.errors[0].message };
-
-    var asanaTaskGid = created.data.gid;
-
-    var sectionGid = getSectionGidByName(ASANA_EXT_SCHED, 'Estimate Requested');
-    if (sectionGid) {
-      asanaRequest('post', '/sections/' + sectionGid + '/addTask', { task: asanaTaskGid });
-    }
-
+    // Idempotency guard -- see createPO() for the full rationale. A cache
+    // hit here means this exact submission already created its Asana task
+    // and Projects-sheet row.
+    var idemKey = (payload.idempotencyKey || '').toString().trim();
+    var cache = CacheService.getScriptCache();
+    var cacheKey = idemKey ? ('idem_newproject_' + idemKey) : null;
+    var lock = LockService.getScriptLock();
+    var haveLock = lock.tryLock(10000);
     try {
-      var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PROJECTS_SHEET_NAME);
-      if (!sheet) throw new Error("Sheet '" + PROJECTS_SHEET_NAME + "' not found.");
-      var nextRow = sheet.getLastRow() + 1;
-      sheet.getRange(nextRow, 1).setValue(builder);
-      sheet.getRange(nextRow, 2).setValue(jobName);
-      sheet.getRange(nextRow, 3).setValue(folderId);
-      sheet.getRange(nextRow, 4).setValue(asanaTaskGid);
-    } catch (sheetErr) {
-      return {
-        success: false,
-        error: 'Asana task was created but the Projects sheet row failed to save: ' + sheetErr.toString(),
+      if (cacheKey && haveLock) {
+        var cached = null;
+        try { cached = cache.get(cacheKey); } catch (e) {}
+        if (cached) return JSON.parse(cached);
+      }
+
+      var tz    = Session.getScriptTimeZone();
+      var today = Utilities.formatDate(new Date(), tz, 'MM/dd/yyyy');
+      var taskName = builder + ', ' + jobName + ', ' + address;
+      var notes = [
+        'Builder Name: '   + builder,
+        'Job Name: '       + jobName,
+        'Address: '        + address,
+        'Google Maps: '    + googleMaps,
+        'Google Drive: '   + driveLink,
+        'Home Plans: '     + (homePlansUrl || 'None uploaded'),
+        'Long Lead-time for Materials: ' + (longLead || 'N/A'),
+        "Senders Email & Notes: " + (senderNotes || 'N/A'),
+        'Estimate Due Date: ' + estimateDueDate,
+        'Submitted by: '   + (submittedBy || 'N/A'),
+        'Submitted: '      + today
+      ].join('\n');
+
+      var created = asanaRequest('post', '/tasks', {
+        projects: [ASANA_EXT_SCHED],
+        name:     taskName,
+        notes:    notes,
+        due_on:   estimateDueDate // input type="date" already gives YYYY-MM-DD, what Asana expects
+      });
+      if (created.errors) return { success: false, error: created.errors[0].message };
+
+      var asanaTaskGid = created.data.gid;
+
+      var sectionGid = getSectionGidByName(ASANA_EXT_SCHED, 'Estimate Requested');
+      if (sectionGid) {
+        asanaRequest('post', '/sections/' + sectionGid + '/addTask', { task: asanaTaskGid });
+      }
+
+      try {
+        var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PROJECTS_SHEET_NAME);
+        if (!sheet) throw new Error("Sheet '" + PROJECTS_SHEET_NAME + "' not found.");
+        var nextRow = sheet.getLastRow() + 1;
+        sheet.getRange(nextRow, 1).setValue(builder);
+        sheet.getRange(nextRow, 2).setValue(jobName);
+        sheet.getRange(nextRow, 3).setValue(folderId);
+        sheet.getRange(nextRow, 4).setValue(asanaTaskGid);
+      } catch (sheetErr) {
+        return {
+          success: false,
+          error: 'Asana task was created but the Projects sheet row failed to save: ' + sheetErr.toString(),
+          asanaTaskGid: asanaTaskGid,
+          asanaTaskUrl: 'https://app.asana.com/0/' + ASANA_EXT_SCHED + '/' + asanaTaskGid
+        };
+      }
+
+      var result = {
+        success: true,
+        driveFolderId: folderId,
         asanaTaskGid: asanaTaskGid,
         asanaTaskUrl: 'https://app.asana.com/0/' + ASANA_EXT_SCHED + '/' + asanaTaskGid
       };
+      if (cacheKey) { try { cache.put(cacheKey, JSON.stringify(result), 300); } catch (e) {} }
+      return result;
+    } finally {
+      if (haveLock) lock.releaseLock();
     }
-
-    return {
-      success: true,
-      driveFolderId: folderId,
-      asanaTaskGid: asanaTaskGid,
-      asanaTaskUrl: 'https://app.asana.com/0/' + ASANA_EXT_SCHED + '/' + asanaTaskGid
-    };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -3873,26 +3964,35 @@ function addEmployee(payload) {
     if (isOwnerEmail(email) && newRoleList.indexOf('aidan') === -1) {
       return { error: 'This account is protected and must be added as aidan.', code: 'OWNER_PROTECTED' };
     }
-    var lastRow = sh.getLastRow();
-    if (lastRow >= 2) {
-      var existing = sh.getRange(2, 1, lastRow - 1, 2).getValues();
-      for (var i = 0; i < existing.length; i++) {
-        if ((existing[i][1] || '').toLowerCase().trim() === email) {
-          return { error: 'An employee with that email already exists' };
+    // Lock around the existing-email check + append -- without this, two
+    // near-simultaneous submissions for the same new hire could both pass
+    // the check before either had appended, creating two rows.
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(10000)) return { error: 'Server is busy - try again in a moment.' };
+    try {
+      var lastRow = sh.getLastRow();
+      if (lastRow >= 2) {
+        var existing = sh.getRange(2, 1, lastRow - 1, 2).getValues();
+        for (var i = 0; i < existing.length; i++) {
+          if ((existing[i][1] || '').toLowerCase().trim() === email) {
+            return { error: 'An employee with that email already exists' };
+          }
         }
       }
+      sh.appendRow([
+        payload.name.trim(),
+        email,
+        (payload.phone || '').trim(),
+        newRoleList.join(','),
+        (payload.password || '').trim(),
+        parseFloat(payload.allotted) || 0,
+        0
+      ]);
+      invalidateRolesCache_();
+      return { success: true };
+    } finally {
+      lock.releaseLock();
     }
-    sh.appendRow([
-      payload.name.trim(),
-      email,
-      (payload.phone || '').trim(),
-      newRoleList.join(','),
-      (payload.password || '').trim(),
-      parseFloat(payload.allotted) || 0,
-      0
-    ]);
-    invalidateRolesCache_();
-    return { success: true };
   } catch(e) { return { error: e.toString() }; }
 }
 
@@ -4527,12 +4627,24 @@ function submitTimeCorrection(payload) {
     var lock = LockService.getScriptLock();
     if (!lock.tryLock(10000)) return { error: 'Server is busy - try again in a moment.' };
     try {
+      // Idempotency guard -- see createPO() for the full rationale.
+      var idemKey = (payload.idempotencyKey || '').toString().trim();
+      var cache = CacheService.getScriptCache();
+      var cacheKey = idemKey ? ('idem_timecorrection_' + idemKey) : null;
+      if (cacheKey) {
+        var cached = null;
+        try { cached = cache.get(cacheKey); } catch (e) {}
+        if (cached) return JSON.parse(cached);
+      }
+
       sheet.appendRow([
         Utilities.getUuid(), new Date(), name, email, dateStr,
         originalIn, originalOut, clockIn, clockOut, reason,
         'pending', '', '', ''
       ]);
-      return { success: true };
+      var result = { success: true };
+      if (cacheKey) { try { cache.put(cacheKey, JSON.stringify(result), 300); } catch (e) {} }
+      return result;
     } finally {
       lock.releaseLock();
     }
@@ -4585,6 +4697,17 @@ function submitTimeCorrectionsBatch(payload) {
     var lock = LockService.getScriptLock();
     if (!lock.tryLock(10000)) return { error: 'Server is busy - try again in a moment.' };
     try {
+      // Idempotency guard -- see createPO() for the full rationale. One key
+      // covers the whole batch (all-or-nothing).
+      var idemKey = (payload.idempotencyKey || '').toString().trim();
+      var cache = CacheService.getScriptCache();
+      var cacheKey = idemKey ? ('idem_timecorrectionbatch_' + idemKey) : null;
+      if (cacheKey) {
+        var cached = null;
+        try { cached = cache.get(cacheKey); } catch (e) {}
+        if (cached) return JSON.parse(cached);
+      }
+
       items.forEach(function(it) {
         var originalIn = '', originalOut = '';
         var matchRow = findTimeTrackingRowForDate_(email, it.targetMidnight);
@@ -4599,7 +4722,9 @@ function submitTimeCorrectionsBatch(payload) {
           'pending', '', '', ''
         ]);
       });
-      return { success: true, count: items.length };
+      var result = { success: true, count: items.length };
+      if (cacheKey) { try { cache.put(cacheKey, JSON.stringify(result), 300); } catch (e) {} }
+      return result;
     } finally {
       lock.releaseLock();
     }
