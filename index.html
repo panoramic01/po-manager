@@ -2471,6 +2471,11 @@ function handleGoogleCredential(response) {
   });
 }
 
+function newIdemKey() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2);
+}
+
 function gasCall(action, payload, onSuccess, onFailure, opts) {
   opts = opts || {};
   var fullPayload = Object.assign({ callerEmail: G.userEmail, sessionToken: G.sessionToken }, payload || {});
@@ -3938,6 +3943,14 @@ function submitCreate() {
   }
 
   setBtnState('create-btn', 'Creating…', true);
+  // Reused across retries after a timeout so a re-click is recognized
+  // server-side as the same submission, not a new PO -- only cleared on
+  // success or when the form is freshly opened (see showCreateForm/clearCreate).
+  if (!G.createIdemKey) G.createIdemKey = newIdemKey();
+  var slowTimer = setTimeout(function() {
+    var el = document.getElementById('create-btn');
+    if (el && el.disabled) el.textContent = 'Still working… (do not click twice)';
+  }, 8000);
 
   gasCall('createPO', {
     builder:       builder,
@@ -3947,10 +3960,13 @@ function submitCreate() {
     status:        getVendorValue('c-status', 'c-status-other'),
     invoiceTotal:  val('c-total'),
     notes:         trim('c-notes'),
-    orderedBy:     G.config.userName || G.userEmail
+    orderedBy:     G.config.userName || G.userEmail,
+    idempotencyKey: G.createIdemKey
   }, function(res) {
+    clearTimeout(slowTimer);
     setBtnState('create-btn', 'Create PO', false);
     if (res.success) {
+      G.createIdemKey = null;
       clearCreate();
       loadData();
       // Show success screen with PO number
@@ -3966,6 +3982,7 @@ function submitCreate() {
       showToast('Error:' + res.error);
     }
   }, function(err) {
+    clearTimeout(slowTimer);
     setBtnState('create-btn', 'Create PO', false);
     console.error('createPO failed:', err);
     if (err && err.name === 'AbortError') {
@@ -3988,6 +4005,7 @@ function clearCreate() {
 }
 
 function showCreateForm() {
+  G.createIdemKey = null;
   document.getElementById('create-form-card').style.display    = 'block';
   document.getElementById('create-success-card').style.display = 'none';
 }
@@ -4173,6 +4191,7 @@ function closeOfficeNotes() {
 }
 
 function loadOfficeNotesPanel() {
+  G.officeNoteIdemKey = null;
   document.getElementById('office-notes-form-card').style.display    = '';
   document.getElementById('office-note-success-card').style.display  = 'none';
   document.getElementById('on-note').value      = '';
@@ -4292,16 +4311,25 @@ function submitOfficeNote() {
   }
 
   setBtnState('office-note-btn', 'Submitting…', true);
+  // Reused across retries after a timeout -- see submitCreate() for rationale.
+  if (!G.officeNoteIdemKey) G.officeNoteIdemKey = newIdemKey();
+  var slowTimer = setTimeout(function() {
+    var el = document.getElementById('office-note-btn');
+    if (el && el.disabled) el.textContent = 'Still working… (do not click twice)';
+  }, 8000);
 
   gasCall('submitOfficeNote', {
     note:          note,
     dueDate:       trim('on-due-date'),
     assigneeEmail: val('on-assignee'),
     photoUrls:     G.officeNotePhotoUrls || [],
-    submittedBy:   (G.config && G.config.userName) || G.userEmail
+    submittedBy:   (G.config && G.config.userName) || G.userEmail,
+    idempotencyKey: G.officeNoteIdemKey
   }, function(res) {
+    clearTimeout(slowTimer);
     setBtnState('office-note-btn', 'Submit', false);
     if (res.success) {
+      G.officeNoteIdemKey = null;
       document.getElementById('office-note-success-link').href = res.asanaTaskUrl;
       document.getElementById('office-notes-form-card').style.display   = 'none';
       document.getElementById('office-note-success-card').style.display = 'block';
@@ -4309,6 +4337,7 @@ function submitOfficeNote() {
       showToast('Error:' + res.error);
     }
   }, function(err) {
+    clearTimeout(slowTimer);
     setBtnState('office-note-btn', 'Submit', false);
     showToast('Error:' + abortAwareError(err, 'Error submitting note'));
   }, { timeoutMs: 45000 });
@@ -4679,6 +4708,7 @@ function openSubPOForm(poNum) {
   var po = G.pos.find(function(p){ return p.poNum === poNum; });
   if (!po) return;
   G.detailMode = 'subpo';
+  G.subPoIdemKey = null;
   // Sub-PO doesn't exist yet, so its own file-upload fields have no PO row
   // to read builder/jobRef from -- stash the parent's for uploadSubPO*File().
   G.subPOContext = { builder: po.builder, jobRef: po.jobRef, parentPoNum: poNum };
@@ -4765,6 +4795,12 @@ function submitCreateSubPO(parentPoNum) {
   if (!vendor) { showToast('Vendor is required'); return; }
 
   setBtnState('sp-create-btn', 'Creating…', true);
+  // Reused across retries after a timeout -- see submitCreate() for rationale.
+  if (!G.subPoIdemKey) G.subPoIdemKey = newIdemKey();
+  var slowTimer = setTimeout(function() {
+    var el = document.getElementById('sp-create-btn');
+    if (el && el.disabled) el.textContent = 'Still working… (do not click twice)';
+  }, 8000);
 
   gasCall('createSubPO', {
     parentPoNumber: parentPoNum,
@@ -4775,10 +4811,13 @@ function submitCreateSubPO(parentPoNum) {
     issuedPO:       trim('sp-issued'),
     invoiceFile:    G.perms.canViewInvoice ? trim('sp-invoicefile') : undefined,
     notes:          trim('sp-notes'),
-    orderedBy:      G.config.userName || G.userEmail
+    orderedBy:      G.config.userName || G.userEmail,
+    idempotencyKey: G.subPoIdemKey
   }, function(res) {
+    clearTimeout(slowTimer);
     setBtnState('sp-create-btn', 'Create Sub-PO', false);
     if (res.success) {
+      G.subPoIdemKey = null;
       loadData();
       showToast('Created ' + res.poNumber);
       closePODetail();
@@ -4786,6 +4825,7 @@ function submitCreateSubPO(parentPoNum) {
       showToast('Error:' + res.error);
     }
   }, function(err) {
+    clearTimeout(slowTimer);
     setBtnState('sp-create-btn', 'Create Sub-PO', false);
     console.error('createSubPO failed:', err);
     if (err && err.name === 'AbortError') {

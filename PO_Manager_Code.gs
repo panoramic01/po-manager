@@ -329,8 +329,22 @@ function createPO(data) {
     if (!lock.tryLock(10000)) {
       return { success: false, error: "Server is busy - try again in a moment." };
     }
-    var nextRow, poNumber;
+    var nextRow, poNumber, result, cache, cacheKey;
     try {
+      // Idempotency guard: the client keeps re-sending the same key on a
+      // retry after a client-side timeout (the server keeps running after
+      // the client gives up waiting, so a naive retry would create a real
+      // duplicate PO). A cache hit here means this exact submission already
+      // succeeded -- return that prior result instead of writing a new row.
+      var idemKey = (data.idempotencyKey || '').toString().trim();
+      cache = CacheService.getScriptCache();
+      cacheKey = idemKey ? ('idem_createpo_' + idemKey) : null;
+      if (cacheKey) {
+        var cached = null;
+        try { cached = cache.get(cacheKey); } catch (e) { /* ignore, fall through to a fresh write */ }
+        if (cached) return JSON.parse(cached);
+      }
+
       var sheet = getSheet();
       var now   = new Date();
       var tz    = Session.getScriptTimeZone();
@@ -343,22 +357,31 @@ function createPO(data) {
       var today    = Utilities.formatDate(now, tz, "MM/dd/yyyy");
       var status   = data.status || "Pending Pickup";
 
-      sheet.getRange(nextRow, 1).setValue(poNumber);
-      sheet.getRange(nextRow, 2).setValue(today);
-      sheet.getRange(nextRow, 3).setValue(data.builder       || "");
-      sheet.getRange(nextRow, 4).setValue(data.jobRef        || "");
-      sheet.getRange(nextRow, 5).setValue(data.vendor        || "");
-      sheet.getRange(nextRow, 6).setValue(data.vendorInvoice || "");
-      sheet.getRange(nextRow, 7).setValue(status);
-      sheet.getRange(nextRow, 8).setValue(data.invoiceTotal  || "");
-      sheet.getRange(nextRow, 12).setValue(data.notes           || "");
-      sheet.getRange(nextRow, 13).setValue(data.additionalNotes || "");
-      sheet.getRange(nextRow, 14).setValue(getFirstName(data.orderedBy));
-
       // Pending Pickup POs are picked up the same day they're created, so
       // default the pickup/delivery date to today rather than leaving it blank.
-      if (status === "Pending Pickup") {
-        sheet.getRange(nextRow, 9).setValue(today);
+      var pickupDate = (status === "Pending Pickup") ? today : "";
+
+      var row = [
+        poNumber,                          // 1
+        today,                             // 2
+        data.builder       || "",          // 3
+        data.jobRef        || "",          // 4
+        data.vendor        || "",          // 5
+        data.vendorInvoice || "",          // 6
+        status,                            // 7
+        data.invoiceTotal  || "",          // 8
+        pickupDate,                        // 9
+        "",                                // 10
+        "",                                // 11
+        data.notes           || "",        // 12
+        data.additionalNotes || "",        // 13
+        getFirstName(data.orderedBy)       // 14
+      ];
+      sheet.getRange(nextRow, 1, 1, row.length).setValues([row]);
+
+      result = { success: true, poNumber: poNumber, rowIndex: nextRow };
+      if (cacheKey) {
+        try { cache.put(cacheKey, JSON.stringify(result), 300); } catch (e) { /* fine to skip -- worst case a genuine retry within 10s window creates a second row, same as before this fix */ }
       }
     } finally {
       lock.releaseLock();
@@ -370,7 +393,7 @@ function createPO(data) {
     sendPushNotification(OWNER_EMAILS, 'New PO Created: ' + poNumber,
       'By ' + (data.orderedBy || auth.email) + ' - ' + (data.jobRef || '') + ' / ' + (data.vendor || ''), '/');
 
-    return { success: true, poNumber: poNumber, rowIndex: nextRow };
+    return result;
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -400,8 +423,19 @@ function createSubPO(data) {
     if (!lock.tryLock(10000)) {
       return { success: false, error: "Server is busy - try again in a moment." };
     }
-    var nextRow, subPoNumber, jobRef;
+    var nextRow, subPoNumber, jobRef, result, cache, cacheKey;
     try {
+      // Idempotency guard -- see createPO() for the full rationale. A cache
+      // hit here means this exact submission already succeeded.
+      var idemKey = (data.idempotencyKey || '').toString().trim();
+      cache = CacheService.getScriptCache();
+      cacheKey = idemKey ? ('idem_createsubpo_' + idemKey) : null;
+      if (cacheKey) {
+        var cached = null;
+        try { cached = cache.get(cacheKey); } catch (e) { /* ignore, fall through to a fresh write */ }
+        if (cached) return JSON.parse(cached);
+      }
+
       var sheet   = getSheet();
       var lastRow = sheet.getLastRow();
       var numRows = lastRow - 1;
@@ -436,22 +470,30 @@ function createSubPO(data) {
       var today   = Utilities.formatDate(now, tz, "MM/dd/yyyy");
       var status  = data.status || "Pending Pickup";
 
-      sheet.getRange(nextRow, 1).setValue(subPoNumber);
-      sheet.getRange(nextRow, 2).setValue(today);
-      sheet.getRange(nextRow, 3).setValue(builder || "");
-      sheet.getRange(nextRow, 4).setValue(jobRef  || "");
-      sheet.getRange(nextRow, 5).setValue(data.vendor        || "");
-      sheet.getRange(nextRow, 6).setValue(data.vendorInvoice || "");
-      sheet.getRange(nextRow, 7).setValue(status);
-      sheet.getRange(nextRow, 8).setValue(data.invoiceTotal  || "");
-      sheet.getRange(nextRow, 10).setValue(data.issuedPO        || "");
-      sheet.getRange(nextRow, 12).setValue(data.notes           || "");
-      sheet.getRange(nextRow, 13).setValue(data.additionalNotes || "");
-      sheet.getRange(nextRow, 14).setValue(getFirstName(data.orderedBy));
-      sheet.getRange(nextRow, 15).setValue(data.invoiceFile     || "");
+      var pickupDate = (status === "Pending Pickup") ? today : "";
 
-      if (status === "Pending Pickup") {
-        sheet.getRange(nextRow, 9).setValue(today);
+      var row = [
+        subPoNumber,                       // 1
+        today,                             // 2
+        builder || "",                     // 3
+        jobRef  || "",                     // 4
+        data.vendor        || "",          // 5
+        data.vendorInvoice || "",          // 6
+        status,                            // 7
+        data.invoiceTotal  || "",          // 8
+        pickupDate,                        // 9
+        data.issuedPO        || "",        // 10
+        "",                                // 11
+        data.notes           || "",        // 12
+        data.additionalNotes || "",        // 13
+        getFirstName(data.orderedBy),      // 14
+        data.invoiceFile     || ""         // 15
+      ];
+      sheet.getRange(nextRow, 1, 1, row.length).setValues([row]);
+
+      result = { success: true, poNumber: subPoNumber, rowIndex: nextRow };
+      if (cacheKey) {
+        try { cache.put(cacheKey, JSON.stringify(result), 300); } catch (e) { /* fine to skip */ }
       }
     } finally {
       lock.releaseLock();
@@ -461,7 +503,7 @@ function createSubPO(data) {
     sendPushNotification(OWNER_EMAILS, 'Sub-PO Created: ' + subPoNumber,
       'By ' + (data.orderedBy || auth.email) + ' - ' + (jobRef || '') + ' / ' + (data.vendor || ''), '/');
 
-    return { success: true, poNumber: subPoNumber, rowIndex: nextRow };
+    return result;
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -835,6 +877,7 @@ function updateProfile(payload) {
       if (rowEmail === email) {
         sheet.getRange(i + 1, 1).setValue(name);  // Column A: Name
         sheet.getRange(i + 1, 3).setValue(phone); // Column C: Phone
+        invalidateRolesCache_();
         return { success: true };
       }
     }
@@ -852,33 +895,62 @@ function updateProfile(payload) {
  *   - effRoles: roles with 'aidan' normalized to 'admin' - use this for permission checks
  * Falls back to 'runner' if not found.
  */
+var HR_ROLES_CACHE_KEY = 'hr_roles_map_v1';
+var HR_ROLES_CACHE_TTL_SEC = 120; // short TTL bounds staleness for role edits made directly in the Sheet UI (bypassing addEmployee/updateEmployee/removeEmployee/updateProfile, which invalidate this cache themselves)
+
+/**
+ * Builds { emailLower: {role, name, phone} } from the HR sheet, or reads it
+ * from cache. getRoleByEmail() previously did a full getDataRange() + linear
+ * scan on every single call, and it's invoked by authorizeCaller() on nearly
+ * every privileged action app-wide -- caching this made every one of those
+ * calls faster, not just PO/note creation.
+ */
+function getRolesMap_() {
+  var cache = CacheService.getScriptCache();
+  try {
+    var cached = cache.get(HR_ROLES_CACHE_KEY);
+    if (cached) return JSON.parse(cached);
+  } catch (e) { /* fall through and rebuild */ }
+
+  var map = {};
+  var ss    = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(ROLES_SHEET);
+  if (sheet) {
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      var email = (data[i][1] || '').toString().toLowerCase().trim(); // Column B
+      if (!email) continue;
+      map[email] = {
+        role:  (data[i][3] || '').toString().toLowerCase().trim(), // Column D
+        name:  (data[i][0] || '').toString().trim(),               // Column A
+        phone: (data[i][2] || '').toString().trim()                // Column C
+      };
+    }
+  }
+  try { cache.put(HR_ROLES_CACHE_KEY, JSON.stringify(map), HR_ROLES_CACHE_TTL_SEC); } catch (e) { /* e.g. over the 100KB cache limit -- fine, just skip caching */ }
+  return map;
+}
+
+/** Clears the cached role map. Call after any write to the HR sheet's Name/Email/Phone/Role columns. */
+function invalidateRolesCache_() {
+  try { CacheService.getScriptCache().remove(HR_ROLES_CACHE_KEY); } catch (e) {}
+}
+
 function getRoleByEmail(email) {
   try {
     if (!email) return { role: 'runner', roles: ['runner'], effRoles: ['runner'], email: '' };
     email = email.toLowerCase().trim();
 
-    var ss    = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName(ROLES_SHEET);
-    if (!sheet) {
-      var fallbackRoles = isOwnerEmail(email) ? ['aidan'] : ['runner'];
-      return { role: fallbackRoles.join(','), roles: fallbackRoles, effRoles: normalizeRoleList_(fallbackRoles), email: email };
+    var row = getRolesMap_()[email];
+    if (!row) {
+      var notFoundRoles = isOwnerEmail(email) ? ['aidan'] : ['runner'];
+      return { role: notFoundRoles.join(','), roles: notFoundRoles, effRoles: normalizeRoleList_(notFoundRoles), email: email, name: '', phone: '' };
     }
 
-    var data = sheet.getDataRange().getValues();
-    for (var i = 1; i < data.length; i++) {
-      var rowEmail = (data[i][1] || '').toString().toLowerCase().trim(); // Column B
-      var rowRole  = (data[i][3] || '').toString().toLowerCase().trim(); // Column D
-      var rowName  = (data[i][0] || '').toString().trim();               // Column A
-      var rowPhone = (data[i][2] || '').toString().trim();               // Column C
-      if (rowEmail === email) {
-        var roleList = parseRoleList_(rowRole);
-        if (isOwnerEmail(email) && roleList.indexOf('aidan') === -1) roleList.push('aidan');
-        if (!roleList.length) roleList = ['runner'];
-        return { role: roleList.join(','), roles: roleList, effRoles: normalizeRoleList_(roleList), email: email, name: rowName, phone: rowPhone };
-      }
-    }
-    var notFoundRoles = isOwnerEmail(email) ? ['aidan'] : ['runner'];
-    return { role: notFoundRoles.join(','), roles: notFoundRoles, effRoles: normalizeRoleList_(notFoundRoles), email: email, name: '', phone: '' };
+    var roleList = parseRoleList_(row.role);
+    if (isOwnerEmail(email) && roleList.indexOf('aidan') === -1) roleList.push('aidan');
+    if (!roleList.length) roleList = ['runner'];
+    return { role: roleList.join(','), roles: roleList, effRoles: normalizeRoleList_(roleList), email: email, name: row.name, phone: row.phone };
   } catch(e) {
     var errRoles = isOwnerEmail(email) ? ['aidan'] : ['runner'];
     return { role: errRoles.join(','), roles: errRoles, effRoles: normalizeRoleList_(errRoles), email: email, name: '', phone: '' };
@@ -2946,6 +3018,8 @@ function submitQualityCheck(payload) {
  * `assignee`, so no separate Asana-user-gid mapping is needed here.
  */
 function submitOfficeNote(payload) {
+  var lock = LockService.getScriptLock();
+  var haveLock = lock.tryLock(10000);
   try {
     var note         = (payload.note || '').toString().trim();
     var dueDate       = (payload.dueDate || '').toString().trim();
@@ -2954,6 +3028,17 @@ function submitOfficeNote(payload) {
     var submittedBy    = (payload.submittedBy || '').toString().trim();
 
     if (!note) return { success: false, error: 'Note is required' };
+
+    // Idempotency guard -- see createPO() for the full rationale. A cache
+    // hit here means this exact submission already created its Asana task.
+    var idemKey = (payload.idempotencyKey || '').toString().trim();
+    var cache = CacheService.getScriptCache();
+    var cacheKey = (haveLock && idemKey) ? ('idem_officenote_' + idemKey) : null;
+    if (cacheKey) {
+      var cached = null;
+      try { cached = cache.get(cacheKey); } catch (e) { /* ignore, fall through */ }
+      if (cached) return JSON.parse(cached);
+    }
 
     var tz   = Session.getScriptTimeZone();
     var date = Utilities.formatDate(new Date(), tz, 'MM/dd/yyyy');
@@ -2972,12 +3057,17 @@ function submitOfficeNote(payload) {
     var created = asanaRequest('post', '/tasks', taskPayload);
     if (created.errors) return { success: false, error: created.errors[0].message };
 
-    return {
+    var result = {
       success:      true,
       asanaTaskGid: created.data.gid,
       asanaTaskUrl: 'https://app.asana.com/0/' + ASANA_OFFICE_TASKS + '/' + created.data.gid
     };
+    if (cacheKey) {
+      try { cache.put(cacheKey, JSON.stringify(result), 300); } catch (e) { /* fine to skip */ }
+    }
+    return result;
   } catch(e) { return { success: false, error: e.toString() }; }
+  finally { if (haveLock) lock.releaseLock(); }
 }
 
 /**
@@ -3732,6 +3822,7 @@ function addEmployee(payload) {
       parseFloat(payload.allotted) || 0,
       0
     ]);
+    invalidateRolesCache_();
     return { success: true };
   } catch(e) { return { error: e.toString() }; }
 }
@@ -3767,6 +3858,7 @@ function updateEmployee(payload) {
         if (newRoleList      !== undefined) sh.getRange(row, 4).setValue(newRoleList.join(','));
         if (payload.password !== undefined && payload.password !== '') sh.getRange(row, 5).setValue(payload.password);
         if (payload.allotted !== undefined) sh.getRange(row, 6).setValue(parseFloat(payload.allotted) || 0);
+        invalidateRolesCache_();
         return { success: true };
       }
     }
@@ -3795,6 +3887,7 @@ function removeEmployee(payload) {
           return { error: 'Cannot remove the last remaining admin.', code: 'LAST_ADMIN_PROTECTED' };
         }
         sh.deleteRow(i + 2);
+        invalidateRolesCache_();
         return { success: true };
       }
     }
