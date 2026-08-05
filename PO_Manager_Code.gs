@@ -1138,27 +1138,48 @@ function updatePricing(payload) {
     if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
 
     var rowIndex     = payload.rowIndex;
-    var vendorPrices = payload.vendorPrices;
+    var vendorPrices = payload.vendorPrices || {};
 
     var ss    = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName(PRICING_SHEET);
     if (!sheet) return { success: false, error: 'Pricing sheet not found' };
 
+    // Vendor columns are read dynamically from the header row (E onwards),
+    // same as getPricingData() -- this used to reference an undefined
+    // PRICING_VENDORS constant, so every pricing edit failed silently.
+    var lastCol = sheet.getLastColumn();
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    var vendorCols = []; // [{ name, colIndex(1-based) }], in sheet column order
+    for (var c = 4; c < headers.length; c++) {
+      var h = (headers[c] || '').toString().trim();
+      if (h) vendorCols.push({ name: h, colIndex: c + 1 });
+    }
+    if (!vendorCols.length) return { success: false, error: 'No vendor columns found on Pricing sheet' };
+
+    // Vendor columns are contiguous (E onward) -- batch them into one
+    // setValues() call instead of one setValue() per vendor.
+    var minCol = vendorCols[0].colIndex;
+    var maxCol = vendorCols[vendorCols.length - 1].colIndex;
     var allPrices = [];
-    // Vendor columns E-J are 1-based cols 5-10
-    PRICING_VENDORS.forEach(function(vendor, i) {
-      var price = vendorPrices[vendor];
-      var col   = i + 5; // col E = 5, F = 6 ... J = 10
+    var rowValues = [];
+    for (var col = minCol; col <= maxCol; col++) {
+      var vc = null;
+      for (var i = 0; i < vendorCols.length; i++) {
+        if (vendorCols[i].colIndex === col) { vc = vendorCols[i]; break; }
+      }
+      if (!vc) { rowValues.push(''); continue; }
+      var price = vendorPrices[vc.name];
       if (price !== '' && price !== null && price !== undefined) {
         var val = parseFloat(price);
-        sheet.getRange(rowIndex, col).setValue(isNaN(val) ? '' : val);
+        rowValues.push(isNaN(val) ? '' : val);
         if (!isNaN(val) && val > 0) allPrices.push(val);
       } else {
-        sheet.getRange(rowIndex, col).setValue('');
+        rowValues.push('');
       }
-    });
+    }
+    sheet.getRange(rowIndex, minCol, 1, rowValues.length).setValues([rowValues]);
 
-    // Best price = lowest vendor price, written to col C
+    // Best price = lowest vendor price, written to col C (not contiguous with E+)
     var bestPrice = allPrices.length > 0 ? Math.min.apply(null, allPrices) : '';
     sheet.getRange(rowIndex, 3).setValue(bestPrice);
 
