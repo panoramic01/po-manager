@@ -2538,6 +2538,9 @@ function abortAwareError(err, fallbackMsg) {
   if (err && err.name === 'AbortError') {
     return 'Taking longer than expected - check before trying again, it may have already gone through.';
   }
+  if (err instanceof TypeError) {
+    return 'Cannot reach the server - check your connection and try again.';
+  }
   return fallbackMsg;
 }
 
@@ -3989,7 +3992,7 @@ function submitCreate() {
       loadData();
       showToast("Taking longer than expected - check the dashboard before creating it again, it may have gone through.");
     } else {
-      showToast('Error:Error creating PO');
+      showToast('Error:' + abortAwareError(err, 'Error creating PO'));
     }
   }, { timeoutMs: 45000 });
 }
@@ -4832,7 +4835,7 @@ function submitCreateSubPO(parentPoNum) {
       loadData();
       showToast("Taking longer than expected - check the dashboard before creating it again, it may have gone through.");
     } else {
-      showToast('Error:Error creating sub-PO');
+      showToast('Error:' + abortAwareError(err, 'Error creating sub-PO'));
     }
   }, { timeoutMs: 45000 });
 }
