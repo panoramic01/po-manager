@@ -89,7 +89,7 @@
     "savePhotoToDrive", "getPTOData", "submitPTO", "approvePTO", "denyPTO",
     "clockIn", "clockOut", "getClockStatus", "getTimesheet",
     "getEmployees", "addEmployee", "updateEmployee", "removeEmployee",
-    "getPTOOverview", "getPayrollSummary", "emailPayroll", "updateProfile",
+    "getPTOOverview", "getPayrollSummary", "emailPayroll", "getPayrollPdf", "updateProfile",
     "getJobList", "getJobCostSummary", "getMissingInvoices", "getVendorSpend",
     "getAsanaJobs", "submitQualityCheck",
     "getJobsRegistry", "getJobDashboard", "updateJobMeta"

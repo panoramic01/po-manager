@@ -55,14 +55,16 @@ function onFormSubmitReceived(e) {
 
         // ❌ If already exists → block overwrite
         if (existingReceivedNote) {
-          MailApp.sendEmail(
-            recipientList,
-            "Received Note Already Exists: " + poInput,
-            "A received note is already attached to this PO.\n\n" +
-            "PO Number: " + poInput + "\n\n" +
-            "No changes were made.\n" +
-            "Please contact Aidan if this needs to be updated."
-          );
+          if (NOTIFICATIONS_ENABLED) {
+            MailApp.sendEmail(
+              recipientList,
+              "Received Note Already Exists: " + poInput,
+              "A received note is already attached to this PO.\n\n" +
+              "PO Number: " + poInput + "\n\n" +
+              "No changes were made.\n" +
+              "Please contact Aidan if this needs to be updated."
+            );
+          }
           return;
         }
 
@@ -76,24 +78,28 @@ function onFormSubmitReceived(e) {
         }
         sheet.getRange(row, 7).setValue(finalStatus); // G Status
 
-        MailApp.sendEmail(
-          recipientList,
-          "PO Updated: " + poInput,
-          "A received note has been added.\n\n" +
-          "PO Number: " + poInput + "\n" +
-          "Status: " + finalStatus
-        );
+        if (NOTIFICATIONS_ENABLED) {
+          MailApp.sendEmail(
+            recipientList,
+            "PO Updated: " + poInput,
+            "A received note has been added.\n\n" +
+            "PO Number: " + poInput + "\n" +
+            "Status: " + finalStatus
+          );
+        }
         sendPushNotification(adminEmail, "PO Updated: " + poInput, "Status: " + finalStatus, "/");
         return;
       }
     }
 
     // PO not found
-    MailApp.sendEmail(
-      adminEmail,
-      "⚠️ PO Not Found",
-      "The PO number '" + poInput + "' could not be found in the PO Database."
-    );
+    if (NOTIFICATIONS_ENABLED) {
+      MailApp.sendEmail(
+        adminEmail,
+        "⚠️ PO Not Found",
+        "The PO number '" + poInput + "' could not be found in the PO Database."
+      );
+    }
     return;
   }
 
@@ -126,14 +132,16 @@ function onFormSubmitReceived(e) {
   sheet.getRange(nextRow, 12).setValue(notes);       // L Notes
 
   // Email confirmation
-  MailApp.sendEmail(
-    recipientList,
-    "New PO Created: " + poNumber,
-    "A new PO has been created.\n\n" +
-    "PO Number: " + poNumber + "\n" +
-    "Job: " + job + "\n" +
-    "Vendor: " + vendor + "\n" +
-    "Status: " + finalStatus
-  );
+  if (NOTIFICATIONS_ENABLED) {
+    MailApp.sendEmail(
+      recipientList,
+      "New PO Created: " + poNumber,
+      "A new PO has been created.\n\n" +
+      "PO Number: " + poNumber + "\n" +
+      "Job: " + job + "\n" +
+      "Vendor: " + vendor + "\n" +
+      "Status: " + finalStatus
+    );
+  }
   sendPushNotification(adminEmail, "New PO Created: " + poNumber, job + " - " + vendor, "/");
 }

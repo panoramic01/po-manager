@@ -1741,7 +1741,7 @@
           <div id="emp-new-roles" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
             <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--c-ink);background:var(--c-bg);border-radius:8px;padding:6px 10px"><input type="checkbox" value="runner" checked/> Runner</label>
             <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--c-ink);background:var(--c-bg);border-radius:8px;padding:6px 10px"><input type="checkbox" value="site_manager"/> Site Manager</label>
-            <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--c-ink);background:var(--c-bg);border-radius:8px;padding:6px 10px"><input type="checkbox" value="purchaser"/> Purchaser</label>
+            <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--c-ink);background:var(--c-bg);border-radius:8px;padding:6px 10px"><input type="checkbox" value="office"/> Office</label>
             <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--c-ink);background:var(--c-bg);border-radius:8px;padding:6px 10px"><input type="checkbox" value="human_resources"/> Human Resources</label>
             <label style="display:flex;align-items:center;gap:5px;font-size:13px;color:var(--c-ink);background:var(--c-bg);border-radius:8px;padding:6px 10px"><input type="checkbox" value="admin"/> Admin</label>
           </div>
@@ -1777,7 +1777,7 @@
       <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid var(--c-border-hair);background:var(--c-surface);position:sticky;top:0;z-index:1">
         <button onclick="showOtherHome()" style="background:none;border:none;font-size:14px;font-weight:600;color:var(--c-navy);cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
         <span style="font-size:16px;font-weight:700;color:var(--c-navy);flex:1">Payroll</span>
-        <button onclick="doEmailPayroll()" style="background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:700;cursor:pointer">Email</button>
+        <button onclick="doDownloadPayrollPdf()" style="background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:700;cursor:pointer">Download</button>
       </div>
       <div style="padding:16px;padding-bottom:80px">
 
@@ -2031,7 +2031,7 @@
        Own tab, not shared with aidan's tab-more: that tile grid is
        hardcoded with admin-only tiles (Payroll, Employees, PTO Overview,
        Reconcile, Vendor Spend, Job Dashboard, Pricing, Contacts) that
-       site_manager has never had access to (all admin/purchaser/HR-gated
+       site_manager has never had access to (all admin/office/HR-gated
        on their existing Other tab) -- this mirrors only the tiles
        site_manager actually has today. -->
   <div class="tab" id="tab-sitemanagermore" style="padding:0 12px">
@@ -2945,18 +2945,21 @@ function forceUpdate() {
 // An account's role can be a single token ("admin") or several comma-separated
 // roles ("admin,human_resources"). Permissions are the union across all
 // assigned roles: having any one role that grants a capability grants it.
-var ROLE_LABELS = { aidan:'Aidan', admin:'Admin', purchaser:'Purchaser', site_manager:'Site Manager', runner:'Runner', human_resources:'Human Resources' };
+var ROLE_LABELS = { aidan:'Aidan', admin:'Admin', office:'Office', site_manager:'Site Manager', runner:'Runner', human_resources:'Human Resources' };
 
 function roleTokens(roleStr) {
   return (roleStr || '').split(',').map(function(r) { return r.trim().toLowerCase(); }).filter(Boolean);
 }
 
 // 'aidan' is the owner-only login label; it carries identical permissions to
-// 'admin' everywhere in this app - effRoleTokens is what every check below uses.
+// 'admin' everywhere in this app. 'purchaser' is the old token for what's now
+// called 'office' (business-side rename) - kept as an alias so accounts whose
+// HR sheet row still literally says "purchaser" keep working. effRoleTokens
+// is what every check below uses.
 function effRoleTokens(roleStr) {
   var seen = {}, out = [];
   roleTokens(roleStr).forEach(function(r) {
-    var n = r === 'aidan' ? 'admin' : r;
+    var n = r === 'aidan' ? 'admin' : (r === 'purchaser' ? 'office' : r);
     if (!seen[n]) { seen[n] = true; out.push(n); }
   });
   return out;
@@ -2991,15 +2994,15 @@ function applyRole(role) {
   function has(arr) { return arr.some(function(r) { return effRoles.indexOf(r) !== -1; }); }
   var isHrOnly = effRoles.length > 0 && effRoles.every(function(r) { return r === 'human_resources'; });
   var p = {
-    canDash:        has(['admin', 'purchaser', 'site_manager']),
-    canCreate:      has(['admin', 'purchaser', 'site_manager']),
+    canDash:        has(['admin', 'office', 'site_manager']),
+    canCreate:      has(['admin', 'office', 'site_manager']),
     canReceive:     !isHrOnly,                                       // controls Log tab visibility
     canReceivePO:   !isHrOnly,                                       // controls Receive PO form + actions
-    canSearch:      has(['admin', 'purchaser', 'site_manager']),
-    canPricing:     has(['admin', 'purchaser']),
-    canEdit:        has(['admin', 'purchaser', 'site_manager']),
-    canViewInvoice: has(['admin', 'purchaser']),
-    canContacts:    has(['admin', 'purchaser', 'site_manager']),
+    canSearch:      has(['admin', 'office', 'site_manager']),
+    canPricing:     has(['admin', 'office']),
+    canEdit:        has(['admin', 'office', 'site_manager']),
+    canViewInvoice: has(['admin', 'office']),
+    canContacts:    has(['admin', 'office', 'site_manager']),
     canOther:       true,
     canAccount:     true
   };
@@ -3025,9 +3028,9 @@ function applyRole(role) {
   sd('other-card-reconcile', has(['admin']));
   sd('other-card-job-cost',   has(['admin']));
   sd('other-card-missing-inv', has(['admin']));
-  sd('other-card-vendor-spend', has(['admin', 'purchaser']));
+  sd('other-card-vendor-spend', has(['admin', 'office']));
   sd('other-card-material-report', has(['admin']));
-  sd('other-card-material-inventory', has(['admin', 'purchaser', 'site_manager', 'runner']));
+  sd('other-card-material-inventory', has(['admin', 'office', 'site_manager', 'runner']));
   sd('other-card-inventory', has(['admin']));
   sd('other-card-sop', false);
   sd('other-card-emp-mgr',      has(['admin', 'human_resources']));
@@ -3051,8 +3054,10 @@ function applyRole(role) {
   // meaningful for whoever clocks in (runner) plus aidan's own account.
   sd('acct-period-approval-card', G.isRunnerHome || G.isAidan);
   sd('acct-my-timesheets-card', G.isRunnerHome || G.isAidan);
-  sd('acct-push-card', true);
-  sd('acct-theme-card', G.isAidan);
+  // Notifications are paused pending a redesign (see NOTIFICATIONS_ENABLED
+  // in Push_Notifications.gs) -- hide the toggle so it isn't a dead end.
+  sd('acct-push-card', false);
+  sd('acct-theme-card', true);
 
   // Reset nav-dashboard/nav-receive/nav-other back to their stock onclick +
   // label before applying any role-specific rewrite below. applyRole() can
@@ -3644,7 +3649,7 @@ function initSiteManagerHomeTab() {
 }
 
 // POs + Contacts search for Site Manager Home -- not Pricing though, since
-// canPricing is still admin/purchaser-only. See the tab-sitemanagerhome
+// canPricing is still admin/office-only. See the tab-sitemanagerhome
 // comment for why this doesn't reuse runHomeSearch() wholesale.
 var runSMHomeSearchDebounced = debounce(function(){ runSMHomeSearch(); }, 150);
 
@@ -5541,7 +5546,7 @@ function handlePhotoSlot(input) {
       } else {
         slot.className = 'photo-slot';
         slot.onclick = function() { openPhotoSlot(idx); };
-        console.error('savePhotoToDrive failed:', res.error); var failMsg = res.noDriveId ? 'No Drive ID — add one or contact Purchaser' : friendlyServerError(res.error);
+        console.error('savePhotoToDrive failed:', res.error); var failMsg = res.noDriveId ? 'No Drive ID — add one or contact Office' : friendlyServerError(res.error);
         slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:var(--c-danger)">' + failMsg + '</span></div>';
       }
     }, function(err) {
@@ -5686,7 +5691,7 @@ function qcHandlePhotoSlot(input) {
         qcRenderPhotoGrid(key);
       } else {
         console.error('savePhotoToDrive failed:', res.error);
-        resetSlotToAdd(res.noDriveId ? 'No Drive ID — contact Purchaser' : friendlyServerError(res.error));
+        resetSlotToAdd(res.noDriveId ? 'No Drive ID — contact Office' : friendlyServerError(res.error));
       }
     }, function(err) {
       clearTimeout(_driveTimeout);
@@ -10897,8 +10902,8 @@ function loadEmpMgr() {
 }
 
 function renderEmpList() {
-  var roleColors = { aidan: '#b71c1c', admin: '#1F3971', purchaser: '#0277bd', site_manager: '#558b2f', runner: '#6d4c41', human_resources: '#6a1b9a' };
-  var ROLE_OPTIONS = ['runner','site_manager','purchaser','human_resources','admin','aidan'];
+  var roleColors = { aidan: '#b71c1c', admin: '#1F3971', office: '#0277bd', site_manager: '#558b2f', runner: '#6d4c41', human_resources: '#6a1b9a' };
+  var ROLE_OPTIONS = ['runner','site_manager','office','human_resources','admin','aidan'];
   document.getElementById('emp-list').innerHTML = _empData.map(function(e, i) {
     var initial = e.name ? e.name.charAt(0).toUpperCase() : '?';
     var empRoles = roleTokens(e.role);
@@ -11172,14 +11177,22 @@ function togglePayrollRow(i) {
   if (ch) ch.style.transform = open ? '' : 'rotate(180deg)';
 }
 
-function doEmailPayroll() {
-  var btn = document.querySelector('[onclick="doEmailPayroll()"]');
-  if (btn) { btn.disabled = true; btn.textContent = 'Sending...'; }
-  gasCall('emailPayroll', { to: G.userEmail, callerEmail: G.userEmail, periodOffset: _payrollOffset }, function(r) {
-    if (btn) { btn.disabled = false; btn.textContent = 'Email'; }
+function doDownloadPayrollPdf() {
+  var btn = document.querySelector('[onclick="doDownloadPayrollPdf()"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Preparing...'; }
+  gasCall('getPayrollPdf', { callerEmail: G.userEmail, periodOffset: _payrollOffset }, function(r) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Download'; }
     if (r.error) { showToast(empErrorMessage(r)); return; }
-    showToast('Summary emailed to ' + G.userEmail);
-  }, function() { if (btn) { btn.disabled = false; btn.textContent = 'Email'; } showToast('Could not connect'); });
+    var byteChars = atob(r.base64);
+    var bytes = new Uint8Array(byteChars.length);
+    for (var i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+    var blob = new Blob([bytes], { type: 'application/pdf' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = r.filename || 'Payroll Summary.pdf';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, function() { if (btn) { btn.disabled = false; btn.textContent = 'Download'; } showToast('Could not connect'); });
 }
 
 function payrollPrevPeriod() { loadPayroll(_payrollOffset - 1); }

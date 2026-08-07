@@ -68,5 +68,5 @@ function onFormSubmit(e) {
     "Status: " + status + "\n\n" +
     "View it in the PO Database sheet.";
 
-  MailApp.sendEmail(recipient, subject, body);
+  if (NOTIFICATIONS_ENABLED) MailApp.sendEmail(recipient, subject, body);
 }

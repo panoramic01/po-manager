@@ -25,10 +25,16 @@ function isOwnerEmail(email) {
 }
 
 // 'aidan' is the owner-only role label; it carries the exact same permissions
-// as 'admin' everywhere in the app. Every role comparison should normalize
-// through this first so allow-lists never need to spell out 'aidan'.
+// as 'admin' everywhere in the app. 'purchaser' is the old token for what's
+// now called 'office' (business-side rename) -- kept as an alias here so
+// existing HR sheet rows that still literally say "purchaser" keep working
+// without a manual data migration. Every role comparison should normalize
+// through this first so allow-lists never need to spell out either legacy
+// token.
 function normalizeRole_(role) {
-  return role === 'aidan' ? 'admin' : role;
+  if (role === 'aidan') return 'admin';
+  if (role === 'purchaser') return 'office';
+  return role;
 }
 
 // ── Multi-role support ───────────────────────────────────────────────────────
@@ -72,7 +78,7 @@ function hasAnyRole_(effRoles, allowed) {
 // The only role tokens the app understands. Anything else in a client-supplied
 // role list is dropped rather than written to the HR sheet - keeps garbage or
 // script-like text out of a cell that gets echoed back into the UI verbatim.
-var VALID_EMPLOYEE_ROLES = ['runner', 'site_manager', 'purchaser', 'human_resources', 'admin', 'aidan'];
+var VALID_EMPLOYEE_ROLES = ['runner', 'site_manager', 'office', 'human_resources', 'admin', 'aidan'];
 function filterValidRoles_(roleList) {
   return roleList.filter(function(r) { return VALID_EMPLOYEE_ROLES.indexOf(r) !== -1; });
 }
@@ -181,6 +187,7 @@ function doPost(e) {
     else if (action === 'getPTOOverview')              result = getPTOOverview(payload);
     else if (action === 'getPayrollSummary')           result = getPayrollSummary(payload);
     else if (action === 'emailPayroll')                result = emailPayroll(payload);
+    else if (action === 'getPayrollPdf')               result = getPayrollPdf(payload);
     else if (action === 'approveTimesheet')            result = approveTimesheet(payload);
     else if (action === 'unapproveTimesheet')          result = unapproveTimesheet(payload);
     else if (action === 'approveMyTimesheet')          result = approveMyTimesheet(payload);
@@ -236,7 +243,7 @@ function doPost(e) {
  * so the input/header rows at the top of the sheet are ignored.
  *
  * Invoice fields (invoiceTotal, invoiceFile, invoiceLink) are only
- * populated for admin/purchaser callers -- this mirrors the client's
+ * populated for admin/office callers -- this mirrors the client's
  * canViewInvoice gate, but enforced here too so the raw response can't be
  * used to read invoice data for a role the UI hides it from. An
  * unresolvable caller (missing/unknown email) is treated as the lowest
@@ -245,7 +252,7 @@ function doPost(e) {
 function getSheetData(payload) {
   var callerEmail = verifySessionEmail_(payload && payload.sessionToken) || '';
   var callerRoles = getRoleByEmail(callerEmail).effRoles;
-  var canViewInvoice = hasAnyRole_(callerRoles, ['admin', 'purchaser']);
+  var canViewInvoice = hasAnyRole_(callerRoles, ['admin', 'office']);
 
   var sheet = getSheet();
   var lastRow = sheet.getLastRow();
@@ -320,7 +327,7 @@ function getFirstName(fullName) {
  */
 function createPO(data) {
   try {
-    var auth = authorizeCaller(data, ['admin', 'purchaser', 'site_manager']);
+    var auth = authorizeCaller(data, ['admin', 'office', 'site_manager']);
     if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
 
     if (!data.jobRef || !data.vendor) {
@@ -411,7 +418,7 @@ function createPO(data) {
  */
 function createSubPO(data) {
   try {
-    var auth = authorizeCaller(data, ['admin', 'purchaser', 'site_manager']);
+    var auth = authorizeCaller(data, ['admin', 'office', 'site_manager']);
     if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
 
     if (!data.parentPoNumber || !data.vendor) {
@@ -523,7 +530,7 @@ function updatePO(payload) {
     // (canReceivePO in index.html), which only ever writes status/receivedNote/
     // notes — so runner is included here even though it can't open the full
     // Edit form (canEdit).
-    var auth = authorizeCaller(payload, ['admin', 'purchaser', 'site_manager', 'runner']);
+    var auth = authorizeCaller(payload, ['admin', 'office', 'site_manager', 'runner']);
     if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
 
     var rowIndex = payload.rowIndex;
@@ -558,7 +565,7 @@ function findPOByNumber(payload) {
     var poNum = payload && payload.poNum;
     if (!poNum) return null;
     var callerEmail = verifySessionEmail_(payload && payload.sessionToken) || '';
-    var canViewInvoice = hasAnyRole_(getRoleByEmail(callerEmail).effRoles, ['admin', 'purchaser']);
+    var canViewInvoice = hasAnyRole_(getRoleByEmail(callerEmail).effRoles, ['admin', 'office']);
     var sheet  = getSheet();
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) return null;
@@ -1142,7 +1149,7 @@ function invalidatePricingCache_() {
  */
 function getPricingData(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin', 'purchaser']);
+    var auth = authorizeCaller(payload, ['admin', 'office']);
     if (!auth.ok) return { error: auth.error, code: auth.code };
 
     var raw = getPricingSheetRaw_();
@@ -1210,7 +1217,7 @@ function getPricingData(payload) {
  */
 function updatePricing(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin', 'purchaser']);
+    var auth = authorizeCaller(payload, ['admin', 'office']);
     if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
 
     var rowIndex     = payload.rowIndex;
@@ -1483,7 +1490,7 @@ function savePhotoToDrive(payload) {
 
     var base = resolveBaseFolder(builder, jobRef);
     if (base.blocked) {
-      return { success: false, noDriveId: true, error: 'No Drive ID found for this job - please add one to the Projects sheet or contact Purchaser.' };
+      return { success: false, noDriveId: true, error: 'No Drive ID found for this job - please add one to the Projects sheet or contact Office.' };
     }
 
     // A project's Drive ID can be syntactically valid (resolveBaseFolder's
@@ -1492,7 +1499,7 @@ function savePhotoToDrive(payload) {
     // later, inside getTypedUploadFolder/createFile, not at the ID-lookup
     // step above. Treat any Drive failure while writing into a *project*
     // folder the same as a missing Drive ID, so the caller always gets the
-    // actionable "contact Purchaser" message instead of a raw exception.
+    // actionable "contact Office" message instead of a raw exception.
     // The generic Purchasing-root fallback (isProjectFolder false) is
     // owned by the script itself and isn't subject to this per-job
     // misconfiguration, so failures there still fall through to the
@@ -1523,7 +1530,7 @@ function savePhotoToDrive(payload) {
       file = folder.createFile(blob);
     } catch (driveErr) {
       if (base.isProjectFolder) {
-        return { success: false, noDriveId: true, error: 'The Drive folder for this job is not accessible - please check the link in the Projects sheet or contact Purchaser.' };
+        return { success: false, noDriveId: true, error: 'The Drive folder for this job is not accessible - please check the link in the Projects sheet or contact Office.' };
       }
       throw driveErr;
     }
@@ -1689,7 +1696,7 @@ function authorizeDrive() {
  */
 function getContacts(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin', 'purchaser']);
+    var auth = authorizeCaller(payload, ['admin', 'office']);
     if (!auth.ok) return { headers: [], contacts: [], error: auth.error, code: auth.code };
 
     var ss    = SpreadsheetApp.getActiveSpreadsheet();
@@ -1717,7 +1724,7 @@ function getContacts(payload) {
  */
 function updateContact(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin', 'purchaser']);
+    var auth = authorizeCaller(payload, ['admin', 'office']);
     if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
 
     var rowIndex = payload.rowIndex;
@@ -1744,7 +1751,7 @@ function updateContact(payload) {
  */
 function addContact(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin', 'purchaser']);
+    var auth = authorizeCaller(payload, ['admin', 'office']);
     if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
 
     var values = payload.values || {};
@@ -1774,7 +1781,7 @@ function addContact(payload) {
  */
 function deleteContact(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin', 'purchaser']);
+    var auth = authorizeCaller(payload, ['admin', 'office']);
     if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
 
     var rowIndex = payload.rowIndex;
@@ -1959,7 +1966,7 @@ var MATERIAL_LOG_HEADERS = ['Date', 'Material', 'Unit', 'Type', 'Qty', 'Job / Re
 /** Material-name/unit picklist for the log-in/out form, sourced from the Pricing sheet (no vendor prices exposed). */
 function getMaterialCatalog(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin', 'purchaser', 'site_manager', 'runner']);
+    var auth = authorizeCaller(payload, ['admin', 'office', 'site_manager', 'runner']);
     if (!auth.ok) return { items: [], error: auth.error, code: auth.code };
 
     var data = getPricingSheetRaw_().data; // A=Description, B=U/M (only columns this needs)
@@ -1977,7 +1984,7 @@ function getMaterialCatalog(payload) {
 /** On-hand balances per material plus the most recent log activity. */
 function getMaterialInventory(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin', 'purchaser', 'site_manager', 'runner']);
+    var auth = authorizeCaller(payload, ['admin', 'office', 'site_manager', 'runner']);
     if (!auth.ok) return { materials: [], recentLog: [], error: auth.error, code: auth.code };
 
     var sheet = ensureSheetWithHeaders_('Material Inventory Log', MATERIAL_LOG_HEADERS);
@@ -2026,7 +2033,7 @@ function getMaterialInventory(payload) {
 /** Appends one In or Out row to the material log. */
 function logMaterialTransaction(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin', 'purchaser', 'site_manager', 'runner']);
+    var auth = authorizeCaller(payload, ['admin', 'office', 'site_manager', 'runner']);
     if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
 
     var material = (payload.material || '').toString().trim();
@@ -2274,7 +2281,7 @@ function parseAsanaJobName_(rawTaskName) {
  */
 function getJobDashboard(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin', 'purchaser', 'site_manager']);
+    var auth = authorizeCaller(payload, ['admin', 'office', 'site_manager']);
     if (!auth.ok) return { error: auth.error, code: auth.code };
 
     var jobGid = (payload.jobGid || '').toString().trim();
@@ -2334,7 +2341,7 @@ function getJobDashboard(payload) {
 // ── Vendor Spend ──────────────────────────────────────────────────────────────
 function getVendorSpend(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin', 'purchaser']);
+    var auth = authorizeCaller(payload, ['admin', 'office']);
     if (!auth.ok) return { error: auth.error, code: auth.code };
 
     var startDate = payload.startDate;
@@ -2984,7 +2991,7 @@ function getQualityWalkHistory_(jobGid) {
  */
 function getQualityWalkPhotos(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin', 'purchaser', 'site_manager']);
+    var auth = authorizeCaller(payload, ['admin', 'office', 'site_manager']);
     if (!auth.ok) return { photos: [], error: auth.error, code: auth.code };
     var taskGid = (payload && payload.taskGid || '').toString().trim();
     if (!taskGid) return { photos: [] };
@@ -3303,7 +3310,7 @@ function submitOfficeNote(payload) {
  */
 function createProjectAndTask(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin', 'purchaser']);
+    var auth = authorizeCaller(payload, ['admin', 'office']);
     if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
 
     var builder        = (payload.builder || '').toString().trim();
@@ -5189,6 +5196,60 @@ function getPayrollSummary(payload) {
     }).sort(function(a, b) { return a.name.localeCompare(b.name); });
 
     return { employees: employees, periodLabel: periodLabel, needsReview: flagged, periodOffset: offset };
+  } catch(e) { return { error: e.toString() }; }
+}
+
+// Builds the same payroll summary as emailPayroll(), but renders it to a PDF
+// and returns it as base64 for the client to download directly -- no email
+// sent. Replaces the old "Email" button on the Payroll panel.
+function getPayrollPdf(payload) {
+  try {
+    var auth = authorizeCaller(payload, ['admin', 'human_resources']);
+    if (!auth.ok) return { error: auth.error, code: auth.code };
+    var summary = getPayrollSummary(payload);
+    if (summary.error) return { error: summary.error };
+
+    var esc = function(s) { return (s == null ? '' : s.toString()).replace(/[&<>]/g, function(c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); };
+    var grandTotal = 0;
+    var rows = summary.employees.map(function(e) {
+      grandTotal += e.total;
+      var dayLines = Object.keys(e.days).map(function(d) { return esc(d) + ': ' + e.days[d] + ' hrs'; }).join('<br>');
+      var status = e.approved ? 'Approved by ' + esc(e.approvedBy) : 'PENDING APPROVAL';
+      return '<tr>' +
+        '<td>' + esc(e.name) + '</td>' +
+        '<td>' + e.total + ' hrs (' + e.regularHours + ' reg / ' + e.overtimeHours + ' OT)</td>' +
+        '<td>' + status + '</td>' +
+        '<td>' + dayLines + '</td>' +
+      '</tr>';
+    }).join('');
+
+    var needsReviewHtml = '';
+    if (summary.needsReview && summary.needsReview.length) {
+      var reviewRows = summary.needsReview.map(function(r) {
+        return '<tr><td>' + esc(r.name) + ' (' + esc(r.email) + ')</td><td>' + esc(r.date) + '</td><td>' + esc(r.reason) + '</td></tr>';
+      }).join('');
+      needsReviewHtml = '<h2>Needs Review (excluded from totals above)</h2>' +
+        '<table><tr><th>Employee</th><th>Date</th><th>Reason</th></tr>' + reviewRows + '</table>';
+    }
+
+    var html = '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' +
+      'body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#222}' +
+      'h1{font-size:18px;margin:0 0 4px}' +
+      'h2{font-size:13px;margin:20px 0 6px}' +
+      'table{width:100%;border-collapse:collapse;margin-top:8px}' +
+      'th{text-align:left;background:#f4f4f4;padding:6px 8px;font-size:11px;border-bottom:2px solid #ddd}' +
+      'td{padding:6px 8px;border-bottom:1px solid #eee;vertical-align:top}' +
+      '.total{margin-top:14px;font-weight:bold}' +
+      '</style></head><body>' +
+      '<h1>Payroll Summary</h1><div>' + esc(summary.periodLabel) + '</div>' +
+      '<table><tr><th>Employee</th><th>Hours</th><th>Status</th><th>Daily Breakdown</th></tr>' + rows + '</table>' +
+      '<div class="total">Grand Total: ' + (Math.round(grandTotal * 100) / 100) + ' hrs</div>' +
+      needsReviewHtml +
+      '</body></html>';
+
+    var pdfBlob = HtmlService.createHtmlOutput(html).getAs('application/pdf');
+    var filename = 'Payroll Summary - ' + summary.periodLabel + '.pdf';
+    return { success: true, filename: filename, base64: Utilities.base64Encode(pdfBlob.getBytes()) };
   } catch(e) { return { error: e.toString() }; }
 }
 

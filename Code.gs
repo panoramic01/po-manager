@@ -187,13 +187,16 @@ function sendMorningPODigest() {
     missingDelivery, missingPickup
   );
  
-  MailApp.sendEmail({
-    to:       ADMIN_EMAIL,
-    subject:  subject,
-    htmlBody: htmlBody
-  });
- 
-  Logger.log("Morning PO Digest sent to " + ADMIN_EMAIL);
+  if (NOTIFICATIONS_ENABLED) {
+    MailApp.sendEmail({
+      to:       ADMIN_EMAIL,
+      subject:  subject,
+      htmlBody: htmlBody
+    });
+    Logger.log("Morning PO Digest sent to " + ADMIN_EMAIL);
+  } else {
+    Logger.log("Morning PO Digest skipped - notifications are paused.");
+  }
 }
  
  

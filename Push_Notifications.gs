@@ -7,6 +7,13 @@
 // creation by default on new projects, and the script's own OAuth identity
 // (Aidan, who also owns the Firebase project) already has send permission.
 
+// Temporary kill switch for the whole notification system (push + the
+// automatic emails in Code.gs / Form_Response.gs / Received_Form_Response.gs)
+// while it's paused pending a redesign. Flip back to true to re-enable --
+// nothing else needs to change. Checked in sendPushNotification() below and
+// at each MailApp/GmailApp.sendEmail call site guarded by this same flag.
+var NOTIFICATIONS_ENABLED = false;
+
 var FCM_PROJECT_ID = 'panoramic-ops-push';
 var PUSH_SHEET = 'Push Subscriptions';
 var PUSH_SHEET_HEADERS = ['Email', 'FCM Token', 'Device Info', 'Created At', 'Last Seen At'];
@@ -111,6 +118,7 @@ function deletePushTokenRow_(token) {
  * Returns { sent, failed }.
  */
 function sendPushNotification(targetEmails, title, body, url) {
+  if (!NOTIFICATIONS_ENABLED) return { sent: 0, failed: 0 };
   var emails = Array.isArray(targetEmails) ? targetEmails : [targetEmails];
   emails = emails.map(function(e) { return (e || '').toString().toLowerCase().trim(); }).filter(Boolean);
   if (!emails.length) return { sent: 0, failed: 0 };
