@@ -383,6 +383,7 @@ function createPO(data) {
       if (cacheKey) {
         try { cache.put(cacheKey, JSON.stringify(result), 300); } catch (e) { /* fine to skip -- worst case a genuine retry within 10s window creates a second row, same as before this fix */ }
       }
+      invalidateConfigOptionsCache_(); // this builder/job pair may be new -- don't let the picker lag up to CONFIG_OPTIONS_CACHE_TTL_SEC behind
     } finally {
       lock.releaseLock();
     }
@@ -495,6 +496,7 @@ function createSubPO(data) {
       if (cacheKey) {
         try { cache.put(cacheKey, JSON.stringify(result), 300); } catch (e) { /* fine to skip */ }
       }
+      invalidateConfigOptionsCache_();
     } finally {
       lock.releaseLock();
     }
@@ -706,12 +708,45 @@ function verifyGoogleLogin(idToken) {
  * a caller can't read another user's name/phone/role just by supplying
  * their email address.
  */
+var CONFIG_OPTIONS_CACHE_KEY = 'config_options_v1';
+var CONFIG_OPTIONS_CACHE_TTL_SEC = 120;
+
+/**
+ * Caches { builderOptions, jobOptions } -- getBuilderNames()/getRecentJobs()
+ * each do a couple of full-sheet scans (Projects + PO Database) and
+ * getConfig() calls both on essentially every app load, so this was the
+ * single most repeated expensive pair of calls in the backend. Same
+ * CacheService pattern as getRolesMap_()/getAsanaJobs(). Invalidated by
+ * createPO/createSubPO/createProjectAndTask right after a successful write
+ * that could introduce a new builder/job pair, so a fresh one shows up
+ * promptly instead of waiting out the full TTL.
+ */
+function getConfigOptions_() {
+  var cache = CacheService.getScriptCache();
+  try {
+    var cached = cache.get(CONFIG_OPTIONS_CACHE_KEY);
+    if (cached) return JSON.parse(cached);
+  } catch (e) { /* fall through and rebuild */ }
+
+  var opts = {
+    builderOptions: getBuilderNames(),
+    jobOptions:     getRecentJobs()
+  };
+  try { cache.put(CONFIG_OPTIONS_CACHE_KEY, JSON.stringify(opts), CONFIG_OPTIONS_CACHE_TTL_SEC); } catch (e) { /* fine to skip */ }
+  return opts;
+}
+
+function invalidateConfigOptionsCache_() {
+  try { CacheService.getScriptCache().remove(CONFIG_OPTIONS_CACHE_KEY); } catch (e) {}
+}
+
 function getConfig(payload) {
+  var configOptions = getConfigOptions_();
   var base = {
     statusOptions:  STATUS_OPTIONS,
     vendorOptions:  VENDOR_OPTIONS,
-    builderOptions: getBuilderNames(),
-    jobOptions:     getRecentJobs()
+    builderOptions: configOptions.builderOptions,
+    jobOptions:     configOptions.jobOptions
   };
   var verifiedEmail = verifySessionEmail_(payload && payload.sessionToken);
   if (!verifiedEmail) return base;
@@ -1062,6 +1097,38 @@ function countAdminRows(data) {
 // ─── Pricing ─────────────────────────────────────────────────────────────────
 
 var PRICING_SHEET = "Pricing";
+var PRICING_SHEET_CACHE_KEY = 'pricing_sheet_raw_v1';
+var PRICING_SHEET_CACHE_TTL_SEC = 60; // short -- pricing edits should show up quickly after updatePricing writes
+
+/**
+ * Caches the raw Pricing sheet read ({headers, data}) that getPricingData()
+ * and getMaterialCatalog() were each independently doing on every call.
+ * Invalidated by updatePricing() so a same-user edit is never seen as stale
+ * by the very screen that just wrote it.
+ */
+function getPricingSheetRaw_() {
+  var cache = CacheService.getScriptCache();
+  try {
+    var cached = cache.get(PRICING_SHEET_CACHE_KEY);
+    if (cached) return JSON.parse(cached);
+  } catch (e) { /* fall through and rebuild */ }
+
+  var ss    = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(PRICING_SHEET);
+  var lastRow = sheet ? sheet.getLastRow() : 0;
+  var lastCol = sheet ? sheet.getLastColumn() : 0;
+  var raw = { headers: [], data: [] };
+  if (sheet && lastRow >= 2 && lastCol >= 2) {
+    raw.headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    raw.data    = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  }
+  try { cache.put(PRICING_SHEET_CACHE_KEY, JSON.stringify(raw), PRICING_SHEET_CACHE_TTL_SEC); } catch (e) { /* e.g. over the 100KB cache limit -- fine, just skip caching */ }
+  return raw;
+}
+
+function invalidatePricingCache_() {
+  try { CacheService.getScriptCache().remove(PRICING_SHEET_CACHE_KEY); } catch (e) {}
+}
 
 /**
  * Reads the Pricing sheet and returns { vendors, items }.
@@ -1076,24 +1143,18 @@ function getPricingData(payload) {
     var auth = authorizeCaller(payload, ['admin', 'purchaser']);
     if (!auth.ok) return { error: auth.error, code: auth.code };
 
-    var ss    = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName(PRICING_SHEET);
-    if (!sheet) return { vendors: [], items: [] };
+    var raw = getPricingSheetRaw_();
+    var headers = raw.headers;
+    var data    = raw.data;
+    if (!data.length || headers.length < 5) return { vendors: [], items: [] };
 
-    var lastRow = sheet.getLastRow();
-    var lastCol = sheet.getLastColumn();
-    if (lastRow < 2 || lastCol < 5) return { vendors: [], items: [] };
-
-    // Read header row to discover vendor columns (E onwards = index 4+)
-    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    // Discover vendor columns (E onwards = index 4+)
     var vendorCols = []; // [{ name, colIndex }]
     for (var c = 4; c < headers.length; c++) {
       var h = (headers[c] || '').toString().trim();
       if (h) vendorCols.push({ name: h, colIndex: c });
     }
 
-    // Read all data rows
-    var data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
     var items = [];
     var currentCategory = '';
 
@@ -1131,7 +1192,7 @@ function getPricingData(payload) {
       });
     });
 
-    var lastUpdated = DriveApp.getFileById(ss.getId()).getLastUpdated();
+    var lastUpdated = DriveApp.getFileById(SpreadsheetApp.getActiveSpreadsheet().getId()).getLastUpdated();
     var tz = Session.getScriptTimeZone();
     var lastUpdatedStr = Utilities.formatDate(lastUpdated, tz, "MMM d, yyyy");
 
@@ -1196,6 +1257,7 @@ function updatePricing(payload) {
     var bestPrice = allPrices.length > 0 ? Math.min.apply(null, allPrices) : '';
     sheet.getRange(rowIndex, 3).setValue(bestPrice);
 
+    invalidatePricingCache_();
     return { success: true, bestPrice: bestPrice };
   } catch(e) {
     return { success: false, error: e.toString() };
@@ -1898,15 +1960,7 @@ function getMaterialCatalog(payload) {
     var auth = authorizeCaller(payload, ['admin', 'purchaser', 'site_manager', 'runner']);
     if (!auth.ok) return { items: [], error: auth.error, code: auth.code };
 
-    var ss    = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName(PRICING_SHEET);
-    if (!sheet) return { items: [] };
-
-    var lastRow = sheet.getLastRow();
-    var lastCol = sheet.getLastColumn();
-    if (lastRow < 2 || lastCol < 2) return { items: [] };
-
-    var data = sheet.getRange(2, 1, lastRow - 1, 2).getValues(); // A=Description, B=U/M
+    var data = getPricingSheetRaw_().data; // A=Description, B=U/M (only columns this needs)
     var items = [];
     data.forEach(function(row) {
       var desc = (row[0] || '').toString().trim();
@@ -3309,6 +3363,7 @@ function createProjectAndTask(payload) {
         asanaTaskUrl: 'https://app.asana.com/0/' + ASANA_EXT_SCHED + '/' + asanaTaskGid
       };
       if (cacheKey) { try { cache.put(cacheKey, JSON.stringify(result), 300); } catch (e) {} }
+      invalidateConfigOptionsCache_(); // this builder/job pair is new
       return result;
     } finally {
       if (haveLock) lock.releaseLock();
@@ -4692,8 +4747,27 @@ function submitTimeCorrectionsBatch(payload) {
     }
     if (!items.length) return { error: 'No changed days to submit.' };
 
-    var sheet = getTimeCorrectionsSheet_();
+    // Read the Time Tracking sheet ONCE, before the lock, and match every
+    // correction item against this one in-memory pass, instead of calling
+    // findTimeTrackingRowForDate_() (a full sheet re-read) once per item --
+    // that used to happen *inside* the lock, so a multi-day batch held the
+    // global script lock for N full-sheet scans, blocking every other
+    // lock-guarded action app-wide (createPO, clockIn/clockOut, etc.) for
+    // the duration. This read is safe to do outside the lock since it's
+    // read-only; only the appendRow writes below need lock protection.
     var tsSheet = getTimeSheet_();
+    var tsLastRow = tsSheet.getLastRow();
+    var tsRows = tsLastRow >= 2 ? tsSheet.getRange(2, 1, tsLastRow - 1, 6).getValues() : [];
+    var origByKey = {}; // 'email|midnightTimestamp' -> { in, out }
+    for (var t = 0; t < tsRows.length; t++) {
+      var rowEmail = (tsRows[t][1] || '').toString().toLowerCase().trim();
+      var rowDate  = tsRows[t][2] ? new Date(tsRows[t][2]) : null;
+      if (!rowEmail || !rowDate) continue;
+      var rd = new Date(rowDate.getFullYear(), rowDate.getMonth(), rowDate.getDate());
+      origByKey[rowEmail + '|' + rd.getTime()] = { in: tsRows[t][3], out: tsRows[t][4] };
+    }
+
+    var sheet = getTimeCorrectionsSheet_();
     var lock = LockService.getScriptLock();
     if (!lock.tryLock(10000)) return { error: 'Server is busy - try again in a moment.' };
     try {
@@ -4710,11 +4784,10 @@ function submitTimeCorrectionsBatch(payload) {
 
       items.forEach(function(it) {
         var originalIn = '', originalOut = '';
-        var matchRow = findTimeTrackingRowForDate_(email, it.targetMidnight);
-        if (matchRow !== -1) {
-          var existing = tsSheet.getRange(matchRow, 4, 1, 2).getValues()[0];
-          originalIn  = existing[0] ? Utilities.formatDate(new Date(existing[0]), tz, 'h:mm a') : '';
-          originalOut = existing[1] ? Utilities.formatDate(new Date(existing[1]), tz, 'h:mm a') : '';
+        var match = origByKey[email + '|' + it.targetMidnight.getTime()];
+        if (match) {
+          originalIn  = match.in  ? Utilities.formatDate(new Date(match.in),  tz, 'h:mm a') : '';
+          originalOut = match.out ? Utilities.formatDate(new Date(match.out), tz, 'h:mm a') : '';
         }
         sheet.appendRow([
           Utilities.getUuid(), new Date(), name, email, it.dateStr,
@@ -4873,16 +4946,12 @@ function getPayrollSummary(payload) {
     var pEnd   = bounds.end;
     var periodLabel = formatPeriodLabel_(pStart, pEnd);
 
-    // Build email->name lookup from HR sheet (authoritative source)
+    // Build email->name lookup from the cached HR roles map (authoritative
+    // source) instead of a fresh full-sheet scan on every summary request.
+    var hrRolesMap = getRolesMap_();
     var hrNameMap = {};
-    var hrSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('HR');
-    if (hrSheet) {
-      var hrData = hrSheet.getDataRange().getValues();
-      for (var h = 1; h < hrData.length; h++) {
-        var hrEmail = (hrData[h][1] || '').toString().toLowerCase().trim();
-        var hrName  = (hrData[h][0] || '').toString().trim();
-        if (hrEmail) hrNameMap[hrEmail] = hrName;
-      }
+    for (var hrEmail in hrRolesMap) {
+      hrNameMap[hrEmail] = hrRolesMap[hrEmail].name;
     }
 
     var flagged = findFlaggableShifts_(sh, pStart, pEnd);
