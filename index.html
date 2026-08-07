@@ -5855,7 +5855,7 @@ function uploadIssuedFile(file) {
     : 'Uploading…';
   statusEl.className   = 'photo-status uploading';
 
-  var poNum   = document.getElementById('edit-modal-title').textContent || 'issued';
+  var poNum   = document.getElementById('po-detail-title').textContent || 'issued';
   var builder = trim('e-builder');
   var jobRef  = trim('e-job');
   var vendor  = getVendorValue('e-vendor', 'e-vendor-other');
@@ -5909,7 +5909,7 @@ function uploadInvoiceFile(file) {
     : 'Uploading…';
   statusEl.className   = 'photo-status uploading';
 
-  var poNum   = document.getElementById('edit-modal-title').textContent || 'invoice';
+  var poNum   = document.getElementById('po-detail-title').textContent || 'invoice';
   var builder = trim('e-builder');
   var jobRef  = trim('e-job');
   var vendor  = getVendorValue('e-vendor', 'e-vendor-other');
