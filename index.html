@@ -1180,7 +1180,7 @@
       <button onclick="showOtherHome()" style="background:none;border:none;font-size:14px;font-weight:600;color:var(--c-navy);cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
     </div>
       <div style="padding:16px;max-width:680px;margin:0 auto">
-        <div id="mi-loading" style="text-align:center;padding:20px">
+        <div id="mi-inv-loading" style="text-align:center;padding:20px">
           <div class="spinner" style="margin:0 auto 8px"></div>
           <p style="font-size:13px;color:var(--c-ink-soft)">Scanning PO database…</p>
         </div>
@@ -7020,6 +7020,9 @@ function loadMaterialCatalog() {
     dl.innerHTML = G.materialCatalog.map(function(it) {
       return '<option value="' + esc(it.description) + '">';
     }).join('');
+  }, function(err) {
+    console.error('loadMaterialCatalog failed:', err);
+    showToast('Could not load material list — autocomplete unavailable, you can still type a material name.');
   });
 }
 
@@ -7427,11 +7430,16 @@ function renderJobCostRows(rows) {
 
 // ── Missing Invoices ──────────────────────────────────────────────────────────
 function loadMissingInvoices() {
-  document.getElementById('mi-loading').style.display = 'block';
+  document.getElementById('mi-inv-loading').style.display = 'block';
   document.getElementById('mi-results').style.display = 'none';
   gasCall('getMissingInvoices', {}, function(r) {
-    document.getElementById('mi-loading').style.display = 'none';
-    if (r.error) { showToast('Error: ' + r.error); return; }
+    document.getElementById('mi-inv-loading').style.display = 'none';
+    if (r.error) {
+      document.getElementById('mi-results').innerHTML = '<div style="text-align:center;padding:20px"><p style="color:var(--c-ink-soft);margin-bottom:12px">' + esc(r.error) + '</p><button onclick="loadMissingInvoices()" style="background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer">Retry</button></div>';
+      document.getElementById('mi-results').style.display = 'block';
+      showToast('Error: ' + r.error);
+      return;
+    }
     var html = '';
     if (!r.missing.length) {
       html = '<div style="background:var(--bd-green-bg);border-radius:12px;padding:24px;text-align:center">'
@@ -7457,7 +7465,7 @@ function loadMissingInvoices() {
     document.getElementById('mi-results').innerHTML = html;
     document.getElementById('mi-results').style.display = 'block';
   }, function() {
-    document.getElementById('mi-loading').style.display = 'none';
+    document.getElementById('mi-inv-loading').style.display = 'none';
     document.getElementById('mi-results').innerHTML = '<div style="text-align:center;padding:20px"><p style="color:var(--c-ink-soft);margin-bottom:12px">Failed to load. Redeploy GAS and retry.</p><button onclick="loadMissingInvoices()" style="background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer">Retry</button></div>';
     document.getElementById('mi-results').style.display = 'block';
   });
@@ -7481,12 +7489,26 @@ function loadVendorSpend() {
   document.getElementById('vs-results').style.display = 'none';
   gasCall('getVendorSpend', { startDate: start, endDate: end, includeTrend: true }, function(r) {
     document.getElementById('vs-loading').style.display = 'none';
-    if (!r || r.error) { showToast('Error: ' + (r ? r.error : 'Empty response from GAS')); return; }
+    if (!r || r.error) {
+      var msg = r ? r.error : 'Empty response from GAS';
+      showVendorSpendError(msg);
+      showToast('Error: ' + msg);
+      return;
+    }
     vsData = r;
     vsSelectedVendors = null;
     vsData.dateRange = (start || 'All time') + (end ? ' → ' + end : '');
     renderVendorSpend();
-  }, function() { document.getElementById('vs-loading').style.display = 'none'; showToast('Connection error — redeploy GAS'); });
+  }, function() {
+    document.getElementById('vs-loading').style.display = 'none';
+    showVendorSpendError('Connection error — redeploy GAS');
+    showToast('Connection error — redeploy GAS');
+  });
+}
+
+function showVendorSpendError(msg) {
+  document.getElementById('vs-results').innerHTML = '<div style="text-align:center;padding:20px"><p style="color:var(--c-ink-soft);margin-bottom:12px">' + esc(msg) + '</p><button onclick="loadVendorSpend()" style="background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer">Retry</button></div>';
+  document.getElementById('vs-results').style.display = 'block';
 }
 
 function toggleVsDrill(id) {
@@ -9691,7 +9713,11 @@ function loadPTOPanel() {
 
   // Load data from GAS
   gasCall('getPTOData', { email: G.userEmail, role: G.role }, function(data) {
-    if (data.error) { showToast('PTO load error: ' + data.error); return; }
+    if (data.error) {
+      showToast('PTO load error: ' + data.error);
+      showPTOLoadError(isAdmin);
+      return;
+    }
 
     // Balance
     var b = data.balance || {};
@@ -9706,7 +9732,26 @@ function loadPTOPanel() {
     // Admin: pending queue
     if (isAdmin) renderPTOQueue(data.pendingQueue || []);
 
-  }, function(e) { showToast('Could not load time off data'); });
+  }, function(e) {
+    showToast('Could not load time off data');
+    showPTOLoadError(isAdmin);
+  });
+}
+
+// Both loading spinners are otherwise only cleared by the success-path
+// renderers below -- without this, a failed/timed-out load left them
+// spinning forever with no way to recover short of a full page reload.
+function showPTOLoadError(isAdmin) {
+  var historyEl = document.getElementById('pto-history-loading');
+  if (historyEl) {
+    historyEl.innerHTML = '<div style="text-align:center;padding:20px"><p style="color:var(--c-ink-soft);margin-bottom:12px">Failed to load. Try again.</p><button onclick="loadPTOPanel()" style="background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer">Retry</button></div>';
+  }
+  if (isAdmin) {
+    var queueEl = document.getElementById('pto-queue-loading');
+    if (queueEl) {
+      queueEl.innerHTML = '<div style="text-align:center;padding:12px"><p style="color:var(--c-ink-soft);font-size:13px">Failed to load.</p></div>';
+    }
+  }
 }
 
 function countWeekdays(s, e) {
