@@ -3775,10 +3775,21 @@ function renderDelPickCard() {
 }
 
 // ── Recent Orders summary card ───────────────────────────────────────────────
+function poIssuedTime_(po) {
+  var m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec((po.dateIssued || '').trim());
+  if (!m) return -1;
+  var d = new Date(+m[3], +m[1] - 1, +m[2]);
+  return isNaN(d) ? -1 : d.getTime();
+}
+
 function renderRecentOrdersCard() {
   var el = document.getElementById('dash-recent-content');
   if (!el) return;
-  var recent = G.pos.slice(-5).reverse();
+  var recent = G.pos.slice().sort(function(a, b) {
+    var ta = poIssuedTime_(a), tb = poIssuedTime_(b);
+    if (ta !== tb) return tb - ta;
+    return (b.rowIndex || 0) - (a.rowIndex || 0);
+  }).slice(0, 5);
   if (!recent.length) {
     el.innerHTML = '<div class="empty">No orders yet.</div>';
     return;
