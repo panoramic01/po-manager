@@ -143,6 +143,7 @@ function doPost(e) {
     else if (action === 'savePhotoToDrive')  result = savePhotoToDrive(payload);
     else if (action === 'createProject')       result = createProjectAndTask(payload);
     else if (action === 'saveFileToFolderById') result = saveFileToFolderById(payload);
+    else if (action === 'setProjectDriveLink') result = setProjectDriveLink(payload);
     else if (action === 'getPricingData')    result = getPricingData(payload);
     else if (action === 'updatePricing')     result = updatePricing(payload);
     else if (action === 'getContacts')         result = getContacts(payload);
@@ -1374,28 +1375,26 @@ function getPurchasingRootFolder() {
 /**
  * Resolves the base folder an upload's typed subfolders should live under:
  * the matching job's own Drive folder (Projects sheet lookup) if one
- * exists, else the global "Purchasing" folder. isProjectFolder tells the
- * caller whether a Drive failure here means a per-job misconfiguration
- * (surfaced to the user) versus a generic script-owned-folder error.
- *
- * If the Builder+Job pair IS in the Projects sheet but its Drive ID cell
- * is blank, unparseable, or points at an inaccessible folder, this is
- * treated as a misconfiguration worth fixing rather than silently
- * dumping the upload into Purchasing -- callers should block and surface
- * { blocked: true } to the user instead. A job that simply isn't in the
- * Projects sheet at all still falls back to Purchasing as before.
+ * exists and is accessible, else the global "Purchasing" folder.
+ * isProjectFolder tells the caller whether the returned folder is the
+ * job's own (so a later write failure there should retry into Purchasing
+ * rather than erroring out -- see savePhotoToDrive). noJobFolder tells the
+ * caller whether this upload is landing in the Purchasing fallback because
+ * the job has no working Drive folder registered -- surfaced to the user
+ * (and, for office/admin, offered as a one-paste fix) rather than silently
+ * swallowed.
  */
 function resolveBaseFolder(builder, jobRef) {
   var match = getProjectFolderId(builder, jobRef);
-  if (match.matched) {
-    if (!match.folderId) return { blocked: true };
+  if (match.matched && match.folderId) {
     try {
-      return { folder: DriveApp.getFolderById(match.folderId), isProjectFolder: true };
+      return { folder: DriveApp.getFolderById(match.folderId), isProjectFolder: true, noJobFolder: false };
     } catch (folderErr) {
-      return { blocked: true };
+      // Drive ID is set but doesn't resolve to an accessible folder --
+      // fall through to the Purchasing fallback below.
     }
   }
-  return { folder: getPurchasingRootFolder(), isProjectFolder: false };
+  return { folder: getPurchasingRootFolder(), isProjectFolder: false, noJobFolder: true };
 }
 
 /**
@@ -1480,6 +1479,29 @@ function extractDriveFolderId(driveUrlOrId) {
   return null;
 }
 
+/**
+ * Writes (or dedupes against) a single file in `folder`. If a file with
+ * this exact name already exists there, reuses it instead of uploading a
+ * second copy -- callers' filenames are either fully deterministic
+ * (buildDocFileName) or day-granular (ISO date, no time), so a same-day
+ * retry after a timeout still produces the same name.
+ */
+function writeUploadFile_(folder, filename, base64Data, mimeType) {
+  var existing = folder.getFilesByName(filename);
+  if (existing.hasNext()) {
+    var existingFile = existing.next();
+    try {
+      if (existingFile.getSharingAccess() !== DriveApp.Access.ANYONE_WITH_LINK) {
+        existingFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      }
+    } catch (sharingErr) {}
+    return { file: existingFile, duplicate: true };
+  }
+  var bytes = Utilities.base64Decode(base64Data);
+  var blob  = Utilities.newBlob(bytes, mimeType, filename);
+  return { file: folder.createFile(blob), duplicate: false };
+}
+
 function savePhotoToDrive(payload) {
   try {
     var auth = requireVerifiedEmail_(payload);
@@ -1489,51 +1511,27 @@ function savePhotoToDrive(payload) {
         builder = payload.builder, jobRef = payload.jobRef, docType = payload.docType, poNum = payload.poNum;
 
     var base = resolveBaseFolder(builder, jobRef);
-    if (base.blocked) {
-      return { success: false, noDriveId: true, error: 'No Drive ID found for this job - please add one to the Projects sheet or contact Office.' };
-    }
+    var noJobFolder = !!base.noJobFolder;
 
     // A project's Drive ID can be syntactically valid (resolveBaseFolder's
     // DriveApp.getFolderById call succeeds) but still not fully writable --
-    // wrong folder pasted in, or shared read-only. That failure surfaces
-    // later, inside getTypedUploadFolder/createFile, not at the ID-lookup
-    // step above. Treat any Drive failure while writing into a *project*
-    // folder the same as a missing Drive ID, so the caller always gets the
-    // actionable "contact Office" message instead of a raw exception.
-    // The generic Purchasing-root fallback (isProjectFolder false) is
-    // owned by the script itself and isn't subject to this per-job
-    // misconfiguration, so failures there still fall through to the
-    // generic catch below.
-    var folder, file;
+    // wrong folder pasted in, or shared read-only. That failure only
+    // surfaces here, inside getTypedUploadFolder/createFile. Rather than
+    // erroring out, fall back to the Purchasing folder the same as when no
+    // job folder is registered at all -- the upload isn't lost, and the
+    // "no Drive folder" notice below still points office/admin at the fix.
+    var written;
     try {
-      folder = getTypedUploadFolder(base.folder, docType, poNum, jobRef);
-
-      // If a file with this exact name already exists in the target folder,
-      // reuse it instead of uploading a second copy -- same dedup
-      // saveFileToFolderById() already does. Callers' filenames here are
-      // either fully deterministic (buildDocFileName) or day-granular
-      // (ISO date, no time), so a same-day retry after a timeout still
-      // produces the same name.
-      var existing = folder.getFilesByName(filename);
-      if (existing.hasNext()) {
-        var existingFile = existing.next();
-        try {
-          if (existingFile.getSharingAccess() !== DriveApp.Access.ANYONE_WITH_LINK) {
-            existingFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-          }
-        } catch (sharingErr) {}
-        return { success: true, url: existingFile.getUrl(), duplicate: true };
-      }
-
-      var bytes = Utilities.base64Decode(base64Data);
-      var blob  = Utilities.newBlob(bytes, mimeType, filename);
-      file = folder.createFile(blob);
+      var folder = getTypedUploadFolder(base.folder, docType, poNum, jobRef);
+      written = writeUploadFile_(folder, filename, base64Data, mimeType);
     } catch (driveErr) {
-      if (base.isProjectFolder) {
-        return { success: false, noDriveId: true, error: 'The Drive folder for this job is not accessible - please check the link in the Projects sheet or contact Office.' };
-      }
-      throw driveErr;
+      if (!base.isProjectFolder) throw driveErr;
+      noJobFolder = true;
+      var fallbackFolder = getTypedUploadFolder(getPurchasingRootFolder(), docType, poNum, jobRef);
+      written = writeUploadFile_(fallbackFolder, filename, base64Data, mimeType);
     }
+
+    var file = written.file;
 
     // The app's own <img> thumbnail requests (drive.google.com/thumbnail)
     // are anonymous -- login here is email/password, not Google OAuth, so
@@ -1549,7 +1547,7 @@ function savePhotoToDrive(payload) {
       file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
     }
 
-    return { success: true, url: file.getUrl() };
+    return { success: true, url: file.getUrl(), duplicate: written.duplicate, noJobFolder: noJobFolder };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -1599,6 +1597,72 @@ function saveFileToFolderById(payload) {
     }
 
     return { success: true, url: file.getUrl(), folderId: folderId, duplicate: false };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+/**
+ * Registers (or fixes) the Drive folder link for a Builder+Job pair in the
+ * "Projects" sheet -- the same sheet resolveBaseFolder/getProjectFolderId
+ * read from. Lets office/admin close the loop right from the "no Drive
+ * folder" upload notice instead of editing the spreadsheet by hand.
+ * Updates the existing row if the pair is already there (covers a blank or
+ * broken Drive ID cell), appends a new row otherwise. Confirms the folder
+ * is actually accessible before saving so a bad paste doesn't just move
+ * the same failure to the next upload.
+ */
+function setProjectDriveLink(payload) {
+  try {
+    var auth = authorizeCaller(payload, ['admin', 'office']);
+    if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
+
+    var builder   = (payload.builder   || '').toString().trim();
+    var jobRef    = (payload.jobRef    || '').toString().trim();
+    var driveLink = (payload.driveLink || '').toString().trim();
+    if (!builder || !jobRef) return { success: false, error: 'Builder and Job are required.' };
+
+    var folderId = extractDriveFolderId(driveLink);
+    if (!folderId) return { success: false, error: 'Could not read a folder ID from that Drive link.' };
+
+    try {
+      DriveApp.getFolderById(folderId);
+    } catch (folderErr) {
+      return { success: false, error: 'That Drive folder is not accessible to this app - check the link and its sharing settings.' };
+    }
+
+    var lock = LockService.getScriptLock();
+    var haveLock = lock.tryLock(10000);
+    if (!haveLock) return { success: false, error: 'Server is busy - try again in a moment.' };
+    try {
+      var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PROJECTS_SHEET_NAME);
+      if (!sheet) return { success: false, error: "Sheet '" + PROJECTS_SHEET_NAME + "' not found." };
+
+      var wantBuilder = builder.toLowerCase();
+      var wantJob     = jobRef.toLowerCase();
+      var lastRow = sheet.getLastRow();
+      var rowIndex = -1;
+      if (lastRow >= 2) {
+        var data = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+        for (var i = 0; i < data.length; i++) {
+          var rb = (data[i][0] || '').toString().trim().toLowerCase();
+          var rj = (data[i][1] || '').toString().trim().toLowerCase();
+          if (rb === wantBuilder && rj === wantJob) { rowIndex = i + 2; break; }
+        }
+      }
+
+      if (rowIndex === -1) {
+        rowIndex = sheet.getLastRow() + 1;
+        sheet.getRange(rowIndex, 1).setValue(builder);
+        sheet.getRange(rowIndex, 2).setValue(jobRef);
+      }
+      sheet.getRange(rowIndex, 3).setValue(folderId);
+    } finally {
+      if (haveLock) lock.releaseLock();
+    }
+
+    invalidateConfigOptionsCache_();
+    return { success: true, folderId: folderId };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -1814,7 +1878,7 @@ var ASSET_LOG_HEADERS = ['Asset Row', 'Asset Name', 'Event Type', 'Date Performe
 
 function getInventory(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin']);
+    var auth = authorizeCaller(payload, ['admin', 'office']);
     if (!auth.ok) return { headers: [], assets: [], error: auth.error, code: auth.code };
 
     var sheet = ensureSheetWithHeaders_('Assets', ASSET_HEADERS);
@@ -1837,7 +1901,7 @@ function getInventory(payload) {
 
 function addAsset(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin']);
+    var auth = authorizeCaller(payload, ['admin', 'office']);
     if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
 
     var values = payload.values || {};
@@ -1860,7 +1924,7 @@ function addAsset(payload) {
 
 function updateAsset(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin']);
+    var auth = authorizeCaller(payload, ['admin', 'office']);
     if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
 
     var rowIndex = payload.rowIndex;
@@ -1881,7 +1945,7 @@ function updateAsset(payload) {
 
 function deleteAsset(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin']);
+    var auth = authorizeCaller(payload, ['admin', 'office']);
     if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
 
     var rowIndex = payload.rowIndex;
@@ -1897,7 +1961,7 @@ function deleteAsset(payload) {
 
 function getAssetMaintenanceLog(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin']);
+    var auth = authorizeCaller(payload, ['admin', 'office']);
     if (!auth.ok) return { logs: [], error: auth.error, code: auth.code };
 
     var assetRowIndex = payload.assetRowIndex;
@@ -1920,7 +1984,7 @@ function getAssetMaintenanceLog(payload) {
 
 function addMaintenanceLog(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin']);
+    var auth = authorizeCaller(payload, ['admin', 'office']);
     if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
 
     var assetRowIndex = payload.assetRowIndex;
@@ -2096,7 +2160,7 @@ function deleteMaterialLogEntry(payload) {
 // ── Reconcile Statement ───────────────────────────────────────────────────────
 function reconcileStatement(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin']);
+    var auth = authorizeCaller(payload, ['admin', 'office']);
     if (!auth.ok) return { error: auth.error, code: auth.code };
 
     var invoiceNumbers = payload.invoiceNumbers;
@@ -2407,7 +2471,7 @@ function getVendorSpend(payload) {
 
 // ─── Material Report ─────────────────────────────────────────────────────────
 function categorizeInvoices(payload) {
-  var auth = authorizeCaller(payload, ['admin']);
+  var auth = authorizeCaller(payload, ['admin', 'office']);
   if (!auth.ok) return { error: auth.error, code: auth.code };
   var apiKey = PropertiesService.getScriptProperties().getProperty('CLAUDE_API_KEY');
   if (!apiKey) return { error: 'CLAUDE_API_KEY not set in Script Properties' };
@@ -2513,7 +2577,7 @@ function categorizeInvoices(payload) {
 
 // ─── Suggest Categories (lightweight) ────────────────────────────────────────
 function suggestCategories(payload) {
-  var auth = authorizeCaller(payload, ['admin']);
+  var auth = authorizeCaller(payload, ['admin', 'office']);
   if (!auth.ok) return { error: auth.error, code: auth.code };
   var apiKey = PropertiesService.getScriptProperties().getProperty('CLAUDE_API_KEY');
   if (!apiKey) return { error: 'CLAUDE_API_KEY not set in Script Properties' };
@@ -2585,7 +2649,7 @@ function suggestCategories(payload) {
 // ── Process estimate PO + match to invoice line items ──
 function processEstimateWithMatching(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin']);
+    var auth = authorizeCaller(payload, ['admin', 'office']);
     if (!auth.ok) return { error: auth.error, code: auth.code };
     var estimateRows = payload.estimateRows || [];
     var invoiceItems = payload.invoiceItems || [];
@@ -2640,7 +2704,7 @@ function processEstimateWithMatching(payload) {
 // ── Append approved rows to Material Report History tab ──
 function saveMaterialHistory(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin']);
+    var auth = authorizeCaller(payload, ['admin', 'office']);
     if (!auth.ok) return { error: auth.error, code: auth.code };
     var rows = payload.rows || [];
     var ss = SpreadsheetApp.getActiveSpreadsheet();

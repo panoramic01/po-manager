@@ -531,6 +531,30 @@
   </div>
 </div>
 
+<!-- No-Drive-Folder notice: shown when an invoice/PO/photo upload had to
+     fall back to the general Purchasing folder because the job has no
+     Drive folder registered in the Projects sheet. Office/admin get an
+     inline field to fix it on the spot; everyone else is told to contact
+     Office. -->
+<div class="modal-overlay" id="no-drive-folder-modal" onclick="if(event.target===this) closeNoDriveFolderModal()">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">No Drive Folder For This Job</div>
+    <p id="ndf-message" style="font-size:14px;color:var(--c-ink-soft);margin:0 0 16px;line-height:1.4"></p>
+    <div id="ndf-office-fields" style="display:none">
+      <div class="form-group">
+        <label class="form-label">Google Drive Folder Link</label>
+        <input type="text" class="form-control" id="ndf-drive-link" placeholder="Paste the job's Drive folder link">
+      </div>
+      <p id="ndf-status" class="photo-status" style="margin:0 0 4px"></p>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" style="flex:1" onclick="closeNoDriveFolderModal()">Dismiss</button>
+      <button type="button" class="btn btn-primary" id="ndf-save-btn" style="flex:1;display:none" onclick="saveNoDriveFolderLink()">Save Folder Link</button>
+    </div>
+  </div>
+</div>
+
 <!-- Content -->
 <main class="content">
 
@@ -3025,13 +3049,13 @@ function applyRole(role) {
   sd('other-card-pricing',   p.canPricing);
   sd('other-card-contacts',  p.canContacts);
   sd('ct-add-btn',           p.canContacts);
-  sd('other-card-reconcile', has(['admin']));
+  sd('other-card-reconcile', has(['admin', 'office']));
   sd('other-card-job-cost',   has(['admin']));
   sd('other-card-missing-inv', has(['admin']));
   sd('other-card-vendor-spend', has(['admin', 'office']));
-  sd('other-card-material-report', has(['admin']));
+  sd('other-card-material-report', has(['admin', 'office']));
   sd('other-card-material-inventory', has(['admin', 'office', 'site_manager', 'runner']));
-  sd('other-card-inventory', has(['admin']));
+  sd('other-card-inventory', has(['admin', 'office']));
   sd('other-card-sop', false);
   sd('other-card-emp-mgr',      has(['admin', 'human_resources']));
   sd('other-card-pto-overview',  has(['admin', 'human_resources']));
@@ -5210,6 +5234,79 @@ function closeEdit() { document.getElementById('edit-modal').classList.remove('o
 
 function maybeCloseModal(e) { if (e.target===document.getElementById('edit-modal')) closeEdit(); }
 
+// ── No-Drive-Folder notice ──────────────────────────────────────────────
+// Shown whenever savePhotoToDrive() reports noJobFolder:true -- the file
+// still uploaded fine (into the shared Purchasing folder), but the job it
+// belongs to has no Drive folder registered in the Projects sheet. Office
+// and admin get an inline field to fix it right there; everyone else is
+// pointed at Office. Doesn't apply to Quality Walk photos, which are never
+// matched against a builder in the first place (see qcHandlePhotoSlot).
+function showNoDriveFolderNotice(builder, jobRef) {
+  var modal = document.getElementById('no-drive-folder-modal');
+  if (!modal) return;
+  // Multiple photos in one upload batch can each report noJobFolder --
+  // don't clobber an already-open modal (e.g. mid-paste for another job)
+  // with a reset for a newer notice; the user can reopen it per-upload if
+  // they dismiss first.
+  if (modal.classList.contains('open')) return;
+  var jobLabel = [builder, jobRef].filter(Boolean).join(' – ') || 'This job';
+  var canFix = hasAnyRole(G.role, ['admin', 'office']);
+
+  document.getElementById('ndf-message').textContent = jobLabel
+    + ' doesn\'t have a Drive folder set up, so this file was saved to the general Purchasing folder instead. '
+    + (canFix ? 'Paste the job\'s Drive folder link below to fix this for future uploads.' : 'Contact Office to add one.');
+  document.getElementById('ndf-office-fields').style.display = canFix ? 'block' : 'none';
+  document.getElementById('ndf-save-btn').style.display = canFix ? '' : 'none';
+
+  document.getElementById('ndf-drive-link').value = '';
+  var statusEl = document.getElementById('ndf-status');
+  statusEl.textContent = '';
+  statusEl.className   = 'photo-status';
+
+  G.ndfContext = { builder: builder, jobRef: jobRef };
+  modal.classList.add('open');
+}
+
+function closeNoDriveFolderModal() {
+  document.getElementById('no-drive-folder-modal').classList.remove('open');
+}
+
+function saveNoDriveFolderLink() {
+  var ctx = G.ndfContext;
+  if (!ctx) return;
+  var link = trim('ndf-drive-link');
+  if (!link) { showToast('Paste a Drive folder link first'); return; }
+
+  var statusEl = document.getElementById('ndf-status');
+  statusEl.textContent = 'Saving…';
+  statusEl.className   = 'photo-status uploading';
+  var btn = document.getElementById('ndf-save-btn');
+  btn.disabled = true;
+
+  gasCall('setProjectDriveLink', {
+    builder: ctx.builder, jobRef: ctx.jobRef, driveLink: link
+  }, function(res) {
+    btn.disabled = false;
+    // If the modal's been reopened for a different job while this save was
+    // in flight, don't stomp on that job's status line -- the write itself
+    // already went through (or failed) server-side regardless.
+    if (G.ndfContext !== ctx) return;
+    if (res.success) {
+      statusEl.textContent = 'Saved — future uploads for this job will go there.';
+      statusEl.className   = 'photo-status done';
+      setTimeout(closeNoDriveFolderModal, 1800);
+    } else {
+      statusEl.textContent = friendlyServerError(res.error);
+      statusEl.className   = 'photo-status error';
+    }
+  }, function(err) {
+    btn.disabled = false;
+    if (G.ndfContext !== ctx) return;
+    statusEl.textContent = friendlyUploadError(err);
+    statusEl.className   = 'photo-status error';
+  });
+}
+
 function submitEdit() {
   if (!G.editRow) return;
 
@@ -5543,10 +5640,12 @@ function handlePhotoSlot(input) {
         slot.className = 'photo-slot ps-filled';
         slot.onclick = null;
         slot.innerHTML = '<img src="' + dataUrl + '" alt="photo"><button class="ps-remove" onclick="removePhotoSlot(' + idx + ');event.stopPropagation()">×</button><div class="ps-status done">✓</div>';
+        if (res.noJobFolder) showNoDriveFolderNotice(G.receivePO ? G.receivePO.builder : '', G.receivePO ? G.receivePO.jobRef : '');
       } else {
         slot.className = 'photo-slot';
         slot.onclick = function() { openPhotoSlot(idx); };
-        console.error('savePhotoToDrive failed:', res.error); var failMsg = res.noDriveId ? 'No Drive ID — add one or contact Office' : friendlyServerError(res.error);
+        console.error('savePhotoToDrive failed:', res.error);
+        var failMsg = friendlyServerError(res.error);
         slot.innerHTML = '<div class="ps-add-icon"><span style="font-size:9px;color:var(--c-danger)">' + failMsg + '</span></div>';
       }
     }, function(err) {
@@ -5691,7 +5790,7 @@ function qcHandlePhotoSlot(input) {
         qcRenderPhotoGrid(key);
       } else {
         console.error('savePhotoToDrive failed:', res.error);
-        resetSlotToAdd(res.noDriveId ? 'No Drive ID — contact Office' : friendlyServerError(res.error));
+        resetSlotToAdd(friendlyServerError(res.error));
       }
     }, function(err) {
       clearTimeout(_driveTimeout);
@@ -5776,6 +5875,7 @@ function uploadIssuedFile(file) {
         document.getElementById('e-issued').value = res.url;
         statusEl.textContent = 'Uploaded — link filled in above';
         statusEl.className   = 'photo-status done';
+        if (res.noJobFolder) showNoDriveFolderNotice(builder, jobRef);
       } else {
         console.error('savePhotoToDrive/saveFileToFolderById failed:', res.error);
         statusEl.textContent = friendlyServerError(res.error);
@@ -5825,6 +5925,7 @@ function uploadInvoiceFile(file) {
         document.getElementById('e-invoicefile').value = res.url;
         statusEl.textContent = 'Uploaded — link filled in above';
         statusEl.className   = 'photo-status done';
+        if (res.noJobFolder) showNoDriveFolderNotice(builder, jobRef);
       } else {
         console.error('savePhotoToDrive/saveFileToFolderById failed:', res.error);
         statusEl.textContent = friendlyServerError(res.error);
@@ -5876,6 +5977,7 @@ function uploadSubPOIssuedFile(file) {
         document.getElementById('sp-issued').value = res.url;
         statusEl.textContent = 'Uploaded — link filled in above';
         statusEl.className   = 'photo-status done';
+        if (res.noJobFolder) showNoDriveFolderNotice(builder, jobRef);
       } else {
         console.error('savePhotoToDrive/saveFileToFolderById failed:', res.error);
         statusEl.textContent = friendlyServerError(res.error);
@@ -5926,6 +6028,7 @@ function uploadSubPOInvoiceFile(file) {
         document.getElementById('sp-invoicefile').value = res.url;
         statusEl.textContent = 'Uploaded — link filled in above';
         statusEl.className   = 'photo-status done';
+        if (res.noJobFolder) showNoDriveFolderNotice(builder, jobRef);
       } else {
         console.error('savePhotoToDrive/saveFileToFolderById failed:', res.error);
         statusEl.textContent = friendlyServerError(res.error);
@@ -5973,6 +6076,7 @@ function handleSuccessIssuedFile(input) {
       if (DEBUG_UPLOAD_TIMING) console.timeEnd('successIssuedFile:upload');
       if (res.success) {
         saveIssuedPOForLastCreated(res.url, statusEl);
+        if (res.noJobFolder) showNoDriveFolderNotice(G.lastCreatedPO.builder || '', G.lastCreatedPO.jobRef || '');
       } else {
         console.error('savePhotoToDrive/saveFileToFolderById failed:', res.error);
         statusEl.textContent = friendlyServerError(res.error);
