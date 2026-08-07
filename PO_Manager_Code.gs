@@ -3200,7 +3200,17 @@ function submitQualityCheck(payload) {
  * Asana-hosted form, which had no way to assign the resulting task to
  * someone. Asana's task-create API accepts a plain email address for
  * `assignee`, so no separate Asana-user-gid mapping is needed here.
+ *
+ * Task name is the note text itself (trimmed/truncated) rather than a
+ * generic "Office Note - <date>" label, so the task list is scannable.
+ * Photos come in as base64 (client already saved them to Drive via
+ * saveOfficeNotePhoto for backup and kept the bytes in memory) and are
+ * attached to the created task as real Asana attachments, matching the
+ * pattern in submitQualityCheck below.
  */
+var OFFICE_NOTE_MAX_PHOTOS = 10; // backstop against a malformed/hostile payload
+var OFFICE_NOTE_TASK_NAME_MAX_LEN = 100;
+
 function submitOfficeNote(payload) {
   var auth = requireVerifiedEmail_(payload);
   if (auth.error) return { success: false, error: auth.error, code: auth.code };
@@ -3211,7 +3221,7 @@ function submitOfficeNote(payload) {
     var note         = (payload.note || '').toString().trim();
     var dueDate       = (payload.dueDate || '').toString().trim();
     var assigneeEmail = (payload.assigneeEmail || '').toString().trim();
-    var photoUrls      = payload.photoUrls || [];
+    var photos         = payload.photos || [];
     var submittedBy    = (payload.submittedBy || '').toString().trim();
 
     if (!note) return { success: false, error: 'Note is required' };
@@ -3231,11 +3241,16 @@ function submitOfficeNote(payload) {
     var date = Utilities.formatDate(new Date(), tz, 'MM/dd/yyyy');
 
     var lines = ['Note: ' + note, 'Submitted by: ' + (submittedBy || 'N/A'), 'Submitted: ' + date];
-    photoUrls.forEach(function(url) { lines.push('Photo: ' + url); });
+    if (photos.length) lines.push(photos.length + ' photo' + (photos.length > 1 ? 's' : '') + ' attached');
+
+    var taskName = note.replace(/\s+/g, ' ').trim();
+    if (taskName.length > OFFICE_NOTE_TASK_NAME_MAX_LEN) {
+      taskName = taskName.slice(0, OFFICE_NOTE_TASK_NAME_MAX_LEN - 1) + '…';
+    }
 
     var taskPayload = {
       projects: [ASANA_OFFICE_TASKS],
-      name:     'Office Note - ' + date,
+      name:     taskName,
       notes:    lines.join('\n')
     };
     if (dueDate)       taskPayload.due_on   = dueDate;
@@ -3244,14 +3259,31 @@ function submitOfficeNote(payload) {
     var created = asanaRequest('post', '/tasks', taskPayload);
     if (created.errors) return { success: false, error: created.errors[0].message };
 
+    var taskGid = created.data.gid;
     var result = {
       success:      true,
-      asanaTaskGid: created.data.gid,
-      asanaTaskUrl: 'https://app.asana.com/0/' + ASANA_OFFICE_TASKS + '/' + created.data.gid
+      asanaTaskGid: taskGid,
+      asanaTaskUrl: 'https://app.asana.com/0/' + ASANA_OFFICE_TASKS + '/' + taskGid
     };
+
+    // The task now exists -- cache a success marker and release the lock
+    // before the slower photo-attachment work below, which doesn't need
+    // lock protection since a retry is now recognized via this cache entry
+    // regardless of how long the rest of this request takes.
     if (cacheKey) {
       try { cache.put(cacheKey, JSON.stringify(result), 300); } catch (e) { /* fine to skip */ }
     }
+    if (haveLock) { lock.releaseLock(); haveLock = false; }
+
+    var photosAttached = 0, photosFailed = 0;
+    photos.slice(0, OFFICE_NOTE_MAX_PHOTOS).forEach(function(p) {
+      if (!p || !p.base64Data) return;
+      var res = asanaUploadAttachment(taskGid, p.base64Data, p.mimeType || 'image/jpeg', p.filename || 'photo.jpg');
+      if (res.success) photosAttached++; else photosFailed++;
+    });
+    result.photosAttached = photosAttached;
+    result.photosFailed   = photosFailed;
+
     return result;
   } catch(e) { return { success: false, error: e.toString() }; }
   finally { if (haveLock) lock.releaseLock(); }

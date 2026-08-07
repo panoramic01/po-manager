@@ -4224,7 +4224,7 @@ function loadOfficeNotesPanel() {
   document.getElementById('on-photos-file').value = '';
   document.getElementById('on-photos-status').textContent = '';
   document.getElementById('on-photos-status').className   = 'photo-status';
-  G.officeNotePhotoUrls      = [];
+  G.officeNotePhotos          = [];
   G.officeNotePhotosUploading = 0;
   setBtnState('office-note-btn', 'Submit', false);
 
@@ -4283,7 +4283,7 @@ function updateOfficeNotePhotoStatus() {
     statusEl.textContent = 'Uploading…';
     statusEl.className   = 'photo-status uploading';
   } else {
-    var n = (G.officeNotePhotoUrls || []).length;
+    var n = (G.officeNotePhotos || []).length;
     statusEl.textContent = n ? (n + ' photo' + (n === 1 ? '' : 's') + ' uploaded') : '';
     statusEl.className   = 'photo-status done';
   }
@@ -4297,12 +4297,17 @@ function uploadOfficeNotePhoto(file) {
   readAndCompressFile(file, function(dataUrl, mimeType) {
     var ext = mimeType === 'image/jpeg' ? 'jpg' : (file.name.split('.').pop() || 'bin');
     var filename = 'OfficeNote-' + Date.now() + '-' + Math.floor(Math.random() * 1e6) + '.' + ext;
+    var base64 = dataUrl.split(',')[1];
     gasCall('saveOfficeNotePhoto', {
-      base64Data: dataUrl.split(',')[1], mimeType: mimeType, filename: filename
+      base64Data: base64, mimeType: mimeType, filename: filename
     }, function(res) {
       G.officeNotePhotosUploading = Math.max(0, (G.officeNotePhotosUploading || 0) - 1);
       if (res.success) {
-        G.officeNotePhotoUrls = (G.officeNotePhotoUrls || []).concat([res.url]);
+        // Drive URL kept as a backup copy; base64 stays in memory so the
+        // final submit can attach the actual image file to the Asana task.
+        G.officeNotePhotos = (G.officeNotePhotos || []).concat([
+          { url: res.url, base64: base64, mimeType: mimeType, filename: filename }
+        ]);
       } else {
         showToast('Error:' + res.error);
       }
@@ -4346,7 +4351,9 @@ function submitOfficeNote() {
     note:          note,
     dueDate:       trim('on-due-date'),
     assigneeEmail: val('on-assignee'),
-    photoUrls:     G.officeNotePhotoUrls || [],
+    photos:        (G.officeNotePhotos || []).map(function(p) {
+      return { base64Data: p.base64, mimeType: p.mimeType, filename: p.filename };
+    }),
     submittedBy:   (G.config && G.config.userName) || G.userEmail,
     idempotencyKey: G.officeNoteIdemKey
   }, function(res) {
