@@ -1633,6 +1633,15 @@
       <div id="acct-period-approval-cta" style="font-size:12px;color:#7a4a00;margin-top:4px">Tap to review and approve &rarr;</div>
     </div>
 
+    <!-- My Timesheets -- read-only history browser, any past (or current) pay period -->
+    <div id="acct-my-timesheets-card" onclick="openMyTimesheets()" style="background:var(--c-surface);border-radius:14px;padding:16px 20px;box-shadow:0 1px 4px var(--c-shadow-sm);margin-bottom:16px;cursor:pointer;display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div style="font-size:14px;font-weight:700;color:var(--c-navy)">My Timesheets</div>
+        <div style="font-size:12px;color:var(--c-ink-soft);margin-top:2px">View your past pay periods</div>
+      </div>
+      <span style="color:var(--c-ink-faint);font-size:20px;line-height:1">&rsaquo;</span>
+    </div>
+
     <!-- Time Off summary -->
     <div style="background:var(--c-surface);border-radius:14px;padding:16px;box-shadow:0 1px 4px var(--c-shadow-sm);margin-bottom:16px">
       <div style="font-size:14px;font-weight:700;color:var(--c-navy);margin-bottom:14px">Time Off</div>
@@ -1783,6 +1792,8 @@
           <div id="payroll-period-label" style="font-size:13px;color:var(--c-ink-soft);text-align:center;min-width:110px"></div>
           <button id="payroll-next-btn" onclick="payrollNextPeriod()" style="background:none;border:none;cursor:pointer;padding:4px;color:var(--c-navy)"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg></button>
         </div>
+
+        <button onclick="openManualTimeEntry()" style="width:100%;background:none;border:1.5px solid var(--c-navy);color:var(--c-navy);border-radius:9px;padding:10px;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:14px">+ Manual Time Entry</button>
 
         <div id="payroll-emp-list"></div>
       </div>
@@ -2213,6 +2224,53 @@
     <button class="cleanup-close" onclick="closePeriodReview()">Close</button>
   </div>
   <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;background:var(--c-bg)" id="period-review-body"></div>
+</div>
+
+<!-- Manual Time Entry (admin/HR add-or-edit an employee's clock in/out from Payroll) -->
+<div class="cleanup-overlay" id="manual-time-entry-overlay" style="display:none">
+  <div class="cleanup-header">
+    <h2 id="manual-time-entry-title">Manual Time Entry</h2>
+    <button class="cleanup-close" onclick="closeManualTimeEntry()">Close</button>
+  </div>
+  <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;background:var(--c-bg)">
+    <div id="mte-employee-wrap" style="margin-bottom:4px">
+      <label class="form-label">Employee</label>
+      <select id="mte-employee" class="form-control"><option value="">Loading...</option></select>
+    </div>
+    <div id="mte-employee-name" style="display:none;font-size:15px;font-weight:700;color:var(--c-navy);margin-bottom:12px"></div>
+
+    <label class="form-label">Date</label>
+    <input type="date" id="mte-date" class="form-control">
+
+    <div style="display:flex;gap:10px">
+      <div style="flex:1">
+        <label class="form-label">Clock In</label>
+        <input type="time" id="mte-in" class="form-control">
+      </div>
+      <div style="flex:1">
+        <label class="form-label">Clock Out</label>
+        <input type="time" id="mte-out" class="form-control">
+      </div>
+    </div>
+
+    <label class="form-label">Total Hours (optional override)</label>
+    <input type="number" id="mte-hours" class="form-control" placeholder="Leave blank to calculate from times above" step="0.25" min="0" max="24">
+
+    <label class="form-label">Note (optional)</label>
+    <textarea id="mte-note" class="form-control" placeholder="Reason for this entry..." style="min-height:50px"></textarea>
+
+    <button id="mte-save-btn" onclick="doSaveManualTimeEntry()" style="width:100%;background:var(--c-navy);color:#fff;border:none;border-radius:9px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;margin-top:16px">Save</button>
+    <button id="mte-delete-btn" onclick="doDeleteManualTimeEntry()" style="display:none;width:100%;background:none;color:var(--c-danger);border:1.5px solid var(--c-danger);border-radius:9px;padding:10px;font-size:13px;font-weight:700;cursor:pointer;margin-top:10px">Delete Entry</button>
+  </div>
+</div>
+
+<!-- My Timesheets (runner/aidan read-only history browser) -->
+<div class="cleanup-overlay" id="my-timesheets-overlay" style="display:none">
+  <div class="cleanup-header">
+    <h2>My Timesheets</h2>
+    <button class="cleanup-close" onclick="closeMyTimesheets()">Close</button>
+  </div>
+  <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;background:var(--c-bg)" id="my-timesheets-body"></div>
 </div>
 
 <!-- PDF Viewer -->
@@ -2992,6 +3050,7 @@ function applyRole(role) {
   // Approve Hours is self-approval of your own tracked hours -- only
   // meaningful for whoever clocks in (runner) plus aidan's own account.
   sd('acct-period-approval-card', G.isRunnerHome || G.isAidan);
+  sd('acct-my-timesheets-card', G.isRunnerHome || G.isAidan);
   sd('acct-push-card', true);
   sd('acct-theme-card', G.isAidan);
 
@@ -11010,6 +11069,7 @@ function doPTOOverviewDeny(gid, email, btn) {
 
 // ── Payroll Summary ───────────────────────────────────────────────────────────
 var _payrollOffset = 0;
+var _payrollCache = null; // last getPayrollSummary response -- lets shift-edit buttons look up their employee/shift by index instead of embedding untrusted strings (names, emails) into onclick attributes
 
 function loadPayroll(offset) {
   _payrollOffset = offset || 0;
@@ -11017,6 +11077,7 @@ function loadPayroll(offset) {
   document.getElementById('payroll-emp-list').innerHTML = '';
   gasCall('getPayrollSummary', { callerEmail: G.userEmail, periodOffset: _payrollOffset }, function(d) {
     if (d.error) { document.getElementById('payroll-emp-list').innerHTML = '<p style="color:red;font-size:13px">' + esc(empErrorMessage(d)) + '</p>'; return; }
+    _payrollCache = d;
     document.getElementById('payroll-period-label').textContent = d.periodLabel || '';
     updatePayrollNavButtons();
     var emps = d.employees || [];
@@ -11057,11 +11118,19 @@ function loadPayroll(offset) {
                 return '<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:13px;color:var(--c-ink-soft);border-bottom:1px solid #f8f8f8">'
                   + '<span>' + day + '</span><span style="font-weight:600">' + days[day] + ' hrs</span></div>';
               }).join('')
-            + (shifts.length ? '<div style="margin-top:8px">' + shifts.map(function(s) {
+            + (shifts.length ? '<div style="margin-top:8px">' + shifts.map(function(s, si) {
                 var inLink  = s.clockInLoc  ? ' <a href="' + esc(s.clockInLoc)  + '" target="_blank" style="color:var(--c-navy)">map</a>' : '';
                 var outLink = s.clockOutLoc ? ' <a href="' + esc(s.clockOutLoc) + '" target="_blank" style="color:var(--c-navy)">map</a>' : '';
-                return '<div style="font-size:11.5px;color:var(--c-ink-faint);padding:2px 0">' + esc(s.date) + ': ' + esc(s.clockIn) + inLink + ' - ' + esc(s.clockOut || '(open)') + outLink + '</div>';
+                // A manual "hours only" entry has no clockIn/clockOut at all --
+                // show it as such instead of "- (open)", which implies a
+                // forgotten punch rather than a deliberate flat-hours entry.
+                var timesText = s.clockIn ? (esc(s.clockIn) + inLink + ' - ' + esc(s.clockOut || '(open)') + outLink) : 'Manual entry';
+                return '<div style="display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:var(--c-ink-faint);padding:2px 0">'
+                  + '<span>' + esc(s.date) + ': ' + timesText + '</span>'
+                  + '<button onclick="openManualTimeEntryFromShift(' + i + ',' + si + ')" style="background:none;border:none;color:var(--c-navy);font-size:12px;font-weight:700;cursor:pointer;padding:2px 6px" title="Edit this entry">&#9998;</button>'
+                  + '</div>';
               }).join('') + '</div>' : '')
+            + '<button onclick="openManualTimeEntry(\'' + esc(e.email) + '\')" style="background:none;border:none;color:var(--c-navy);font-size:11.5px;font-weight:700;cursor:pointer;padding:4px 0;margin-top:4px">+ Add a day for ' + esc(e.name) + '</button>'
             + '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--c-border-soft);font-size:12px;color:var(--c-ink-soft)">'
             + (e.employeeApproved
                 ? '<span style="color:#1a7a3c;font-weight:700">Employee: &#10003; Checked ' + esc(e.employeeApprovedAt) + '</span>'
@@ -11185,6 +11254,170 @@ function doDenyPayrollCorrection(requestId, btn) {
       showToast('Error: ' + ((r && r.error) || 'unknown'));
     }
   }, function() { btn.disabled = false; btn.textContent = orig; showToast('Could not connect'); });
+}
+
+// ── Manual Time Entry (admin/HR) ────────────────────────────────────────────────
+// Lets an admin add a brand-new day (employee forgot to punch entirely) or
+// edit/delete an existing one, straight from the Payroll panel. Shift edits
+// go through openManualTimeEntryFromShift, which looks the shift up by index
+// in _payrollCache rather than embedding the employee's name/email as a raw
+// string in the onclick attribute (a name containing an apostrophe would
+// otherwise break the inline handler).
+var _mteContext = null;
+
+function openManualTimeEntry(prefillEmail) {
+  var ctx = {};
+  if (prefillEmail) {
+    ctx.email = prefillEmail;
+    var emp = ((_payrollCache && _payrollCache.employees) || []).filter(function(x) { return x.email === prefillEmail; })[0];
+    ctx.name = emp ? emp.name : prefillEmail;
+  }
+  _renderManualTimeEntry(ctx);
+}
+
+function openManualTimeEntryFromShift(empIdx, shiftIdx) {
+  var d = _payrollCache;
+  if (!d) return;
+  var e = (d.employees || [])[empIdx];
+  if (!e) return;
+  var s = (e.shifts || [])[shiftIdx];
+  if (!s) return;
+  _renderManualTimeEntry({ email: e.email, name: e.name, date: s.dateISO, clockIn: s.clockIn24, clockOut: s.clockOut24 });
+}
+
+function _renderManualTimeEntry(ctx) {
+  _mteContext = ctx || {};
+  document.getElementById('manual-time-entry-title').textContent = _mteContext.date ? 'Edit Time Entry' : 'Manual Time Entry';
+  var empWrap = document.getElementById('mte-employee-wrap');
+  var empNameEl = document.getElementById('mte-employee-name');
+  if (_mteContext.email) {
+    empWrap.style.display = 'none';
+    empNameEl.style.display = 'block';
+    empNameEl.textContent = _mteContext.name || _mteContext.email;
+  } else {
+    empWrap.style.display = '';
+    empNameEl.style.display = 'none';
+    populateManualEntryEmployeeSelect();
+  }
+  document.getElementById('mte-date').value = _mteContext.date || '';
+  document.getElementById('mte-in').value = _mteContext.clockIn || '';
+  document.getElementById('mte-out').value = _mteContext.clockOut || '';
+  document.getElementById('mte-hours').value = '';
+  document.getElementById('mte-note').value = '';
+  document.getElementById('mte-save-btn').textContent = 'Save';
+  document.getElementById('mte-delete-btn').style.display = (_mteContext.email && _mteContext.date) ? '' : 'none';
+  document.getElementById('mte-delete-btn').textContent = 'Delete Entry';
+  document.getElementById('manual-time-entry-overlay').style.display = 'flex';
+}
+
+function closeManualTimeEntry() {
+  document.getElementById('manual-time-entry-overlay').style.display = 'none';
+}
+
+function populateManualEntryEmployeeSelect() {
+  var sel = document.getElementById('mte-employee');
+  sel.innerHTML = '<option value="">Loading...</option>';
+  gasCall('getAssignableEmployees', {}, function(d) {
+    var list = (d && d.employees) || [];
+    sel.innerHTML = '<option value="">Select employee...</option>' + list.map(function(emp) {
+      return '<option value="' + esc(emp.email) + '">' + esc(emp.name || emp.email) + '</option>';
+    }).join('');
+  }, function() { sel.innerHTML = '<option value="">Could not load</option>'; });
+}
+
+function doSaveManualTimeEntry() {
+  var email = (_mteContext && _mteContext.email) ? _mteContext.email : document.getElementById('mte-employee').value;
+  var date = document.getElementById('mte-date').value;
+  var clockIn = document.getElementById('mte-in').value;
+  var clockOut = document.getElementById('mte-out').value;
+  var hoursRaw = document.getElementById('mte-hours').value;
+  var note = document.getElementById('mte-note').value;
+
+  if (!email) { showToast('Choose an employee'); return; }
+  if (!date) { showToast('Choose a date'); return; }
+  if (!clockIn && !clockOut && !hoursRaw) { showToast('Enter a clock in/out time or total hours'); return; }
+
+  var btn = document.getElementById('mte-save-btn');
+  var orig = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Saving...';
+  gasCall('adminSetTimeEntry', {
+    employeeEmail: email, date: date, clockIn: clockIn, clockOut: clockOut,
+    hoursOverride: hoursRaw, note: note
+  }, function(r) {
+    btn.disabled = false; btn.textContent = orig;
+    if (r && r.success) {
+      showToast('Time entry saved');
+      closeManualTimeEntry();
+      loadPayroll(_payrollOffset);
+    } else {
+      showToast('Error: ' + ((r && r.error) || 'Could not save'));
+    }
+  }, function(err) { btn.disabled = false; btn.textContent = orig; showToast(abortAwareError(err, 'Could not connect')); }, { timeoutMs: 45000 });
+}
+
+function doDeleteManualTimeEntry() {
+  if (!_mteContext || !_mteContext.email) return;
+  var date = document.getElementById('mte-date').value;
+  if (!date) return;
+  if (!confirm('Delete this time entry? This cannot be undone.')) return;
+  var btn = document.getElementById('mte-delete-btn');
+  var orig = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Deleting...';
+  gasCall('adminDeleteTimeEntry', { employeeEmail: _mteContext.email, date: date }, function(r) {
+    btn.disabled = false; btn.textContent = orig;
+    if (r && r.success) {
+      showToast('Entry deleted');
+      closeManualTimeEntry();
+      loadPayroll(_payrollOffset);
+    } else {
+      showToast('Error: ' + ((r && r.error) || 'Could not delete'));
+    }
+  }, function(err) { btn.disabled = false; btn.textContent = orig; showToast(abortAwareError(err, 'Could not connect')); }, { timeoutMs: 45000 });
+}
+
+// ── My Timesheets (runner/aidan read-only pay-period history) ──────────────────
+var _myTimesheetsOffset = 0;
+
+function openMyTimesheets() {
+  document.getElementById('my-timesheets-overlay').style.display = 'flex';
+  loadMyTimesheets(0);
+}
+
+function closeMyTimesheets() {
+  document.getElementById('my-timesheets-overlay').style.display = 'none';
+}
+
+function loadMyTimesheets(offset) {
+  _myTimesheetsOffset = offset > 0 ? 0 : offset;
+  var body = document.getElementById('my-timesheets-body');
+  body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--c-ink-soft);font-size:14px">Loading...</div>';
+  gasCall('getMyPeriodDetail', { periodOffset: _myTimesheetsOffset }, function(d) {
+    if (d.error) { body.innerHTML = '<p style="color:red;font-size:13px">' + esc(empErrorMessage(d)) + '</p>'; return; }
+    var otText = d.overtimeHours ? ' (' + d.overtimeHours + ' OT)' : '';
+    var statusLine = d.approved
+      ? '<div style="background:#e6f7ec;color:#1a7a3c;border-radius:9px;padding:10px 12px;font-size:12.5px;font-weight:700;margin-bottom:14px">&#10003; Payroll approved ' + esc(d.approvedAt) + '</div>'
+      : (d.employeeApproved
+          ? '<div style="background:var(--sh-amber-bg);color:#7a4a00;border-radius:9px;padding:10px 12px;font-size:12.5px;font-weight:700;margin-bottom:14px">You checked this period ' + esc(d.employeeApprovedAt) + ' &middot; awaiting payroll approval</div>'
+          : '');
+    var daysHtml = (d.days || []).filter(function(day) { return day.clockIn || day.clockOut || day.hours; }).map(function(day) {
+      return '<div style="display:flex;justify-content:space-between;padding:8px 0;font-size:13px;color:var(--c-ink);border-bottom:1px solid var(--c-border-soft)">'
+        + '<span>' + esc(day.dayLabel) + '</span>'
+        + '<span style="color:var(--c-ink-soft)">' + (day.clockIn ? esc(day.clockIn) + ' - ' + esc(day.clockOut || '(open)') : '--') + '</span>'
+        + '<span style="font-weight:700">' + (day.hours || 0) + ' hrs</span></div>';
+    }).join('');
+    var atCurrent = _myTimesheetsOffset >= 0;
+    body.innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:14px">'
+      + '<button onclick="loadMyTimesheets(_myTimesheetsOffset - 1)" style="background:none;border:none;cursor:pointer;padding:4px;color:var(--c-navy)"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg></button>'
+      + '<div style="font-size:14px;font-weight:700;color:var(--c-navy);min-width:110px;text-align:center">' + esc(d.periodLabel) + (atCurrent ? ' (current)' : '') + '</div>'
+      + '<button onclick="if (_myTimesheetsOffset < 0) loadMyTimesheets(_myTimesheetsOffset + 1)" style="background:none;border:none;cursor:' + (atCurrent ? 'default' : 'pointer') + ';padding:4px;color:var(--c-navy);opacity:' + (atCurrent ? '0.3' : '1') + '"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg></button>'
+      + '</div>'
+      + statusLine
+      + '<div style="background:var(--c-navy);color:#fff;border-radius:12px;padding:14px 18px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center">'
+      + '<span style="font-size:13px;font-weight:600">Total Hours</span>'
+      + '<span style="font-size:22px;font-weight:800">' + d.totalHours + otText + '</span></div>'
+      + (daysHtml || '<p style="color:var(--c-ink-faint);font-size:13px">No hours recorded this period.</p>');
+  }, function() { body.innerHTML = '<p style="color:red;font-size:13px">Could not connect</p>'; });
 }
 
 </script>

@@ -192,6 +192,8 @@ function doPost(e) {
     else if (action === 'getTimeCorrectionQueue')       result = getTimeCorrectionQueue(payload);
     else if (action === 'approveTimeCorrection')        result = approveTimeCorrection(payload);
     else if (action === 'denyTimeCorrection')           result = denyTimeCorrection(payload);
+    else if (action === 'adminSetTimeEntry')            result = adminSetTimeEntry(payload);
+    else if (action === 'adminDeleteTimeEntry')         result = adminDeleteTimeEntry(payload);
     else if (action === 'getInventory')                result = getInventory(payload);
     else if (action === 'addAsset')                    result = addAsset(payload);
     else if (action === 'updateAsset')                 result = updateAsset(payload);
@@ -4399,11 +4401,13 @@ function approveMyTimesheet(payload) {
 }
 
 /**
- * Day-by-day detail of the CALLER'S OWN hours for a given (closed) pay
- * period -- powers the "Approve Hours" period-review screen. Every calendar
- * day in the period is included (blank clockIn/clockOut for days with no
- * shift on record), so a missed punch is visible and correctable, not just
- * days that already have a row.
+ * Day-by-day detail of the CALLER'S OWN hours for a given pay period --
+ * powers both the "Approve Hours" period-review screen (always the most
+ * recently-closed period, offset -1) and the read-only "My Timesheets"
+ * history browser (any offset <= 0, including the current open period).
+ * Every calendar day in the period is included (blank clockIn/clockOut for
+ * days with no shift on record), so a missed punch is visible and
+ * correctable, not just days that already have a row.
  */
 function getMyPeriodDetail(payload) {
   try {
@@ -4413,7 +4417,8 @@ function getMyPeriodDetail(payload) {
     var tz = Session.getScriptTimeZone();
 
     var offset = parseInt(payload.periodOffset, 10);
-    if (isNaN(offset) || offset >= 0) offset = -1;
+    if (isNaN(offset)) offset = -1;
+    if (offset > 0) offset = 0; // never allow a future period
     var bounds = getPeriodBoundsOffset_(new Date(), offset);
     var pStart = bounds.start, pEnd = bounds.end;
     var periodLabel = formatPeriodLabel_(pStart, pEnd);
@@ -4467,6 +4472,8 @@ function getMyPeriodDetail(payload) {
       regularHours: otSplit.regular,
       overtimeHours: otSplit.overtime,
       days: days,
+      approved: !!myApproval.approvedAt,
+      approvedAt: myApproval.approvedAt || '',
       employeeApproved: !!myApproval.employeeApprovedAt,
       employeeApprovedAt: myApproval.employeeApprovedAt || '',
       employeeNote: myApproval.employeeNote || '',
@@ -4965,6 +4972,143 @@ function denyTimeCorrection(payload) {
   } catch(e) { return { error: e.toString() }; }
 }
 
+// ── Admin: Manual Time Entry ───────────────────────────────────────────────────
+// Lets an admin/HR reviewer add or correct an employee's clock in/out (or set
+// a flat hours total) directly from the Payroll panel, without routing through
+// the employee-submitted Time Corrections queue (submitTimeCorrection). Every
+// write is ALSO logged as an already-'approved' row in that same Time
+// Corrections sheet purely for an audit trail -- it shows up in the admin
+// queue history and in the employee's own getMyTimeCorrections list, so there's
+// a visible record of who changed what even though no request was ever pending.
+function adminSetTimeEntry(payload) {
+  try {
+    var auth = authorizeCaller(payload, ['admin', 'human_resources']);
+    if (!auth.ok) return { error: auth.error, code: auth.code };
+
+    var email = (payload.employeeEmail || '').toString().toLowerCase().trim();
+    if (!email) return { error: 'Choose an employee.' };
+    var dateStr = (payload.date || '').toString().trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return { error: 'Choose a valid date.' };
+
+    var clockIn  = (payload.clockIn  || '').toString().trim();
+    var clockOut = (payload.clockOut || '').toString().trim();
+    var hoursRaw = (payload.hoursOverride || '').toString().trim();
+    var hasHoursOverride = hoursRaw !== '';
+    var hoursOverride = hasHoursOverride ? parseFloat(hoursRaw) : null;
+    if (hasHoursOverride && (isNaN(hoursOverride) || hoursOverride < 0 || hoursOverride > 24)) {
+      return { error: 'Hours must be a number between 0 and 24.' };
+    }
+    if (!clockIn && !clockOut && !hasHoursOverride) {
+      return { error: 'Enter a clock in/out time or a total hours value.' };
+    }
+
+    var rolesMap = getRolesMap_();
+    var name = (rolesMap[email] && rolesMap[email].name) || email;
+    var tz = Session.getScriptTimeZone();
+    var dp = dateStr.split('-');
+    var targetMidnight = new Date(parseInt(dp[0], 10), parseInt(dp[1], 10) - 1, parseInt(dp[2], 10));
+
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(10000)) return { error: 'Server is busy - try again in a moment.' };
+    try {
+      var tsSheet = getTimeSheet_();
+      var matchRow = findTimeTrackingRowForDate_(email, targetMidnight);
+
+      var originalIn = '', originalOut = '';
+      if (matchRow !== -1) {
+        var existing = tsSheet.getRange(matchRow, 4, 1, 2).getValues()[0];
+        originalIn  = existing[0] ? Utilities.formatDate(new Date(existing[0]), tz, 'h:mm a') : '';
+        originalOut = existing[1] ? Utilities.formatDate(new Date(existing[1]), tz, 'h:mm a') : '';
+      }
+
+      var newIn  = clockIn  ? combineDateTime_(dateStr, clockIn)  : null;
+      var newOut = clockOut ? combineDateTime_(dateStr, clockOut) : null;
+
+      if (matchRow !== -1) {
+        if (newIn)  tsSheet.getRange(matchRow, 4).setValue(newIn);
+        if (newOut) tsSheet.getRange(matchRow, 5).setValue(newOut);
+        if (hasHoursOverride) {
+          tsSheet.getRange(matchRow, 6).setValue(hoursOverride);
+        } else {
+          var finalInVal  = tsSheet.getRange(matchRow, 4).getValue();
+          var finalOutVal = tsSheet.getRange(matchRow, 5).getValue();
+          if (finalInVal && finalOutVal) {
+            var hrs = Math.round(Math.max(0, (new Date(finalOutVal) - new Date(finalInVal)) / 3600000) * 100) / 100;
+            tsSheet.getRange(matchRow, 6).setValue(hrs);
+          }
+        }
+      } else {
+        var hours = hasHoursOverride ? hoursOverride
+          : ((newIn && newOut) ? Math.round(Math.max(0, (newOut - newIn) / 3600000) * 100) / 100 : '');
+        tsSheet.appendRow([name, email, Utilities.formatDate(targetMidnight, tz, 'MM/dd/yyyy'), newIn || '', newOut || '', hours, '', '']);
+      }
+
+      // Audit trail -- see comment above the function.
+      var corrSheet = getTimeCorrectionsSheet_();
+      var note = (payload.note || '').toString().trim() || ('Manual entry by ' + auth.email);
+      if (hasHoursOverride) note += ' [hours set to ' + hoursOverride + ']';
+      corrSheet.appendRow([
+        Utilities.getUuid(), new Date(), name, email, dateStr,
+        originalIn, originalOut, clockIn, clockOut, note,
+        'approved', auth.email, new Date(), ''
+      ]);
+
+      return { success: true };
+    } finally {
+      lock.releaseLock();
+    }
+  } catch(e) { return { error: e.toString() }; }
+}
+
+/**
+ * Deletes an employee's Time Tracking row for one date entirely (e.g. a
+ * duplicate punch, or an entry that should never have existed). Logs the same
+ * kind of audit row as adminSetTimeEntry, with blank requested times marking
+ * a removal rather than a change.
+ */
+function adminDeleteTimeEntry(payload) {
+  try {
+    var auth = authorizeCaller(payload, ['admin', 'human_resources']);
+    if (!auth.ok) return { error: auth.error, code: auth.code };
+
+    var email = (payload.employeeEmail || '').toString().toLowerCase().trim();
+    if (!email) return { error: 'Missing employeeEmail.' };
+    var dateStr = (payload.date || '').toString().trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return { error: 'Invalid date.' };
+
+    var dp = dateStr.split('-');
+    var targetMidnight = new Date(parseInt(dp[0], 10), parseInt(dp[1], 10) - 1, parseInt(dp[2], 10));
+    var tz = Session.getScriptTimeZone();
+
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(10000)) return { error: 'Server is busy - try again in a moment.' };
+    try {
+      var tsSheet = getTimeSheet_();
+      var matchRow = findTimeTrackingRowForDate_(email, targetMidnight);
+      if (matchRow === -1) return { error: 'No time entry found for that date.' };
+
+      var existing = tsSheet.getRange(matchRow, 1, 1, 6).getValues()[0];
+      var name = (existing[0] || email).toString();
+      var originalIn  = existing[3] ? Utilities.formatDate(new Date(existing[3]), tz, 'h:mm a') : '';
+      var originalOut = existing[4] ? Utilities.formatDate(new Date(existing[4]), tz, 'h:mm a') : '';
+
+      tsSheet.deleteRow(matchRow);
+
+      var corrSheet = getTimeCorrectionsSheet_();
+      var note = (payload.note || '').toString().trim() || ('Entry deleted by ' + auth.email);
+      corrSheet.appendRow([
+        Utilities.getUuid(), new Date(), name, email, dateStr,
+        originalIn, originalOut, '', '', note,
+        'approved', auth.email, new Date(), ''
+      ]);
+
+      return { success: true };
+    } finally {
+      lock.releaseLock();
+    }
+  } catch(e) { return { error: e.toString() }; }
+}
+
 // ── Admin: Payroll Summary ────────────────────────────────────────────────────
 function getPayrollSummary(payload) {
   try {
@@ -5015,8 +5159,11 @@ function getPayrollSummary(payload) {
         else { empMap[rowEmail].dayEntries.push({ date: rd, hours: rowHours }); }
         empMap[rowEmail].shifts.push({
           date: dayLabel,
+          dateISO:    Utilities.formatDate(rd, tz, 'yyyy-MM-dd'),
           clockIn:    data[i][3] ? Utilities.formatDate(new Date(data[i][3]), tz, 'h:mm a') : '',
           clockOut:   data[i][4] ? Utilities.formatDate(new Date(data[i][4]), tz, 'h:mm a') : '',
+          clockIn24:  data[i][3] ? Utilities.formatDate(new Date(data[i][3]), tz, 'HH:mm') : '',
+          clockOut24: data[i][4] ? Utilities.formatDate(new Date(data[i][4]), tz, 'HH:mm') : '',
           hours:      rowHours,
           clockInLoc:  (data[i][6] || '').toString(),
           clockOutLoc: (data[i][7] || '').toString()
