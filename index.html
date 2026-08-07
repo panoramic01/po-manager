@@ -790,14 +790,17 @@
     <div class="card" id="receive-po-card">
       <div class="card-title">Receive PO</div>
 
-      <div class="form-group">
-        <label class="form-label">PO Number</label>
+      <div class="form-group" style="position:relative">
+        <label class="form-label">PO Number, Job, Vendor, or Contractor</label>
         <div style="display:flex;gap:8px">
-          <input type="text" class="form-control" id="r-ponum"
-                 placeholder="e.g. 26-02-954" style="flex:1"
-                 onkeydown="if(event.key==='Enter') lookupPO()">
-          <button class="btn btn-lookup" onclick="lookupPO()">Look Up</button>
+          <input type="text" class="form-control" id="r-ponum" autocomplete="off"
+                 placeholder="Search PO #, job, vendor, contractor…" style="flex:1"
+                 oninput="rPoSearchDebounced(this.value)"
+                 onfocus="rPoSearch(this.value)"
+                 onkeydown="if(event.key==='Enter'){ hideRPoDropdown(); lookupPO(); }">
+          <button class="btn btn-lookup" onclick="hideRPoDropdown(); lookupPO()">Look Up</button>
         </div>
+        <div id="r-ponum-dropdown" style="display:none;position:absolute;left:0;right:0;top:100%;background:var(--c-surface);border:1px solid var(--c-border);border-radius:8px;margin-top:4px;max-height:280px;overflow-y:auto;z-index:20;box-shadow:0 4px 12px rgba(0,0,0,0.12)"></div>
       </div>
 
       <div id="r-info" style="display:none">
@@ -3522,7 +3525,7 @@ function initHomeTab() {
 }
 
 // ── Runner Home (pure-runner-only greeting/quick-actions screen) ───────────
-// Runner's entire feature surface is these 5 things -- unlike aidan's Home,
+// Runner's entire feature surface is these 6 things -- unlike aidan's Home,
 // there's no attention list, quality walks, or search here, just the tiles.
 var RUNNER_HOME_TILES = [
   { label: 'Receive PO',         swatch: 'ts-teal', path: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
@@ -3534,7 +3537,9 @@ var RUNNER_HOME_TILES = [
   { label: 'Runner Request',     swatch: 'ts-navy', path: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4',
     action: function(){ openFormOverlay('materialrequest-overlay'); } },
   { label: 'Material Inventory', swatch: 'ts-teal', path: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4',
-    action: function(){ showOtherPanel('material-inventory'); } }
+    action: function(){ showOtherPanel('material-inventory'); } },
+  { label: 'Credit Card',        swatch: 'ts-amber', path: 'M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z',
+    action: function(){ openFormOverlay('creditcard-overlay'); } }
 ];
 
 function renderRunnerHomeQuickActions() {
@@ -4352,6 +4357,58 @@ function submitOfficeNote() {
 }
 
 // ── Receive PO ────────────────────────────────────────────────────────────────
+// Full PO search on the Receive form -- lets anyone (runner included) find
+// a PO by number, job, vendor, builder/contractor, invoice #, or notes
+// instead of needing the exact PO number. Mirrors the fuzzySearch pattern
+// used by runSearch()/runSMHomeSearch().
+function rPoSearch(q) {
+  var dd = document.getElementById('r-ponum-dropdown');
+  if (!dd) return;
+  q = (q || '').trim();
+  if (!q) { dd.style.display = 'none'; dd.innerHTML = ''; return; }
+
+  var results = fuzzySearch(G.pos || [], function(po) { return [
+    { text: (po.poNum || '').toLowerCase(), weight: 3 },
+    { text: (po.jobRef || '').toLowerCase(), weight: 2 },
+    { text: (po.vendor || '').toLowerCase(), weight: 2 },
+    { text: (po.builder || '').toLowerCase(), weight: 1.5 },
+    { text: (po.vendorInvoice || '').toLowerCase(), weight: 1 },
+    { text: (po.notes || '').toLowerCase(), weight: 1 }
+  ]; }, q, { limit: 8 });
+
+  dd.innerHTML = '';
+  if (!results.length) {
+    dd.innerHTML = '<div style="padding:12px 14px;font-size:13px;color:var(--c-ink-soft)">No matching POs</div>';
+    dd.style.display = '';
+    return;
+  }
+  results.forEach(function(po) {
+    var d = document.createElement('div');
+    d.style.cssText = 'padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--c-border-soft)';
+    d.innerHTML =
+      '<div style="font-size:14px;font-weight:700;color:var(--c-navy)">'+esc(po.poNum||'—')+'</div>' +
+      '<div style="font-size:12px;color:var(--c-ink-soft);margin-top:2px">'+esc(po.jobRef||'—')+' · '+esc(po.vendor||'—')+(po.builder?' · '+esc(po.builder):'')+'</div>';
+    d.addEventListener('mousedown', function(e) { e.preventDefault(); selectRPoSearchResult(po.poNum); });
+    d.addEventListener('touchend',  function(e) { e.preventDefault(); selectRPoSearchResult(po.poNum); });
+    dd.appendChild(d);
+  });
+  dd.style.display = '';
+}
+
+var rPoSearchDebounced = debounce(function(v) { rPoSearch(v); }, 150);
+
+function hideRPoDropdown() {
+  var dd = document.getElementById('r-ponum-dropdown');
+  if (dd) dd.style.display = 'none';
+}
+
+function selectRPoSearchResult(poNum) {
+  var el = document.getElementById('r-ponum');
+  if (el) el.value = poNum;
+  hideRPoDropdown();
+  lookupPO();
+}
+
 function lookupPO() {
   var poNum = trim('r-ponum');
   if (!poNum) { showToast('Enter a PO number first'); return; }
