@@ -654,6 +654,21 @@
     </div>
   </div>
 
+  <!-- ══ OFFICE HOME (office-only, pure role) ══
+       Purchasing Dashboard: office's own landing screen, mirroring the
+       Runner/Site Manager rollout above. Unlike Site Manager, Office keeps
+       full access to Other (already gated per-tile there, nothing to hide)
+       so there's no separate "officemore" tab -- nav-other stays pointed at
+       the shared tab-other. Only Dashboard (-> officehome) and Log
+       (-> dashboard, relabeled "Purchasing") get repointed; see applyRole(). -->
+  <div class="tab" id="tab-officehome">
+    <div class="card" id="office-home-greeting-card">
+      <div id="office-home-greeting" style="font-size:19px;font-weight:700;color:var(--c-navy)"></div>
+    </div>
+
+    <div class="tile-grid" id="office-home-quick-actions" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px"></div>
+  </div>
+
   <!-- ══ DASHBOARD ══ -->
   <div class="tab active" id="tab-dashboard">
     <!-- Search bar lives here now -->
@@ -859,44 +874,12 @@
       </div>
     </div>
 
-    <div id="receive-quick-tiles" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 0 16px">
-
-      <div class="tile" onclick="openQualityCheck()">
-        <span class="tile-swatch ts-teal"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></span>
-        <span class="tile-label">Quality Check</span>
-      </div>
-
-      <div class="tile" onclick="openFormOverlay('cleanup-overlay')">
-        <span class="tile-swatch ts-navy"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg></span>
-        <span class="tile-label">Runner Cleanup Log</span>
-      </div>
-
-      <div class="tile" onclick="openOfficeNotes()">
-        <span class="tile-swatch ts-navy"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></span>
-        <span class="tile-label">Office Notes</span>
-      </div>
-
-      <div class="tile" onclick="openFormOverlay('reimbursement-overlay')">
-        <span class="tile-swatch ts-amber"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/></svg></span>
-        <span class="tile-label">Reimbursement</span>
-      </div>
-
-      <div class="tile" onclick="openFormOverlay('creditcard-overlay')">
-        <span class="tile-swatch ts-amber"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg></span>
-        <span class="tile-label">Credit Card</span>
-      </div>
-
-      <div class="tile" onclick="openFormOverlay('materialrequest-overlay')">
-        <span class="tile-swatch ts-navy"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg></span>
-        <span class="tile-label">Runner Request</span>
-      </div>
-
-    </div>
-
-    <!-- Runner-only: replaces the tile grid above (those are already Home
-         quick-actions for Runner) with a quick-pick list of recent POs, so
-         Runner can tap straight into receiving one instead of typing a PO
-         number every time. -->
+    <!-- Runner-only: quick-pick list of recent POs so Runner can tap
+         straight into receiving one instead of typing a PO number every
+         time. Quality Check/Cleanup Log/Office Notes/Reimbursement/Credit
+         Card/Runner Request used to have a tile grid here too, but it moved
+         to the Other tab (see other-card-quality-check etc.) to keep this
+         tab focused on just receiving a PO. -->
     <div class="card" id="receive-recent-pos-card" style="display:none">
       <div class="card-title">Recent Orders</div>
       <div id="receive-recent-pos-list"></div>
@@ -973,6 +956,40 @@
         <div id="other-card-new-project" class="tile" onclick="showOtherPanel('new-project')">
           <span class="tile-swatch ts-solid"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg></span>
           <span class="tile-label">New Project</span>
+        </div>
+
+        <!-- Moved here from the Log tab's quick-tile grid, which now shows
+             just the Receive PO form -- see applyRole()'s sd() calls for
+             the p.canReceivePO gating that matches who could reach them
+             there before. -->
+        <div id="other-card-quality-check" class="tile" onclick="openQualityCheck()">
+          <span class="tile-swatch ts-teal"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></span>
+          <span class="tile-label">Quality Check</span>
+        </div>
+
+        <div id="other-card-cleanup-log" class="tile" onclick="openFormOverlay('cleanup-overlay')">
+          <span class="tile-swatch ts-navy"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg></span>
+          <span class="tile-label">Runner Cleanup Log</span>
+        </div>
+
+        <div id="other-card-office-notes" class="tile" onclick="openOfficeNotes()">
+          <span class="tile-swatch ts-navy"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></span>
+          <span class="tile-label">Office Notes</span>
+        </div>
+
+        <div id="other-card-reimbursement" class="tile" onclick="openFormOverlay('reimbursement-overlay')">
+          <span class="tile-swatch ts-amber"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/></svg></span>
+          <span class="tile-label">Reimbursement</span>
+        </div>
+
+        <div id="other-card-credit-card" class="tile" onclick="openFormOverlay('creditcard-overlay')">
+          <span class="tile-swatch ts-amber"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg></span>
+          <span class="tile-label">Credit Card</span>
+        </div>
+
+        <div id="other-card-runner-request" class="tile" onclick="openFormOverlay('materialrequest-overlay')">
+          <span class="tile-swatch ts-navy"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg></span>
+          <span class="tile-label">Runner Request</span>
         </div>
 
       </div>
@@ -3038,6 +3055,7 @@ function applyRole(role) {
   var _roleTokensRaw = roleTokens(role);
   G.isRunnerHome = _roleTokensRaw.length === 1 && _roleTokensRaw[0] === 'runner';
   G.isSiteManagerHome = _roleTokensRaw.length === 1 && _roleTokensRaw[0] === 'site_manager';
+  G.isOfficeHome = _roleTokensRaw.length === 1 && _roleTokensRaw[0] === 'office';
 
   // Show/hide nav buttons (null-safe in case elements aren't in the deployed version yet)
   function sd(id, show) { var el = document.getElementById(id); if (el) el.style.display = show ? '' : 'none'; }
@@ -3056,18 +3074,24 @@ function applyRole(role) {
   sd('other-card-material-report', has(['admin', 'office']));
   sd('other-card-material-inventory', has(['admin', 'office', 'site_manager', 'runner']));
   sd('other-card-inventory', has(['admin', 'office']));
+  // Moved here from the Log tab's quick-tile grid -- gated by canReceivePO
+  // (not HR-only) to match who could reach them there before the move.
+  sd('other-card-quality-check', p.canReceivePO);
+  sd('other-card-cleanup-log',   p.canReceivePO);
+  sd('other-card-office-notes',  p.canReceivePO);
+  sd('other-card-reimbursement', p.canReceivePO);
+  sd('other-card-credit-card',   p.canReceivePO);
+  sd('other-card-runner-request', p.canReceivePO);
   sd('other-card-sop', false);
   sd('other-card-emp-mgr',      has(['admin', 'human_resources']));
   sd('other-card-pto-overview',  has(['admin', 'human_resources']));
   sd('other-card-payroll',       has(['admin', 'human_resources']));
   sd('other-card-new-project',   p.canCreate);
   sd('receive-po-card', p.canReceivePO);
-  // Runner reaches Receive PO from its own Home tile, where Quality
-  // Check/Cleanup Log/etc already have their own tiles -- swap the tile
-  // grid for a quick-pick list of recent orders instead. Both re-evaluate
-  // every applyRole() call (not just inside the isRunnerHome block below)
-  // so they reset correctly for every other role too.
-  sd('receive-quick-tiles', !G.isRunnerHome);
+  // Runner reaches Receive PO from its own Home tile -- show a quick-pick
+  // list of recent orders on this tab instead for them. Re-evaluated every
+  // applyRole() call (not just inside the isRunnerHome block below) so it
+  // resets correctly for every other role too.
   sd('receive-recent-pos-card', G.isRunnerHome);
   // Clock-in only applies to Runner, and Runner's copy now lives on Home
   // (see tab-runnerhome) -- the Account tab's copy is retired for everyone.
@@ -3152,6 +3176,22 @@ function applyRole(role) {
     if (smNavOtherLabel) smNavOtherLabel.textContent = 'More';
   }
 
+  // Office-only rollout: same Purchasing-relabeled Log as aidan/site_manager
+  // (repoints to the unchanged tab-dashboard PO board), but Office keeps its
+  // Receive PO access -- via a Home quick-action tile instead of the Log nav
+  // slot -- and keeps the shared tab-other as-is for Other/More (it's
+  // already gated per-tile for office, so there's no separate "officemore"
+  // tab like site_manager needed).
+  if (G.isOfficeHome) {
+    var ofNavDashBtn = document.getElementById('nav-dashboard');
+    if (ofNavDashBtn) ofNavDashBtn.setAttribute('onclick', "showTab('officehome',this)");
+
+    var ofNavReceiveBtn = document.getElementById('nav-receive');
+    if (ofNavReceiveBtn) ofNavReceiveBtn.setAttribute('onclick', "showTab('dashboard',this)");
+    var ofNavReceiveLabel = document.getElementById('nav-receive-label');
+    if (ofNavReceiveLabel) ofNavReceiveLabel.textContent = 'Purchasing';
+  }
+
   // Runner-only rollout: Runner's whole feature set (Receive PO, Quality
   // Check, Cleanup Log, Runner Request, Material Inventory) becomes quick-
   // action tiles on one Home screen, reached via the nav-dashboard slot
@@ -3186,6 +3226,8 @@ function applyRole(role) {
     showTabDirect('runnerhome', document.getElementById('nav-dashboard'));
   } else if (G.isSiteManagerHome) {
     showTabDirect('sitemanagerhome', document.getElementById('nav-dashboard'));
+  } else if (G.isOfficeHome) {
+    showTabDirect('officehome', document.getElementById('nav-dashboard'));
   } else if (!p.canDash && p.canReceive) {
     showTabDirect('receive', document.getElementById('nav-receive'));
   } else if (!p.canDash && !p.canReceive) {
@@ -3212,6 +3254,7 @@ function showTabDirect(name, btn) {
   if (name === 'runnerhome') initRunnerHomeTab();
   if (name === 'receive' && G.isRunnerHome) renderReceiveRecentPOs();
   if (name === 'sitemanagerhome') initSiteManagerHomeTab();
+  if (name === 'officehome') initOfficeHomeTab();
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -3670,6 +3713,36 @@ function renderSMHomeQuickActions() {
 function initSiteManagerHomeTab() {
   renderHomeGreeting('sm-home-greeting');
   renderSMHomeQuickActions();
+}
+
+// ── Office Home (pure-office-only greeting/quick-actions screen) ──────────
+// Receive PO is the one thing Office loses a direct nav path to once Log
+// becomes "Purchasing" (see applyRole()'s isOfficeHome block), so it leads
+// the list here instead of only living inside Other.
+var OFFICE_HOME_TILES = [
+  { label: 'Receive PO',    swatch: 'ts-teal',  path: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
+    action: function(){ showTabDirect('receive', document.getElementById('nav-dashboard')); } },
+  { label: 'New PO',        swatch: 'ts-solid', path: 'M12 4v16m8-8H4',
+    action: function(){ showTabDirect('create', null); } },
+  { label: 'Quality Check', swatch: 'ts-teal',  path: 'M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11',
+    action: function(){ openQualityCheck(); } },
+  { label: 'Office Notes',  swatch: 'ts-navy',  path: 'M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z',
+    action: function(){ openOfficeNotes(); } }
+];
+
+function renderOfficeHomeQuickActions() {
+  var el = document.getElementById('office-home-quick-actions');
+  if (!el) return;
+  el.innerHTML = OFFICE_HOME_TILES.map(function(t, i) {
+    return '<div class="tile" onclick="OFFICE_HOME_TILES['+i+'].action()">' +
+      '<span class="tile-swatch '+t.swatch+'"><svg width="20" height="20" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="'+t.path+'"/></svg></span>' +
+      '<span class="tile-label">'+esc(t.label)+'</span></div>';
+  }).join('');
+}
+
+function initOfficeHomeTab() {
+  renderHomeGreeting('office-home-greeting');
+  renderOfficeHomeQuickActions();
 }
 
 // POs + Contacts search for Site Manager Home -- not Pricing though, since
@@ -5357,7 +5430,8 @@ function showTab(name, btn) {
     more:      !G.isAidan,
     runnerhome: !G.isRunnerHome,
     sitemanagerhome: !G.isSiteManagerHome,
-    sitemanagermore: !G.isSiteManagerHome
+    sitemanagermore: !G.isSiteManagerHome,
+    officehome: !G.isOfficeHome
   };
   if (blocked[name]) { showToast("You don't have access to that."); return; }
   showTabDirect(name, btn);
@@ -10552,7 +10626,7 @@ window.addEventListener('popstate', function(e) {
   var state = e.state;
   if (!state) {
     // No state — we're at the very start; just re-push so app stays open
-    history.pushState({ view: 'tab', tab: (G.isAidan ? 'home' : (G.isRunnerHome ? 'runnerhome' : (G.isSiteManagerHome ? 'sitemanagerhome' : 'dashboard'))) }, '');
+    history.pushState({ view: 'tab', tab: (G.isAidan ? 'home' : (G.isRunnerHome ? 'runnerhome' : (G.isSiteManagerHome ? 'sitemanagerhome' : (G.isOfficeHome ? 'officehome' : 'dashboard')))) }, '');
     _navPop = false;
     return;
   }
