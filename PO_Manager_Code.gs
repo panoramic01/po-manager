@@ -1632,7 +1632,8 @@ var QB_STAGING_SHEET = "QB Invoice Staging";
 var QB_STAGING_HEADERS = [
   'Staging Id', 'PO Number', 'Row Index', 'Status', 'Vendor', 'Vendor Invoice#',
   'Invoice File URL', 'Builder', 'Job Ref', 'QB Customer Id', 'QB Vendor Id',
-  'Line Items JSON', 'Invoice Total', 'Extracted At', 'Reviewed By', 'Approved At', 'QB Bill Id', 'Posted At'
+  'Line Items JSON', 'Invoice Total', 'Extracted At', 'Reviewed By', 'Approved At', 'QB Bill Id', 'Posted At',
+  'Extraction Method'
 ];
 var QB_STAGING_COL = {}; // 0-based index by header name, built once below
 QB_STAGING_HEADERS.forEach(function(h, i) { QB_STAGING_COL[h] = i; });
@@ -1658,7 +1659,8 @@ function stagingRowToObject_(row) {
     reviewedBy:     row[QB_STAGING_COL['Reviewed By']] || '',
     approvedAt:     row[QB_STAGING_COL['Approved At']] || '',
     qbBillId:       row[QB_STAGING_COL['QB Bill Id']] || '',
-    postedAt:       row[QB_STAGING_COL['Posted At']] || ''
+    postedAt:       row[QB_STAGING_COL['Posted At']] || '',
+    extractionMethod: row[QB_STAGING_COL['Extraction Method']] || ''
   };
 }
 
@@ -1666,7 +1668,8 @@ function stagingRowToObject_(row) {
  * Internal helper: appends a new Pending staging row. Called by
  * extractInvoiceLineItems (automatic, on upload) -- not exposed directly to
  * the client. fields: {poNumber, rowIndex, vendor, vendorInvoice,
- * invoiceFileUrl, builder, jobRef, qbCustomerId, qbVendorId, lineItems[]}.
+ * invoiceFileUrl, builder, jobRef, qbCustomerId, qbVendorId, lineItems[],
+ * extractionMethod: 'gemini'|'code-parser'|'manual'}.
  */
 function createStagingRow_(fields) {
   var sheet = ensureSheetWithHeaders_(QB_STAGING_SHEET, QB_STAGING_HEADERS);
@@ -1690,7 +1693,8 @@ function createStagingRow_(fields) {
     '',
     '',
     '',
-    ''
+    '',
+    fields.extractionMethod || ''
   ]);
   return stagingId;
 }
@@ -2123,6 +2127,105 @@ function parseTranscendingBarriersMetalInvoice_(lines) {
   return items;
 }
 
+// ─── Gemini AI invoice extraction (primary) ──────────────────────────────────
+// Primary extraction method for every vendor, including ones with a working
+// regex parser below -- Gemini's vision + structured-output handles messier
+// multi-row templates (Interstate Brick, LKL Associates) and scanned/photo
+// invoices (no text layer, so the regex parsers can never handle them) that
+// the deterministic parsers above can't. Requires a GEMINI_API_KEY Script
+// Property (Apps Script editor -> Project Settings -> Script Properties);
+// get a free key at aistudio.google.com. Any failure (missing key, non-2xx,
+// quota/429, malformed JSON, safety block, empty result) returns null
+// uniformly -- extractInvoiceLineItems falls back to INVOICE_PARSERS below,
+// then manual entry, exactly as it did before Gemini existed.
+var GEMINI_MODEL_ = 'gemini-3.6-flash';
+
+var GEMINI_LINE_ITEM_SCHEMA_ = {
+  type: 'object',
+  properties: {
+    lineItems: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          description: { type: 'string' },
+          qty:         { type: 'number' },
+          unit:        { type: 'string' },
+          rate:        { type: 'number' },
+          amount:      { type: 'number' },
+          lineType:    { type: 'string', enum: ['material', 'tax', 'freight'] }
+        },
+        required: ['description', 'amount', 'lineType']
+      }
+    }
+  },
+  required: ['lineItems']
+};
+
+/**
+ * Calls Gemini with the raw invoice file (PDF or photo) as inline data and
+ * asks for structured JSON line items in the same shape the regex parsers
+ * return: {description, qty, unit, rate, amount, lineType}. Returns an array
+ * on success, or null on ANY failure -- see section comment above.
+ */
+function callGeminiForInvoiceExtraction_(base64Data, mimeType, vendor) {
+  try {
+    var apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+    if (!apiKey) return null;
+
+    var prompt = 'This is a vendor invoice' + (vendor ? ' from ' + vendor : '') + '. ' +
+      'Extract every line item as JSON. For each: description (string), qty (number, ' +
+      'omit if not shown), unit (string, omit if not shown), rate (number, omit if not ' +
+      'shown), amount (number, required), lineType ("material" for products/services, ' +
+      '"tax" for sales tax lines, "freight" for shipping/delivery/freight charges). ' +
+      'Include footer tax and freight totals as their own line items. Do not include ' +
+      'subtotal or grand-total rows as line items.';
+
+    var resp = UrlFetchApp.fetch(
+      'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL_ + ':generateContent',
+      {
+        method: 'POST',
+        headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
+        payload: JSON.stringify({
+          contents: [{ parts: [
+            { text: prompt },
+            { inlineData: { mimeType: mimeType, data: base64Data } }
+          ] }],
+          generationConfig: {
+            responseMimeType: 'application/json',
+            responseSchema: GEMINI_LINE_ITEM_SCHEMA_
+          }
+        }),
+        muteHttpExceptions: true
+      }
+    );
+
+    if (resp.getResponseCode() !== 200) return null;
+    var raw = JSON.parse(resp.getContentText());
+    var textOut = raw.candidates && raw.candidates[0] && raw.candidates[0].content &&
+                  raw.candidates[0].content.parts && raw.candidates[0].content.parts[0] &&
+                  raw.candidates[0].content.parts[0].text;
+    if (!textOut) return null;
+    textOut = textOut.replace(/^```json\s*/m, '').replace(/^```\s*/m, '').replace(/```\s*$/m, '').trim();
+
+    var parsed = JSON.parse(textOut);
+    if (!parsed || !Array.isArray(parsed.lineItems) || !parsed.lineItems.length) return null;
+
+    return parsed.lineItems.map(function(li) {
+      return {
+        description: (li.description || '').toString(),
+        qty:      li.qty  !== undefined && li.qty  !== null && li.qty  !== '' ? parseFloat(li.qty)  : '',
+        unit:     (li.unit || '').toString(),
+        rate:     li.rate !== undefined && li.rate !== null && li.rate !== '' ? parseFloat(li.rate) : '',
+        amount:   parseFloat(li.amount) || 0,
+        lineType: ['material', 'tax', 'freight'].indexOf(li.lineType) !== -1 ? li.lineType : 'material'
+      };
+    });
+  } catch (e) {
+    return null;
+  }
+}
+
 /**
  * Leak Tech Technologies: "Description QTY RATE AMOUNT[T]", same trailing
  * shape as Timberline. The description here is a short bold label ("Step
@@ -2150,7 +2253,11 @@ var INVOICE_PARSERS = {
 /**
  * Extracts line items from an already-uploaded invoice PDF and stages them
  * for review. payload: {poNumber, rowIndex, vendor, vendorInvoice,
- * invoiceFileUrl, builder, jobRef, invoiceLines: string[], invoiceTotal}.
+ * invoiceFileUrl, builder, jobRef, invoiceLines: string[], invoiceTotal,
+ * base64Data, mimeType}. Tries Gemini first (base64Data/mimeType of the raw
+ * file, works for PDFs and photos alike), falls back to INVOICE_PARSERS
+ * (invoiceLines, PDF-only), then empty/manual entry -- see
+ * callGeminiForInvoiceExtraction_ above for the Gemini failure contract.
  * Broad role gate (matches who can upload an invoice at all) since this
  * only stages data -- it never touches QuickBooks. Blocks re-extraction if
  * this PO+Vendor Invoice# was already posted, per the locked decision.
@@ -2175,13 +2282,22 @@ function extractInvoiceLineItems(payload) {
     }
 
     var lineItems = [];
-    var parser = INVOICE_PARSERS[vendor];
-    if (parser && invoiceLines.length) {
-      try {
-        var parsed = parser(invoiceLines, payload.invoiceTotal);
-        if (parsed && parsed.length) lineItems = parsed;
-      } catch (parseErr) {
-        lineItems = []; // parser failure -> manual entry, never a half-guessed result
+    var extractionMethod = 'manual';
+
+    if (payload.base64Data && payload.mimeType) {
+      var geminiResult = callGeminiForInvoiceExtraction_(payload.base64Data, payload.mimeType, vendor);
+      if (geminiResult) { lineItems = geminiResult; extractionMethod = 'gemini'; }
+    }
+
+    if (!lineItems.length) {
+      var parser = INVOICE_PARSERS[vendor];
+      if (parser && invoiceLines.length) {
+        try {
+          var parsed = parser(invoiceLines, payload.invoiceTotal);
+          if (parsed && parsed.length) { lineItems = parsed; extractionMethod = 'code-parser'; }
+        } catch (parseErr) {
+          lineItems = []; // parser failure -> manual entry, never a half-guessed result
+        }
       }
     }
 
@@ -2207,12 +2323,13 @@ function extractInvoiceLineItems(payload) {
       qbCustomerId: customerLookup.qbCustomerId || '',
       qbVendorId: vendorLookup.qbVendorId || '',
       lineItems: lineItems,
-      invoiceTotal: invoiceTotal
+      invoiceTotal: invoiceTotal,
+      extractionMethod: extractionMethod
     });
 
     return {
       success: true, stagingId: stagingId, lineItems: lineItems, vendorInvoice: vendorInvoice, invoiceTotal: invoiceTotal,
-      needsManualEntry: lineItems.length === 0,
+      needsManualEntry: lineItems.length === 0, extractionMethod: extractionMethod,
       customerMatched: customerLookup.matched, vendorMatched: vendorLookup.matched
     };
   } catch (e) {

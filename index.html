@@ -7506,39 +7506,40 @@ function irUploadInvoiceForPO(file) {
   statusEl.textContent = 'Uploading…';
   var ctx = G_ir.poContext;
   readAndCompressFile(file, function(dataUrl, mimeType) {
+    var base64Data = dataUrl.split(',')[1];
     var ext = mimeType === 'image/jpeg' ? 'jpg' : (file.name.split('.').pop() || 'bin');
     var filename = buildDocFileName('Invoice', ctx.vendor, ctx.poNumber, ext);
     gasCall('savePhotoToDrive', {
-      base64Data: dataUrl.split(',')[1], mimeType: mimeType, filename: filename,
+      base64Data: base64Data, mimeType: mimeType, filename: filename,
       builder: ctx.builder, jobRef: ctx.jobRef, docType: 'invoice'
     }, function(res) {
       if (!res.success) { statusEl.textContent = friendlyServerError(res.error); return; }
       if (!/\.pdf$/i.test(file.name || '')) {
-        // Scanned/photo invoice -- no text layer to extract from. Stage it
-        // with zero line items so the reviewer lands straight on manual entry.
-        statusEl.textContent = "Uploaded. Not a PDF, so line items need to be entered manually.";
-        irExtractAndShow(ctx, res.url, []);
+        // Scanned/photo invoice -- no text layer for the regex-parser fallback,
+        // but the raw bytes still go to Gemini for a real vision extraction.
+        statusEl.textContent = 'Uploaded. Reading invoice…';
+        irExtractAndShow(ctx, res.url, [], base64Data, mimeType);
         return;
       }
       statusEl.textContent = 'Reading invoice…';
       qbExtractInvoiceLines(file, function(lines) {
-        irExtractAndShow(ctx, res.url, lines);
+        irExtractAndShow(ctx, res.url, lines, base64Data, mimeType);
       });
     }, function(err) { statusEl.textContent = friendlyUploadError(err); });
   }, function() { statusEl.textContent = 'Could not read file — try a different one'; });
 }
 
-function irExtractAndShow(ctx, invoiceFileUrl, invoiceLines) {
+function irExtractAndShow(ctx, invoiceFileUrl, invoiceLines, base64Data, mimeType) {
   var statusEl = document.getElementById('ir-upload-status');
   gasCall('extractInvoiceLineItems', {
     poNumber: ctx.poNumber, rowIndex: ctx.rowIndex, vendor: ctx.vendor,
     invoiceFileUrl: invoiceFileUrl, builder: ctx.builder, jobRef: ctx.jobRef,
-    invoiceLines: invoiceLines
+    invoiceLines: invoiceLines, base64Data: base64Data, mimeType: mimeType
   }, function(res) {
     if (res && res.blocked) { statusEl.textContent = res.error; return; }
     if (!res || !res.success) { statusEl.textContent = (res && res.error) || 'Extraction failed'; return; }
     irOpenDetail(res.stagingId);
-  }, function(err) { statusEl.textContent = friendlyUploadError(err); }, { timeoutMs: 30000 });
+  }, function(err) { statusEl.textContent = friendlyUploadError(err); }, { timeoutMs: 45000 });
 }
 
 function irOpenDetail(stagingId) {
@@ -7561,7 +7562,12 @@ function irOpenDetail(stagingId) {
       '<div><b>Job:</b> ' + esc(row.builder) + ' / ' + esc(row.jobRef) + '</div>' +
       '<div><b>QB Customer Id:</b> ' + (row.qbCustomerId ? esc(row.qbCustomerId) : '<span style="color:var(--c-danger)">not linked — add to Projects sheet</span>') + '</div>' +
       '<div><b>QB Vendor Id:</b> ' + (row.qbVendorId ? esc(row.qbVendorId) : '<span style="color:var(--c-danger)">not linked — add to QB Vendor Map</span>') + '</div>' +
-      (row.invoiceFileUrl ? '<div><a href="' + esc(row.invoiceFileUrl) + '" target="_blank" rel="noopener">View invoice file</a></div>' : '');
+      (row.invoiceFileUrl ? '<div><a href="' + esc(row.invoiceFileUrl) + '" target="_blank" rel="noopener">View invoice file</a></div>' : '') +
+      (row.extractionMethod ? '<div><b>Extraction:</b> ' + (
+        row.extractionMethod === 'gemini' ? 'Gemini AI' :
+        row.extractionMethod === 'code-parser' ? 'Code parser (Gemini unavailable)' :
+        'Manual entry'
+      ) + '</div>' : '');
     document.getElementById('ir-vendor-invoice').value = row.vendorInvoice || '';
     irRenderLineRows();
     var billBtn = document.getElementById('ir-create-bill-btn');
