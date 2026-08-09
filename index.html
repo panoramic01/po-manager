@@ -1121,7 +1121,7 @@
 
       <div style="padding:16px">
         <div style="background:var(--c-surface);border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08)">
-          <div style="font-size:11px;font-weight:700;color:var(--c-ink-soft);text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px">Sandbox connection</div>
+          <div id="qbo-env-label" style="font-size:11px;font-weight:700;color:var(--c-ink-soft);text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px">Connection</div>
           <div id="qbo-status" style="font-size:14px;margin-bottom:14px">Checking connection…</div>
           <button id="qbo-connect-btn" onclick="connectQuickBooks()" style="display:none;width:100%;background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:8px">Connect QuickBooks</button>
           <div id="qbo-test-row" style="display:none;gap:8px;margin-bottom:8px">
@@ -7447,7 +7447,7 @@ function showOtherHome() {
 }
 
 
-// ── QuickBooks (sandbox, read-only) ─────────────────────────────────────────
+// ── QuickBooks (environment set via QBO_ENVIRONMENT Script Property) ─────────
 function loadQuickBooksPanel() {
   var statusEl = document.getElementById('qbo-status');
   var outEl = document.getElementById('qbo-output');
@@ -7455,14 +7455,17 @@ function loadQuickBooksPanel() {
   outEl.textContent = '';
   gasCall('getQuickBooksStatus', {}, function(res) {
     if (res.error) { statusEl.textContent = 'Error: ' + res.error; return; }
-    renderQBOStatus(res.connected, res.realmId);
+    renderQBOStatus(res.connected, res.realmId, res.environment);
   }, function(err) { statusEl.textContent = 'Error: ' + friendlyUploadError(err); });
 }
 
-function renderQBOStatus(connected, realmId) {
+function renderQBOStatus(connected, realmId, environment) {
+  var envLabel = environment === 'production' ? 'Production' : 'Sandbox';
+  var envLabelEl = document.getElementById('qbo-env-label');
+  if (envLabelEl) envLabelEl.textContent = envLabel + ' connection';
   var statusEl = document.getElementById('qbo-status');
   statusEl.innerHTML = connected
-    ? '<span style="color:var(--bd-green-fg);font-weight:700">Connected</span>' + (realmId ? ' · Sandbox company ' + esc(realmId) : '')
+    ? '<span style="color:var(--bd-green-fg);font-weight:700">Connected</span>' + (realmId ? ' · ' + envLabel + ' company ' + esc(realmId) : '')
     : '<span style="color:var(--c-danger);font-weight:700">Not connected</span>';
   document.getElementById('qbo-connect-btn').style.display = connected ? 'none' : '';
   document.getElementById('qbo-test-row').style.display = connected ? 'flex' : 'none';

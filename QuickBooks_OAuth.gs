@@ -61,22 +61,45 @@ function getQuickBooksAuthorizationUrl(payload) {
   return { success: true, url: getQuickBooksService_().getAuthorizationUrl() };
 }
 
+function qboEscHtml_(s) {
+  return (s || '').toString()
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 /**
  * Invoked directly by the Apps Script platform's built-in OAuth2 callback
  * endpoint (https://script.google.com/macros/d/{scriptId}/usercallback) -
  * this bypasses doGet() entirely, which is the OAuth2 library's normal,
  * documented usage. Do not try to route this through doGet().
+ *
+ * handleCallback() throws (rather than returning false) when the token
+ * exchange itself fails (e.g. invalid_client) -- previously uncaught, which
+ * crashed straight to Apps Script's generic error page (no real message,
+ * and no way to reset the half-completed OAuth2 library state short of a
+ * successful Disconnect, which never shows because status never reached
+ * "connected"). Catching it surfaces the actual error Intuit returned and
+ * resets the service so the next Connect attempt starts clean.
  */
 function quickbooksAuthCallback_(e) {
   var service = getQuickBooksService_();
-  var isAuthorized = service.handleCallback(e);
-  if (isAuthorized && e.parameter.realmId) {
-    PropertiesService.getScriptProperties().setProperty('QBO_REALM_ID', e.parameter.realmId);
+  try {
+    var isAuthorized = service.handleCallback(e);
+    if (isAuthorized && e.parameter.realmId) {
+      PropertiesService.getScriptProperties().setProperty('QBO_REALM_ID', e.parameter.realmId);
+    }
+    var message = isAuthorized
+      ? 'QuickBooks connected. You can close this tab and return to the app.'
+      : 'QuickBooks authorization failed or was denied. You can close this tab and try again.';
+    return HtmlService.createHtmlOutput('<p style="font-family:sans-serif;padding:24px">' + message + '</p>');
+  } catch (err) {
+    service.reset();
+    return HtmlService.createHtmlOutput(
+      '<p style="font-family:sans-serif;padding:24px">QuickBooks connection failed:<br>' +
+      '<code style="white-space:pre-wrap">' + qboEscHtml_(err && err.message) + '</code>' +
+      '<br><br>You can close this tab and try again.</p>'
+    );
   }
-  var message = isAuthorized
-    ? 'QuickBooks connected. You can close this tab and return to the app.'
-    : 'QuickBooks authorization failed or was denied. You can close this tab and try again.';
-  return HtmlService.createHtmlOutput('<p style="font-family:sans-serif;padding:24px">' + message + '</p>');
 }
 
 function getQuickBooksStatus(payload) {
@@ -84,7 +107,8 @@ function getQuickBooksStatus(payload) {
   if (!auth.ok) return { error: auth.error, code: auth.code };
   var connected = getQuickBooksService_().hasAccess();
   var realmId = PropertiesService.getScriptProperties().getProperty('QBO_REALM_ID') || '';
-  return { success: true, connected: connected, realmId: realmId };
+  var env = (PropertiesService.getScriptProperties().getProperty('QBO_ENVIRONMENT') || '').toLowerCase() === 'production' ? 'production' : 'sandbox';
+  return { success: true, connected: connected, realmId: realmId, environment: env };
 }
 
 function disconnectQuickBooks(payload) {
