@@ -1680,14 +1680,21 @@ function stagingRowToObject_(row) {
     invoiceFileUrl: row[QB_STAGING_COL['Invoice File URL']] || '',
     builder:        row[QB_STAGING_COL['Builder']] || '',
     jobRef:         row[QB_STAGING_COL['Job Ref']] || '',
-    qbCustomerId:   row[QB_STAGING_COL['QB Customer Id']] || '',
-    qbVendorId:     row[QB_STAGING_COL['QB Vendor Id']] || '',
+    // .toString() here matters: Google Sheets stores a numeric-looking value
+    // (e.g. a QBO Customer/Vendor/Bill Id like "799729352") as a Number cell
+    // regardless of how it was written, so getValues() hands these back as
+    // JS numbers. Left uncoerced, JSON.stringify(CustomerRef: {value: ...})
+    // in createQuickBooksBill sends a bare JSON number where QBO's API
+    // schema requires a string -- producing a confusing "element id not
+    // found" fault even when the id itself is completely correct.
+    qbCustomerId:   (row[QB_STAGING_COL['QB Customer Id']] || '').toString(),
+    qbVendorId:     (row[QB_STAGING_COL['QB Vendor Id']] || '').toString(),
     lineItems:      lineItems,
     invoiceTotal:   row[QB_STAGING_COL['Invoice Total']] || '',
     extractedAt:    row[QB_STAGING_COL['Extracted At']] || '',
     reviewedBy:     row[QB_STAGING_COL['Reviewed By']] || '',
     approvedAt:     row[QB_STAGING_COL['Approved At']] || '',
-    qbBillId:       row[QB_STAGING_COL['QB Bill Id']] || '',
+    qbBillId:       (row[QB_STAGING_COL['QB Bill Id']] || '').toString(),
     postedAt:       row[QB_STAGING_COL['Posted At']] || '',
     extractionMethod: row[QB_STAGING_COL['Extraction Method']] || ''
   };
