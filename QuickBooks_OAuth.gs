@@ -15,6 +15,13 @@
  */
 
 var QBO_SANDBOX_BASE_URL = 'https://sandbox-quickbooks.api.intuit.com';
+var QBO_PRODUCTION_BASE_URL = 'https://quickbooks.api.intuit.com';
+
+/** Reads the QBO_ENVIRONMENT script property ('production' | anything else = sandbox, the safe default). */
+function getQuickBooksBaseUrl_() {
+  var env = (PropertiesService.getScriptProperties().getProperty('QBO_ENVIRONMENT') || '').toLowerCase();
+  return env === 'production' ? QBO_PRODUCTION_BASE_URL : QBO_SANDBOX_BASE_URL;
+}
 
 /** Owner-only gate (same convention as the push-notifications admin card): admin role AND owner email. */
 function authorizeQuickBooksOwner_(payload) {
@@ -97,7 +104,7 @@ function quickbooksApiGet_(path) {
   if (!realmId) {
     return { success: false, error: 'Missing QuickBooks company (realm) id - reconnect QuickBooks.' };
   }
-  var url = QBO_SANDBOX_BASE_URL + '/v3/company/' + realmId + path;
+  var url = getQuickBooksBaseUrl_() + '/v3/company/' + realmId + path;
   var response = UrlFetchApp.fetch(url, {
     headers: {
       Authorization: 'Bearer ' + service.getAccessToken(),
@@ -109,6 +116,47 @@ function quickbooksApiGet_(path) {
   var body = response.getContentText();
   if (code !== 200) {
     return { success: false, error: 'QuickBooks API error ' + code + ': ' + body };
+  }
+  return { success: true, data: JSON.parse(body) };
+}
+
+/** Parses QBO's error body shape ({Fault:{Error:[{Message, Detail}]}}) into a single readable string, falling back to the raw body. */
+function qboParseErrorBody_(body) {
+  try {
+    var parsed = JSON.parse(body);
+    var errs = parsed.Fault && parsed.Fault.Error;
+    if (errs && errs.length) {
+      return errs.map(function(e) { return e.Message + (e.Detail ? ' -- ' + e.Detail : ''); }).join('; ');
+    }
+  } catch (e) { /* not JSON, or not QBO's Fault shape -- fall through */ }
+  return body;
+}
+
+/** Same auth/realm handling as quickbooksApiGet_, but POST with a JSON body -- the write counterpart. */
+function quickbooksApiPost_(path, bodyObj) {
+  var service = getQuickBooksService_();
+  if (!service.hasAccess()) {
+    return { success: false, error: 'QuickBooks is not connected yet.' };
+  }
+  var realmId = PropertiesService.getScriptProperties().getProperty('QBO_REALM_ID');
+  if (!realmId) {
+    return { success: false, error: 'Missing QuickBooks company (realm) id - reconnect QuickBooks.' };
+  }
+  var url = getQuickBooksBaseUrl_() + '/v3/company/' + realmId + path;
+  var response = UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(bodyObj),
+    headers: {
+      Authorization: 'Bearer ' + service.getAccessToken(),
+      Accept: 'application/json'
+    },
+    muteHttpExceptions: true
+  });
+  var code = response.getResponseCode();
+  var body = response.getContentText();
+  if (code < 200 || code >= 300) {
+    return { success: false, error: 'QuickBooks API error ' + code + ': ' + qboParseErrorBody_(body) };
   }
   return { success: true, data: JSON.parse(body) };
 }
@@ -127,4 +175,225 @@ function testQuickBooksVendors(payload) {
   var auth = authorizeQuickBooksOwner_(payload);
   if (!auth.ok) return { error: auth.error, code: auth.code };
   return quickbooksApiGet_('/query?query=' + encodeURIComponent('select Id, DisplayName from Vendor maxresults 20'));
+}
+
+// ─── QBO Item catalog (Products/Services) + deterministic matching ──────────
+var QBO_ITEM_CATALOG_CACHE_KEY = 'qbo_item_catalog_v1';
+var QBO_ITEM_CATALOG_CACHE_TTL_SEC = 21600; // 6h, CacheService's max -- refreshQuickBooksItemCatalog forces a refetch on demand
+
+/**
+ * Fetches the full active Item catalog (Categories + the normalized
+ * Products/Services nested under them, per the locked design) via the
+ * existing read-only quickbooksApiGet_, paginating past QBO's 1000-row
+ * MAXRESULTS cap if needed. Cached -- the review screen loads this on every
+ * open, and re-fetching per load would be wasteful for data that only
+ * changes when someone edits the QBO catalog.
+ */
+function getQuickBooksItemCatalog_() {
+  var cache = CacheService.getScriptCache();
+  try {
+    var cached = cache.get(QBO_ITEM_CATALOG_CACHE_KEY);
+    if (cached) return JSON.parse(cached);
+  } catch (e) { /* fall through and refetch */ }
+
+  var items = [];
+  var startPosition = 1;
+  var pageSize = 1000;
+  while (true) {
+    var query = "select Id, Name, Type, ParentRef, FullyQualifiedName, Active from Item where Active = true" +
+      " startposition " + startPosition + " maxresults " + pageSize;
+    var res = quickbooksApiGet_('/query?query=' + encodeURIComponent(query));
+    if (!res.success) return res; // surface the error as-is; nothing to cache
+
+    var page = (res.data && res.data.QueryResponse && res.data.QueryResponse.Item) || [];
+    items = items.concat(page.map(function(it) {
+      return {
+        id: it.Id,
+        name: it.Name,
+        fullyQualifiedName: it.FullyQualifiedName,
+        type: it.Type,
+        parentId: it.ParentRef ? it.ParentRef.value : null
+      };
+    }));
+    if (page.length < pageSize) break;
+    startPosition += pageSize;
+  }
+
+  var result = { success: true, items: items };
+  try { cache.put(QBO_ITEM_CATALOG_CACHE_KEY, JSON.stringify(result), QBO_ITEM_CATALOG_CACHE_TTL_SEC); } catch (e) { /* e.g. over 100KB -- fine, just skip caching this round */ }
+  return result;
+}
+
+/** Thin wrapper exposing a manual "refresh catalog" action to the reviewer (invalidate + refetch). */
+function refreshQuickBooksItemCatalog(payload) {
+  var auth = authorizeQuickBooksOwner_(payload);
+  if (!auth.ok) return { error: auth.error, code: auth.code };
+  try { CacheService.getScriptCache().remove(QBO_ITEM_CATALOG_CACHE_KEY); } catch (e) {}
+  return getQuickBooksItemCatalog_();
+}
+
+/** Client-facing: cached catalog fetch for populating the review screen's Item dropdown. */
+function getQuickBooksItemCatalogForReview(payload) {
+  var auth = authorizeQuickBooksOwner_(payload);
+  if (!auth.ok) return { error: auth.error, code: auth.code };
+  return getQuickBooksItemCatalog_();
+}
+
+/** Lowercases, strips punctuation, collapses whitespace, and normalizes common size notation so "8-inch"/"8 in"/"8\"" compare equal. */
+function qboNormalizeItemText_(s) {
+  return (s || '').toString().toLowerCase()
+    .replace(/(\d+)\s*(?:"|in\b|inch(?:es)?\b)/g, '$1in')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+/**
+ * Deterministic string matcher -- no AI/ML, per the locked "never guess"
+ * requirement; this needs to stay inspectable. Scores each catalog item by
+ * token-overlap ratio against the extracted description, with a bonus for
+ * one string containing the other. Returns the best match with its score,
+ * or null if nothing scores above MATCH_THRESHOLD -- callers treat that as
+ * "unmatched, flag for manual pairing."
+ */
+var QBO_MATCH_THRESHOLD = 0.55;
+
+function matchLineItemToQBOItem_(description, catalogItems) {
+  var wantNorm = qboNormalizeItemText_(description);
+  if (!wantNorm) return null;
+  var wantTokens = wantNorm.split(' ').filter(Boolean);
+
+  var best = null;
+  (catalogItems || []).forEach(function(item) {
+    // Only leaf Items are billable lines on a Bill -- QBO Categories
+    // (Type: 'Category') are parents for rollup reporting, not selectable
+    // as an ItemRef themselves.
+    if (item.type === 'Category') return;
+
+    var itemNorm = qboNormalizeItemText_(item.name);
+    var itemTokens = itemNorm.split(' ').filter(Boolean);
+    if (!itemTokens.length) return;
+
+    var overlap = wantTokens.filter(function(t) { return itemTokens.indexOf(t) !== -1; }).length;
+    var score = overlap / Math.max(wantTokens.length, itemTokens.length);
+    if (itemNorm && (wantNorm.indexOf(itemNorm) !== -1 || itemNorm.indexOf(wantNorm) !== -1)) {
+      score = Math.max(score, 0.75); // substring-containment bonus, e.g. "lp 8in lap siding" contains "8in lap siding"
+    }
+
+    if (!best || score > best.score) best = { item: item, score: score };
+  });
+
+  if (!best || best.score < QBO_MATCH_THRESHOLD) return null;
+  return { qboItemId: best.item.id, qboItemName: best.item.name, matchConfidence: Math.round(best.score * 100) / 100 };
+}
+
+/**
+ * Client-facing: matches a batch of line-item descriptions against the
+ * cached catalog in one round trip (used when the review screen opens a
+ * staging row). payload: {descriptions: string[]}. Returns one match (or
+ * null) per input description, same order. Skips matching for descriptions
+ * belonging to tax/freight lines -- callers should only pass material-line
+ * descriptions, since those map to fixed dedicated Items instead.
+ */
+function matchInvoiceLineItems(payload) {
+  var auth = authorizeQuickBooksOwner_(payload);
+  if (!auth.ok) return { error: auth.error, code: auth.code };
+
+  var catalogRes = getQuickBooksItemCatalog_();
+  if (!catalogRes.success) return { error: catalogRes.error || 'Could not load QuickBooks Item catalog' };
+
+  var descriptions = payload.descriptions || [];
+  var matches = descriptions.map(function(d) { return matchLineItemToQBOItem_(d, catalogRes.items); });
+  return { success: true, matches: matches };
+}
+
+// ─── QuickBooks Bill creation (write path) ───────────────────────────────────
+/**
+ * Creates a Bill in QuickBooks from an Approved staging row. Owner-gated,
+ * same as the rest of QuickBooks access -- Bill creation was explicitly
+ * kept owner-only rather than opened to admin/office, per the locked
+ * decision. Reloads the staging row server-side rather than trusting
+ * whatever line items the client submits, since this posts real financial
+ * data. Idempotent: a staging row that already has a QB Bill Id returns
+ * that Bill instead of posting again, covering retries/double-clicks.
+ */
+function createQuickBooksBill(payload) {
+  var auth = authorizeQuickBooksOwner_(payload);
+  if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
+
+  var stagingId = payload.stagingId;
+  if (!stagingId) return { success: false, error: 'Missing stagingId' };
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) return { success: false, error: 'Server is busy - try again in a moment.' };
+
+  try {
+    var sheet = ensureSheetWithHeaders_(QB_STAGING_SHEET, QB_STAGING_HEADERS);
+    var rowIdx = findStagingRowIndex_(sheet, stagingId);
+    if (rowIdx === -1) return { success: false, error: 'Staging row not found' };
+
+    var rowValues = sheet.getRange(rowIdx, 1, 1, QB_STAGING_HEADERS.length).getValues()[0];
+    var staging = stagingRowToObject_(rowValues);
+
+    // Idempotency: already posted, hand back the existing Bill rather than
+    // creating a duplicate. Covers a retried click or a repeated call.
+    if (staging.status === 'Posted' && staging.qbBillId) {
+      return { success: true, qbBillId: staging.qbBillId, alreadyPosted: true };
+    }
+    if (staging.status !== 'Approved') {
+      return { success: false, error: 'This invoice must be Approved before a Bill can be created (currently: ' + staging.status + ').' };
+    }
+    if (!staging.qbVendorId) {
+      return { success: false, error: 'No QuickBooks Vendor Id linked for "' + staging.vendor + '" -- add it in the QB Vendor Map before creating this Bill.' };
+    }
+    if (!staging.qbCustomerId) {
+      return { success: false, error: 'No QuickBooks Customer/Job Id linked for "' + staging.builder + ' / ' + staging.jobRef + '" -- add it to the Projects sheet before creating this Bill.' };
+    }
+
+    var billLines = [];
+    var missingItem = null;
+    (staging.lineItems || []).forEach(function(li) {
+      if (li.skip) return;
+      if (!li.qboItemId) { missingItem = li; return; }
+      billLines.push({
+        DetailType: 'ItemBasedExpenseLineDetail',
+        Amount: parseFloat(li.amount) || 0,
+        Description: li.description || '',
+        ItemBasedExpenseLineDetail: {
+          ItemRef: { value: li.qboItemId },
+          Qty: li.qty !== '' && li.qty != null ? parseFloat(li.qty) : undefined,
+          UnitPrice: li.rate !== '' && li.rate != null ? parseFloat(li.rate) : undefined,
+          CustomerRef: { value: staging.qbCustomerId }
+        }
+      });
+    });
+    if (missingItem) {
+      return { success: false, error: 'Line "' + (missingItem.description || '(no description)') + '" has no matched QuickBooks Item -- pair or skip it before approving/creating the Bill.' };
+    }
+    if (!billLines.length) {
+      return { success: false, error: 'No line items to bill (everything is skipped).' };
+    }
+
+    var billPayload = {
+      VendorRef: { value: staging.qbVendorId },
+      DocNumber: staging.vendorInvoice || undefined,
+      Line: billLines
+    };
+
+    var postRes = quickbooksApiPost_('/bill', billPayload);
+    if (!postRes.success) {
+      // Leave Status at 'Approved' (not reverted) so this can be fixed and retried without redoing the whole review.
+      return { success: false, error: postRes.error };
+    }
+
+    var qbBillId = postRes.data && postRes.data.Bill && postRes.data.Bill.Id;
+    sheet.getRange(rowIdx, QB_STAGING_COL['Status'] + 1).setValue('Posted');
+    sheet.getRange(rowIdx, QB_STAGING_COL['QB Bill Id'] + 1).setValue(qbBillId || '');
+    sheet.getRange(rowIdx, QB_STAGING_COL['Posted At'] + 1).setValue(new Date());
+
+    return { success: true, qbBillId: qbBillId };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  } finally {
+    lock.releaseLock();
+  }
 }

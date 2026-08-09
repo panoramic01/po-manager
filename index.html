@@ -989,6 +989,14 @@
           <span class="tile-swatch ts-solid"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg></span>
           <span class="tile-label">New Project</span>
         </div>
+        <div id="other-card-quickbooks" class="tile" onclick="showOtherPanel('quickbooks')">
+          <span class="tile-swatch ts-teal"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 7h6m-6 4h6m-6 4h4M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/></svg></span>
+          <span class="tile-label">QuickBooks</span>
+        </div>
+        <div id="other-card-invoice-review" class="tile" onclick="showOtherPanel('invoice-review')">
+          <span class="tile-swatch ts-teal"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5-1a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></span>
+          <span class="tile-label">Invoice Review</span>
+        </div>
       </div>
 
     </div>
@@ -1109,6 +1117,55 @@
           <button id="qbo-disconnect-btn" onclick="disconnectQuickBooksUI()" style="display:none;width:100%;background:none;color:var(--c-danger);border:1px solid var(--c-danger);border-radius:8px;padding:10px;font-size:12px;font-weight:600;cursor:pointer">Disconnect</button>
         </div>
         <pre id="qbo-output" style="white-space:pre-wrap;word-break:break-all;background:var(--c-surface);border-radius:12px;padding:14px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-top:12px;font-size:11px;color:var(--c-ink);max-height:400px;overflow:auto"></pre>
+      </div>
+    </div>
+
+    <!-- Invoice Review sub-panel -->
+    <div id="other-panel-invoice-review" style="display:none">
+      <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid var(--c-border-hair);background:var(--c-surface);position:sticky;top:0;z-index:1">
+        <button onclick="irBackToList()" style="background:none;border:none;font-size:14px;font-weight:600;color:var(--c-navy);cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
+        <span style="font-size:15px;font-weight:700;color:var(--c-navy);flex:1;margin-left:2px">Invoice Review</span>
+      </div>
+
+      <!-- List view: staging rows awaiting review -->
+      <div id="ir-list-view">
+        <div id="ir-loading" style="display:none"><div class="loading"><div class="spinner"></div><p>Loading staged invoices…</p></div></div>
+        <div id="ir-list" style="padding:12px 16px"></div>
+      </div>
+
+      <!-- Detail view: one staging row -->
+      <div id="ir-detail-view" style="display:none;padding:16px">
+        <div style="background:var(--c-surface);border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:12px">
+          <div id="ir-detail-header" style="font-size:13px;color:var(--c-ink-soft);line-height:1.6"></div>
+        </div>
+
+        <div style="background:var(--c-surface);border-radius:12px;padding:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:12px;overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:640px">
+            <thead>
+              <tr style="text-align:left;color:var(--c-ink-soft);font-weight:700;border-bottom:1.5px solid var(--c-border-hair)">
+                <th style="padding:6px 4px">Type</th>
+                <th style="padding:6px 4px">Description</th>
+                <th style="padding:6px 4px;width:70px">Qty</th>
+                <th style="padding:6px 4px;width:70px">Unit</th>
+                <th style="padding:6px 4px;width:90px">Rate</th>
+                <th style="padding:6px 4px;width:100px">Amount</th>
+                <th style="padding:6px 4px;width:160px">QB Item</th>
+                <th style="padding:6px 4px;width:32px"></th>
+              </tr>
+            </thead>
+            <tbody id="ir-line-rows"></tbody>
+          </table>
+          <button onclick="irAddLine()" style="margin-top:10px;background:var(--c-bg);color:var(--c-navy);border:1px solid var(--c-border);border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer">+ Add line</button>
+        </div>
+
+        <div id="ir-balance-check" style="font-size:12px;padding:10px 12px;border-radius:8px;margin-bottom:12px"></div>
+
+        <div style="display:flex;gap:8px">
+          <button onclick="irSaveDraft()" style="flex:1;background:var(--c-bg);color:var(--c-navy);border:1px solid var(--c-border);border-radius:8px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">Save Draft</button>
+          <button onclick="irApprove()" style="flex:1;background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">Approve</button>
+        </div>
+        <button id="ir-create-bill-btn" onclick="irCreateBill()" style="display:none;width:100%;margin-top:8px;background:var(--bd-green-fg);color:#fff;border:none;border-radius:8px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">Create Bill in QuickBooks</button>
+        <div id="ir-detail-status" style="font-size:12px;color:var(--c-ink-soft);margin-top:8px"></div>
       </div>
     </div>
 
@@ -3085,6 +3142,8 @@ function applyRole(role) {
   sd('other-card-pto-overview',  has(['admin', 'human_resources']));
   sd('other-card-payroll',       has(['admin', 'human_resources']));
   sd('other-card-new-project',   p.canCreate);
+  sd('other-card-quickbooks',    has(['aidan']));
+  sd('other-card-invoice-review', has(['aidan']));
   sd('receive-po-card', p.canReceivePO);
   // Runner reaches Receive PO from its own Home tile -- show a quick-pick
   // list of recent orders on this tab instead for them. Re-evaluated every
@@ -5060,6 +5119,20 @@ function submitCreateSubPO(parentPoNum) {
     setBtnState('sp-create-btn', 'Create Sub-PO', false);
     if (res.success) {
       G.subPoIdemKey = null;
+      if (G.pendingSubPOInvoiceExtraction) {
+        var ext = G.pendingSubPOInvoiceExtraction;
+        G.pendingSubPOInvoiceExtraction = null;
+        var subCtx = G.subPOContext || {};
+        gasCall('extractInvoiceLineItems', {
+          poNumber: res.poNumber, rowIndex: res.rowIndex, vendor: ext.vendor,
+          vendorInvoice: ext.vendorInvoice, invoiceFileUrl: ext.invoiceFileUrl,
+          builder: subCtx.builder || '', jobRef: subCtx.jobRef || '', invoiceTotal: ext.invoiceTotal,
+          invoiceLines: ext.invoiceLines
+        }, function(exRes) {
+          if (exRes && exRes.blocked) showToast(exRes.error);
+          else if (exRes && exRes.success) showToast((exRes.lineItems && exRes.lineItems.length ? exRes.lineItems.length + ' line item(s) extracted' : 'Invoice staged') + ' — review in Invoice Review');
+        }, function(err) { console.error('extractInvoiceLineItems failed:', err); }, { timeoutMs: 30000 });
+      }
       loadData();
       showToast('Created ' + res.poNumber);
       closePODetail();
@@ -5964,6 +6037,103 @@ function uploadIssuedFile(file) {
 }
 
 /**
+ * Extracts PDF text as visual lines (not a single flattened string) by
+ * clustering pdf.js text items on each page by y-position (rows) and
+ * ordering by x-position within a row. mrExtractPdfText (Material Report,
+ * used for its Claude-based extraction) intentionally flattens everything
+ * into one space-joined string per page, which throws away the row/column
+ * structure a deterministic per-vendor parser needs -- this is that,
+ * reconstructed. callback(lines: string[]) always fires, with [] on any
+ * failure (non-PDF, corrupt file, etc).
+ */
+function qbExtractInvoiceLines(file, callback) {
+  var ensureLib = function() {
+    return new Promise(function(resolve) {
+      if (window.pdfjsLib) return resolve();
+      var s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+      s.onload = function() {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+          'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        resolve();
+      };
+      document.head.appendChild(s);
+    });
+  };
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    ensureLib().then(function() {
+      pdfjsLib.getDocument({ data: new Uint8Array(e.target.result) }).promise.then(function(pdf) {
+        var pagesLines = [], total = pdf.numPages, done = 0;
+        for (var p = 1; p <= total; p++) {
+          (function(pg) {
+            pdf.getPage(pg).then(function(page) {
+              page.getTextContent().then(function(tc) {
+                pagesLines[pg - 1] = qbGroupTextItemsIntoLines_(tc.items);
+                if (++done === total) callback([].concat.apply([], pagesLines));
+              });
+            });
+          })(p);
+        }
+        if (total === 0) callback([]);
+      }).catch(function() { callback([]); });
+    });
+  };
+  reader.onerror = function() { callback([]); };
+  reader.readAsArrayBuffer(file);
+}
+
+/** Groups pdf.js text items into visual lines by y-position, items ordered by x within each row. */
+function qbGroupTextItemsIntoLines_(items) {
+  var Y_TOLERANCE = 3; // px -- items within this y-delta count as the same line
+  var rows = []; // [{y, items: [{x, str}]}]
+  items.forEach(function(item) {
+    if (!item.str || !item.str.trim()) return;
+    var x = item.transform[4], y = item.transform[5];
+    var row = null;
+    for (var i = 0; i < rows.length; i++) {
+      if (Math.abs(rows[i].y - y) <= Y_TOLERANCE) { row = rows[i]; break; }
+    }
+    if (!row) { row = { y: y, items: [] }; rows.push(row); }
+    row.items.push({ x: x, str: item.str });
+  });
+  // PDF y-coordinates increase upward -- sort rows top-to-bottom (descending y).
+  rows.sort(function(a, b) { return b.y - a.y; });
+  return rows.map(function(r) {
+    r.items.sort(function(a, b) { return a.x - b.x; });
+    return r.items.map(function(i) { return i.str; }).join(' ').replace(/\s+/g, ' ').trim();
+  }).filter(Boolean);
+}
+
+/**
+ * Fires PDF-based invoice line-item extraction (extractInvoiceLineItems) for
+ * an already-uploaded invoice. No-ops for non-PDF files -- image/scanned
+ * invoices have no column structure to parse and always fall back to
+ * manual entry in the review screen. Best-effort background step: the
+ * upload itself already succeeded and isn't blocked on this, so failures
+ * here are logged, not surfaced as an error toast.
+ */
+function qbTriggerInvoiceExtraction(opts) {
+  if (!opts.file || !/\.pdf$/i.test(opts.file.name || '')) return;
+  qbExtractInvoiceLines(opts.file, function(lines) {
+    gasCall('extractInvoiceLineItems', {
+      poNumber: opts.poNumber, rowIndex: opts.rowIndex, vendor: opts.vendor,
+      vendorInvoice: opts.vendorInvoice, invoiceFileUrl: opts.invoiceFileUrl,
+      builder: opts.builder, jobRef: opts.jobRef, invoiceTotal: opts.invoiceTotal,
+      invoiceLines: lines
+    }, function(res) {
+      if (res && res.blocked) {
+        showToast(res.error);
+      } else if (res && res.success) {
+        showToast((res.lineItems && res.lineItems.length ? res.lineItems.length + ' line item(s) extracted' : 'Invoice staged') + ' — review in Invoice Review');
+      }
+    }, function(err) {
+      console.error('extractInvoiceLineItems failed:', err);
+    }, { timeoutMs: 30000 });
+  });
+}
+
+/**
  * Handles file upload for the Invoice File field in the Edit modal.
  * Mirrors handleIssuedFile but writes into #e-invoicefile and uploads
  * into the Invoices folder (docType: 'invoice').
@@ -5998,6 +6168,11 @@ function uploadInvoiceFile(file) {
         statusEl.textContent = 'Uploaded — link filled in above';
         statusEl.className   = 'photo-status done';
         if (res.noJobFolder) showNoDriveFolderNotice(builder, jobRef);
+        qbTriggerInvoiceExtraction({
+          file: file, poNumber: poNum, rowIndex: G.editRow, vendor: vendor,
+          vendorInvoice: trim('e-vinvoice'), invoiceFileUrl: res.url,
+          builder: builder, jobRef: jobRef, invoiceTotal: val('e-total')
+        });
       } else {
         console.error('savePhotoToDrive/saveFileToFolderById failed:', res.error);
         statusEl.textContent = friendlyServerError(res.error);
@@ -6101,6 +6276,19 @@ function uploadSubPOInvoiceFile(file) {
         statusEl.textContent = 'Uploaded — link filled in above';
         statusEl.className   = 'photo-status done';
         if (res.noJobFolder) showNoDriveFolderNotice(builder, jobRef);
+        // The sub-PO row doesn't exist yet (created on form submit, below),
+        // so extraction can't fire yet -- capture the PDF's reconstructed
+        // lines now and stash them; submitSubPO's success callback fires
+        // the actual extractInvoiceLineItems call once a real PO number
+        // and row index exist.
+        if (/\.pdf$/i.test(file.name || '')) {
+          qbExtractInvoiceLines(file, function(lines) {
+            G.pendingSubPOInvoiceExtraction = {
+              invoiceLines: lines, vendor: vendor, vendorInvoice: trim('sp-invoice'),
+              invoiceFileUrl: res.url, invoiceTotal: val('sp-total')
+            };
+          });
+        }
       } else {
         console.error('savePhotoToDrive/saveFileToFolderById failed:', res.error);
         statusEl.textContent = friendlyServerError(res.error);
@@ -7223,7 +7411,7 @@ function showOtherPanel(name) {
   var activeTab = document.querySelector('.tab.active');
   if (activeTab) activeTab.style.display = 'none';
   document.getElementById('other-home').style.display = 'none';
-  ['pricing', 'contacts', 'inventory', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'material-inventory', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project', 'quickbooks'].forEach(function(p) {
+  ['pricing', 'contacts', 'inventory', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'material-inventory', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project', 'quickbooks', 'invoice-review'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
     if (el) el.style.display = p === name ? '' : 'none';
   });
@@ -7244,6 +7432,7 @@ function showOtherPanel(name) {
   if (name === 'payroll') { loadPayroll(0); loadPayrollCorrectionQueue(); }
   if (name === 'new-project') resetNewProjectDriveHint();
   if (name === 'quickbooks') loadQuickBooksPanel();
+  if (name === 'invoice-review') loadInvoiceReviewPanel();
 }
 
 // Several other-panel-* elements aren't actually nested inside #tab-other in
@@ -7258,7 +7447,7 @@ function resetOtherPanels() {
   // always wins over the .tab/.tab.active CSS class rule.
   document.querySelectorAll('.tab').forEach(function(t) { t.style.display = ''; });
   document.getElementById('other-home').style.display = '';
-  ['pricing', 'contacts', 'inventory', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'material-inventory', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project', 'quickbooks'].forEach(function(p) {
+  ['pricing', 'contacts', 'inventory', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'material-inventory', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project', 'quickbooks', 'invoice-review'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
     if (el) el.style.display = 'none';
   });
@@ -7316,6 +7505,277 @@ function disconnectQuickBooksUI() {
     if (res.error) { showToast(res.error); return; }
     loadQuickBooksPanel();
   }, function(err) { showToast(friendlyUploadError(err)); });
+}
+
+
+// ── Invoice Review (staged invoice line items → QuickBooks Bill) ──────────────
+// Standalone from Material Report by design -- separate DOM ids/state, no
+// shared functions. Line items are staged server-side by
+// extractInvoiceLineItems (fired automatically on PO/Sub-PO invoice upload,
+// see qbTriggerInvoiceExtraction) and reviewed/edited here before Approve.
+// Approve only flips Status -> 'Approved' today (Phase 1) -- Bill creation
+// against QuickBooks itself is Phase 3, not wired up yet.
+var G_ir = { stagingId: null, lineItems: [], row: null };
+
+function loadInvoiceReviewPanel() {
+  document.getElementById('ir-list-view').style.display = '';
+  document.getElementById('ir-detail-view').style.display = 'none';
+  G_ir = { stagingId: null, lineItems: [], row: null };
+  document.getElementById('ir-loading').style.display = '';
+  document.getElementById('ir-list').innerHTML = '';
+  gasCall('getInvoiceStaging', { status: ['Pending', 'Approved'] }, function(res) {
+    document.getElementById('ir-loading').style.display = 'none';
+    if (res.error) { document.getElementById('ir-list').innerHTML = '<div class="empty">Error: ' + esc(res.error) + '</div>'; return; }
+    renderInvoiceReviewList(res.rows || []);
+  }, function(err) {
+    document.getElementById('ir-loading').style.display = 'none';
+    document.getElementById('ir-list').innerHTML = '<div class="empty">Error: ' + esc(friendlyUploadError(err)) + '</div>';
+  });
+}
+
+function irBackToList() { loadInvoiceReviewPanel(); }
+
+function renderInvoiceReviewList(rows) {
+  var el = document.getElementById('ir-list');
+  if (!rows.length) { el.innerHTML = '<div class="empty">No invoices waiting for review.</div>'; return; }
+  rows.sort(function(a, b) { return (a.status === b.status) ? 0 : (a.status === 'Pending' ? -1 : 1); });
+  el.innerHTML = rows.map(function(r) {
+    var total = (r.lineItems || []).reduce(function(s, li) { return s + (parseFloat(li.amount) || 0); }, 0);
+    var badgeColor = r.status === 'Approved' ? 'var(--bd-green-fg)' : 'var(--c-ink-soft)';
+    return '<div class="po-item" onclick="irOpenDetail(\'' + esc(r.stagingId) + '\')" style="cursor:pointer;margin-bottom:8px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center">' +
+        '<div>' +
+          '<div style="font-weight:700;color:var(--c-navy)">' + esc(r.poNumber) + ' · ' + esc(r.vendor) + '</div>' +
+          '<div style="font-size:11px;color:var(--c-ink-soft)">' + esc(r.builder) + ' / ' + esc(r.jobRef) +
+            (r.lineItems.length ? ' · ' + r.lineItems.length + ' line(s)' : ' · needs manual entry') + '</div>' +
+        '</div>' +
+        '<div style="text-align:right">' +
+          '<div style="font-weight:700">$' + total.toFixed(2) + '</div>' +
+          '<div style="font-size:11px;font-weight:700;color:' + badgeColor + '">' + esc(r.status) + '</div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function irOpenDetail(stagingId) {
+  gasCall('getInvoiceStaging', {}, function(res) {
+    if (res.error) { showToast(res.error); return; }
+    var row = (res.rows || []).find(function(r) { return r.stagingId === stagingId; });
+    if (!row) { showToast('Invoice not found'); return; }
+    G_ir.stagingId = stagingId;
+    G_ir.row = row;
+    G_ir.lineItems = (row.lineItems || []).map(function(li) {
+      return Object.assign({ lineType: 'material', qboItemId: null, qboItemName: null, matchConfidence: null, skip: false }, li);
+    });
+    document.getElementById('ir-list-view').style.display = 'none';
+    document.getElementById('ir-detail-view').style.display = '';
+    document.getElementById('ir-detail-header').innerHTML =
+      '<div><b>PO:</b> ' + esc(row.poNumber) + '</div>' +
+      '<div><b>Vendor:</b> ' + esc(row.vendor) + (row.vendorInvoice ? ' (Inv# ' + esc(row.vendorInvoice) + ')' : '') + '</div>' +
+      '<div><b>Job:</b> ' + esc(row.builder) + ' / ' + esc(row.jobRef) + '</div>' +
+      '<div><b>QB Customer Id:</b> ' + (row.qbCustomerId ? esc(row.qbCustomerId) : '<span style="color:var(--c-danger)">not linked — add to Projects sheet</span>') + '</div>' +
+      '<div><b>QB Vendor Id:</b> ' + (row.qbVendorId ? esc(row.qbVendorId) : '<span style="color:var(--c-danger)">not linked — add to QB Vendor Map</span>') + '</div>' +
+      (row.invoiceFileUrl ? '<div><a href="' + esc(row.invoiceFileUrl) + '" target="_blank" rel="noopener">View invoice file</a></div>' : '');
+    irRenderLineRows();
+    var billBtn = document.getElementById('ir-create-bill-btn');
+    var statusEl = document.getElementById('ir-detail-status');
+    if (row.status === 'Posted') {
+      billBtn.style.display = 'none';
+      statusEl.textContent = 'Posted to QuickBooks — Bill ' + row.qbBillId + '.';
+    } else if (row.status === 'Approved') {
+      billBtn.style.display = '';
+      statusEl.textContent = 'Approved — ready to create the Bill in QuickBooks.';
+    } else {
+      billBtn.style.display = 'none';
+      statusEl.textContent = '';
+    }
+    irLoadCatalogAndMatch();
+  }, function(err) { showToast(friendlyUploadError(err)); });
+}
+
+// Groups the flat catalog (Categories + Items, each Item carrying its
+// parent Category's id) into [{id, name, items:[...]}] for the QB Item
+// dropdown's <optgroup> structure.
+function irGroupCatalog_(flatItems) {
+  var categories = {}; // id -> {id, name, items:[]}
+  var uncategorized = { id: null, name: 'Other', items: [] };
+  flatItems.forEach(function(it) {
+    if (it.type === 'Category') {
+      categories[it.id] = categories[it.id] || { id: it.id, name: it.name, items: [] };
+      categories[it.id].name = it.name;
+    }
+  });
+  flatItems.forEach(function(it) {
+    if (it.type === 'Category') return;
+    var group = it.parentId && categories[it.parentId] ? categories[it.parentId] : uncategorized;
+    group.items.push({ id: it.id, name: it.name });
+  });
+  var groups = Object.keys(categories).map(function(k) { return categories[k]; }).filter(function(g) { return g.items.length; });
+  if (uncategorized.items.length) groups.push(uncategorized);
+  return groups;
+}
+
+// Fetches the QBO Item catalog and auto-matches any material-type line that
+// doesn't already have a qboItemId, then re-renders. Best-effort: if
+// QuickBooks isn't connected/reachable, the dropdown just stays empty and
+// every line is left for fully manual pairing -- this never blocks review.
+function irLoadCatalogAndMatch() {
+  gasCall('getQuickBooksItemCatalogForReview', {}, function(res) {
+    if (!res.success) { G_ir.catalog = []; irRenderLineRows(); return; }
+    G_ir.catalog = irGroupCatalog_(res.items || []);
+
+    var toMatch = G_ir.lineItems
+      .map(function(li, i) { return { li: li, i: i }; })
+      .filter(function(x) { return x.li.lineType === 'material' && !x.li.qboItemId && x.li.description; });
+    if (!toMatch.length) { irRenderLineRows(); return; }
+
+    gasCall('matchInvoiceLineItems', { descriptions: toMatch.map(function(x) { return x.li.description; }) }, function(mRes) {
+      if (mRes.success) {
+        toMatch.forEach(function(x, idx) {
+          var m = mRes.matches[idx];
+          if (m) {
+            G_ir.lineItems[x.i].qboItemId = m.qboItemId;
+            G_ir.lineItems[x.i].qboItemName = m.qboItemName;
+            G_ir.lineItems[x.i].matchConfidence = m.matchConfidence;
+          }
+        });
+      }
+      irRenderLineRows();
+    }, function() { irRenderLineRows(); });
+  }, function() { G_ir.catalog = []; irRenderLineRows(); });
+}
+
+function irRenderLineRows() {
+  var tbody = document.getElementById('ir-line-rows');
+  tbody.innerHTML = G_ir.lineItems.map(function(li, i) {
+    return '<tr>' +
+      '<td style="padding:4px"><select onchange="irUpdateLine(' + i + ",'lineType',this.value)\" style=\"width:100%;font-size:12px;padding:4px\">" +
+        ['material', 'tax', 'freight'].map(function(t) {
+          return '<option value="' + t + '"' + (li.lineType === t ? ' selected' : '') + '>' + t + '</option>';
+        }).join('') +
+      '</select></td>' +
+      '<td style="padding:4px"><input type="text" value="' + esc(li.description || '') + '" oninput="irUpdateLine(' + i + ",'description',this.value)\" style=\"width:100%;font-size:12px;padding:4px;box-sizing:border-box\"></td>" +
+      '<td style="padding:4px"><input type="number" step="any" value="' + (li.qty !== '' && li.qty != null ? li.qty : '') + '" oninput="irUpdateLine(' + i + ",'qty',this.value)\" style=\"width:100%;font-size:12px;padding:4px;box-sizing:border-box\"></td>" +
+      '<td style="padding:4px"><input type="text" value="' + esc(li.unit || '') + '" oninput="irUpdateLine(' + i + ",'unit',this.value)\" style=\"width:100%;font-size:12px;padding:4px;box-sizing:border-box\"></td>" +
+      '<td style="padding:4px"><input type="number" step="0.01" value="' + (li.rate !== '' && li.rate != null ? li.rate : '') + '" oninput="irUpdateLine(' + i + ",'rate',this.value)\" style=\"width:100%;font-size:12px;padding:4px;box-sizing:border-box\"></td>" +
+      '<td style="padding:4px"><input type="number" step="0.01" id="ir-amount-' + i + '" value="' + (li.amount !== '' && li.amount != null ? li.amount : '') + '" oninput="irUpdateLine(' + i + ",'amount',this.value)\" style=\"width:100%;font-size:12px;padding:4px;box-sizing:border-box\"></td>" +
+      '<td style="padding:4px">' + irItemCellHtml_(li, i) + '</td>' +
+      '<td style="padding:4px;text-align:center"><button onclick="irRemoveLine(' + i + ')" style="background:none;border:none;color:var(--c-danger);cursor:pointer;font-size:14px" title="Remove line">✕</button></td>' +
+    '</tr>';
+  }).join('');
+  irUpdateBalanceCheck();
+}
+
+// Renders the QB Item cell: a category-grouped <select> once the catalog has
+// loaded, a plain "loading…" placeholder before it has, and a color cue
+// (unmatched rows render with a light red background) so a reviewer can spot
+// what still needs manual pairing at a glance without reading every row.
+function irItemCellHtml_(li, i) {
+  if (!G_ir.catalog) return '<span style="font-size:11px;color:var(--c-ink-soft)">loading…</span>';
+  var unmatched = !li.qboItemId;
+  var opts = '<option value="">— Unmatched —</option>' + G_ir.catalog.map(function(cat) {
+    var itemOpts = cat.items.map(function(it) {
+      return '<option value="' + esc(it.id) + '"' + (li.qboItemId === it.id ? ' selected' : '') + '>' + esc(it.name) + '</option>';
+    }).join('');
+    return '<optgroup label="' + esc(cat.name) + '">' + itemOpts + '</optgroup>';
+  }).join('');
+  return '<select onchange="irUpdateLine(' + i + ",'qboItemId',this.value)\" style=\"width:100%;font-size:11px;padding:4px" +
+    (unmatched ? ';background:var(--sh-red-bg,#fde8e8)' : '') + '">' + opts + '</select>' +
+    (li.matchConfidence != null && !unmatched ? '<div style="font-size:10px;color:var(--c-ink-faint);margin-top:2px">auto-matched ' + Math.round(li.matchConfidence * 100) + '%</div>' : '');
+}
+
+// Structural edits (add/remove line, dropdown change) re-render the whole
+// table; free-text/number edits only patch the one cell so typing doesn't
+// lose focus on every keystroke.
+function irUpdateLine(i, field, value) {
+  if (field === 'qty' || field === 'rate' || field === 'amount') value = value === '' ? '' : parseFloat(value);
+  G_ir.lineItems[i][field] = value;
+  if (field === 'qboItemId') {
+    // Manual pick overrides whatever auto-match ran -- matchConfidence no
+    // longer means anything for this row, and lineType changes invalidate
+    // any prior match too (a tax/freight line has no material match to keep).
+    var picked = value ? (G_ir.catalog || []).reduce(function(f, g) { return f || g.items.find(function(it) { return it.id === value; }); }, null) : null;
+    G_ir.lineItems[i].qboItemName = picked ? picked.name : null;
+    G_ir.lineItems[i].matchConfidence = null;
+    irRenderLineRows();
+    return;
+  }
+  if (field === 'lineType') { irRenderLineRows(); return; }
+  if (field === 'qty' || field === 'rate') {
+    var qty = parseFloat(G_ir.lineItems[i].qty), rate = parseFloat(G_ir.lineItems[i].rate);
+    if (!isNaN(qty) && !isNaN(rate)) {
+      var amt = Math.round(qty * rate * 100) / 100;
+      G_ir.lineItems[i].amount = amt;
+      var amtInput = document.getElementById('ir-amount-' + i);
+      if (amtInput) amtInput.value = amt;
+    }
+  }
+  irUpdateBalanceCheck();
+}
+
+function irAddLine() {
+  G_ir.lineItems.push({ description: '', qty: '', unit: '', rate: '', amount: '', lineType: 'material', qboItemId: null, qboItemName: null, matchConfidence: null, skip: false });
+  irRenderLineRows();
+}
+
+function irRemoveLine(i) {
+  G_ir.lineItems.splice(i, 1);
+  irRenderLineRows();
+}
+
+function irUpdateBalanceCheck() {
+  var el = document.getElementById('ir-balance-check');
+  var sum = G_ir.lineItems.reduce(function(s, li) { return s + (parseFloat(li.amount) || 0); }, 0);
+  var invoiceTotal = parseFloat(G_ir.row && G_ir.row.invoiceTotal);
+  if (!isNaN(invoiceTotal) && invoiceTotal > 0) {
+    var diff = Math.round((sum - invoiceTotal) * 100) / 100;
+    var ok = Math.abs(diff) < 0.01;
+    el.textContent = 'Line items total $' + sum.toFixed(2) + ' vs. invoice total $' + invoiceTotal.toFixed(2) +
+      (ok ? ' — balanced' : ' — off by $' + Math.abs(diff).toFixed(2));
+    el.style.background = ok ? 'var(--sh-green-bg)' : 'var(--sh-red-bg, #fde8e8)';
+    el.style.color = ok ? 'var(--c-navy)' : 'var(--c-danger)';
+  } else {
+    el.textContent = 'Line items total: $' + sum.toFixed(2) + ' (no invoice total to compare against)';
+    el.style.background = 'var(--c-bg)';
+    el.style.color = 'var(--c-ink-soft)';
+  }
+}
+
+function irSaveDraft() {
+  if (!G_ir.stagingId) return;
+  gasCall('saveInvoiceStagingReview', { stagingId: G_ir.stagingId, lineItems: G_ir.lineItems }, function(res) {
+    if (!res.success) { showToast(res.error || 'Save failed'); return; }
+    showToast('Draft saved');
+  }, function(err) { showToast(friendlyUploadError(err)); });
+}
+
+function irApprove() {
+  if (!G_ir.stagingId) return;
+  if (!G_ir.lineItems.length) { showToast('Add at least one line item before approving'); return; }
+  gasCall('saveInvoiceStagingReview', { stagingId: G_ir.stagingId, lineItems: G_ir.lineItems, approve: true }, function(res) {
+    if (!res.success) { showToast(res.error || 'Approve failed'); return; }
+    showToast('Approved');
+    irOpenDetail(G_ir.stagingId);
+  }, function(err) { showToast(friendlyUploadError(err)); });
+}
+
+function irCreateBill() {
+  if (!G_ir.stagingId) return;
+  var btn = document.getElementById('ir-create-bill-btn');
+  btn.disabled = true; // belt-and-suspenders client-side duplicate-click guard -- the server also checks idempotency
+  btn.textContent = 'Creating…';
+  gasCall('createQuickBooksBill', { stagingId: G_ir.stagingId }, function(res) {
+    btn.disabled = false;
+    btn.textContent = 'Create Bill in QuickBooks';
+    if (!res.success) { showToast(res.error || 'Failed to create Bill'); return; }
+    showToast(res.alreadyPosted ? 'Already posted as Bill ' + res.qbBillId : 'Created QuickBooks Bill ' + res.qbBillId);
+    irOpenDetail(G_ir.stagingId);
+  }, function(err) {
+    btn.disabled = false;
+    btn.textContent = 'Create Bill in QuickBooks';
+    showToast(friendlyUploadError(err));
+  }, { timeoutMs: 45000 });
 }
 
 

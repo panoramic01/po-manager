@@ -100,15 +100,39 @@ var STATUS_OPTIONS = [
   "Other"
 ];
 
+// Rebuilt from actual PO Database usage (debugListActualVendors_ tally, 2026-08)
+// rather than a hand-maintained guess -- "Plaster" never appeared even once
+// in real usage and has been dropped; everything below appeared 2+ times,
+// with near-duplicate free-typed variants folded into one canonical name
+// (e.g. "LKL"/"Lkl" -> "LKL Associates", "Cmg"/"Coated metals group" ->
+// "Coated Metals Group"). One-off vendors (Amazon, Lowes, Home Depot,
+// Grainger, etc., each used exactly once) are left to the "Other" free-text
+// fallback rather than cluttering the dropdown.
 var VENDOR_OPTIONS = [
   "ABC Interiors",
-  "Lansing",
   "Timberline",
   "Castalite",
+  "Lansing",
   "Harristone",
-  "Tresselwood",
+  "Interstate Brick",
   "Leak Tech",
-  "Plaster",
+  "LKL Associates",
+  "Transcending",
+  "Rustic",
+  "Alside",
+  "Coated Metals Group",
+  "Swanson",
+  "Burton Lumber",
+  "Metal Super Markets",
+  "Concrete Color and Design",
+  "Builders First Source",
+  "Architectural Depot",
+  "Beehive",
+  "Linc",
+  "Stone Connections",
+  "Artistic Stone",
+  "Rocky Mountain Supply",
+  "Tresselwood",
   "Other"
 ];
 
@@ -219,6 +243,15 @@ function doPost(e) {
     else if (action === 'disconnectQuickBooks')        result = disconnectQuickBooks(payload);
     else if (action === 'testQuickBooksConnection')    result = testQuickBooksConnection(payload);
     else if (action === 'testQuickBooksVendors')       result = testQuickBooksVendors(payload);
+    else if (action === 'getQuickBooksVendorMap')      result = getQuickBooksVendorMap(payload);
+    else if (action === 'saveQuickBooksVendorMapping') result = saveQuickBooksVendorMapping(payload);
+    else if (action === 'extractInvoiceLineItems')     result = extractInvoiceLineItems(payload);
+    else if (action === 'getInvoiceStaging')           result = getInvoiceStaging(payload);
+    else if (action === 'saveInvoiceStagingReview')    result = saveInvoiceStagingReview(payload);
+    else if (action === 'getQuickBooksItemCatalogForReview') result = getQuickBooksItemCatalogForReview(payload);
+    else if (action === 'refreshQuickBooksItemCatalog') result = refreshQuickBooksItemCatalog(payload);
+    else if (action === 'matchInvoiceLineItems')       result = matchInvoiceLineItems(payload);
+    else if (action === 'createQuickBooksBill')        result = createQuickBooksBill(payload);
     else                                        result = { error: 'Unknown action: ' + action };
 
     if (result && result.success === false) {
@@ -1430,6 +1463,11 @@ function getTypedUploadFolder(baseFolder, docType, poNum, jobRef) {
 // remaining form fields (address, maps link, due date, etc.) only go into
 // the Asana task's notes, not this sheet. getProjectFolderId only ever
 // reads A-C.
+//
+// Column E (QB Customer/Sub-customer Id) is a later addition, filled in
+// manually per job once that job's QuickBooks sub-customer exists --
+// createProjectAndTask does not write it. getProjectQuickBooksId_ is the
+// column-E counterpart to getProjectFolderId, same Contractor+JobName key.
 var PROJECTS_SHEET_NAME = "Projects";
 
 /**
@@ -1464,6 +1502,686 @@ function getProjectFolderId(builder, jobRef) {
     return { matched: false, folderId: null };
   } catch (e) {
     return { matched: false, folderId: null };
+  }
+}
+
+/**
+ * Looks up the QuickBooks Customer/Sub-customer Id for a given Contractor +
+ * Job Name pair in column E of the "Projects" sheet, same exact-match scan
+ * as getProjectFolderId. Returns { matched, qbCustomerId }: matched is true
+ * only when a Contractor+Job row was found (qbCustomerId may still be null
+ * if that job hasn't been linked to a QuickBooks job yet).
+ */
+function getProjectQuickBooksId_(builder, jobRef) {
+  try {
+    var wantBuilder = (builder || "").toString().trim().toLowerCase();
+    var wantJob     = (jobRef  || "").toString().trim().toLowerCase();
+    if (!wantBuilder || !wantJob) return { matched: false, qbCustomerId: null };
+
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PROJECTS_SHEET_NAME);
+    if (!sheet) return { matched: false, qbCustomerId: null };
+
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { matched: false, qbCustomerId: null };
+
+    var data = sheet.getRange(2, 1, lastRow - 1, 5).getValues(); // A:Contractor, B:Job Name, ... E:QB Customer/Sub-customer Id
+    for (var i = 0; i < data.length; i++) {
+      var rowBuilder = (data[i][0] || "").toString().trim().toLowerCase();
+      var rowJob     = (data[i][1] || "").toString().trim().toLowerCase();
+      if (rowBuilder === wantBuilder && rowJob === wantJob) {
+        var qbId = (data[i][4] || "").toString().trim();
+        return { matched: true, qbCustomerId: qbId || null };
+      }
+    }
+    return { matched: false, qbCustomerId: null };
+  } catch (e) {
+    return { matched: false, qbCustomerId: null };
+  }
+}
+
+// ─── QuickBooks vendor ID mapping ────────────────────────────────────────────
+// No existing sheet ties a vendor to its QuickBooks Vendor Id -- VENDOR_OPTIONS
+// (line 103) is just a name list. This small sheet is the mapping, keyed by
+// the same vendor-name strings so it stays in sync with the PO form's vendor
+// dropdown without any code change when a vendor is added there.
+var QB_VENDOR_MAP_SHEET = "QB Vendor Map";
+var QB_VENDOR_MAP_HEADERS = ['Vendor Name', 'QB Vendor Id', 'QB Vendor DisplayName'];
+
+/** Exact-match lookup, same style as getProjectFolderId/getProjectQuickBooksId_. */
+function getQuickBooksVendorId_(vendorName) {
+  try {
+    var want = (vendorName || "").toString().trim().toLowerCase();
+    if (!want) return { matched: false, qbVendorId: null };
+
+    var sheet = ensureSheetWithHeaders_(QB_VENDOR_MAP_SHEET, QB_VENDOR_MAP_HEADERS);
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { matched: false, qbVendorId: null };
+
+    var data = sheet.getRange(2, 1, lastRow - 1, 2).getValues(); // A:Vendor Name, B:QB Vendor Id
+    for (var i = 0; i < data.length; i++) {
+      var rowName = (data[i][0] || "").toString().trim().toLowerCase();
+      if (rowName === want) {
+        var qbId = (data[i][1] || "").toString().trim();
+        return { matched: true, qbVendorId: qbId || null };
+      }
+    }
+    return { matched: false, qbVendorId: null };
+  } catch (e) {
+    return { matched: false, qbVendorId: null };
+  }
+}
+
+/** Lists the full mapping (for an admin screen to review/fill in gaps against VENDOR_OPTIONS). */
+function getQuickBooksVendorMap(payload) {
+  try {
+    var auth = authorizeCaller(payload, ['admin', 'office']);
+    if (!auth.ok) return { error: auth.error, code: auth.code };
+
+    var sheet = ensureSheetWithHeaders_(QB_VENDOR_MAP_SHEET, QB_VENDOR_MAP_HEADERS);
+    var lastRow = sheet.getLastRow();
+    var rows = lastRow < 2 ? [] : sheet.getRange(2, 1, lastRow - 1, 3).getValues().map(function(r) {
+      return { vendorName: r[0] || '', qbVendorId: r[1] || '', qbVendorDisplayName: r[2] || '' };
+    });
+    return { vendors: VENDOR_OPTIONS.filter(function(v){ return v !== 'Other'; }), rows: rows };
+  } catch (e) {
+    return { error: e.toString() };
+  }
+}
+
+/** Upserts a single vendor's QB Vendor Id by exact vendorName match, appending a row if none exists yet. */
+function saveQuickBooksVendorMapping(payload) {
+  try {
+    var auth = authorizeCaller(payload, ['admin', 'office']);
+    if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
+
+    var vendorName = (payload.vendorName || '').toString().trim();
+    var qbVendorId = (payload.qbVendorId || '').toString().trim();
+    var qbDisplayName = (payload.qbVendorDisplayName || '').toString().trim();
+    if (!vendorName || !qbVendorId) return { success: false, error: 'vendorName and qbVendorId are required' };
+
+    var sheet = ensureSheetWithHeaders_(QB_VENDOR_MAP_SHEET, QB_VENDOR_MAP_HEADERS);
+    var lastRow = sheet.getLastRow();
+    var want = vendorName.toLowerCase();
+    if (lastRow >= 2) {
+      var data = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+      for (var i = 0; i < data.length; i++) {
+        if ((data[i][0] || '').toString().trim().toLowerCase() === want) {
+          sheet.getRange(i + 2, 2, 1, 2).setValues([[qbVendorId, qbDisplayName]]);
+          return { success: true };
+        }
+      }
+    }
+    sheet.appendRow([vendorName, qbVendorId, qbDisplayName]);
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+// ─── QuickBooks invoice staging (review-before-post) ─────────────────────────
+// One row per invoice extraction attempt -- the durable "extracted but not
+// yet posted to QuickBooks" record. A sheet (not Cache/PropertiesService)
+// because review can happen well after upload, across sessions, and needs an
+// audit trail; Cache's TTL/size limits make it unsuitable as the source of
+// truth here. Status moves Pending -> Approved -> Posted (or Rejected).
+// Each line item in the JSON blob carries lineType: 'material' | 'tax' |
+// 'freight' -- tax/freight lines skip QBO Item-matching (Phase 2) and map to
+// fixed dedicated QBO Items instead, and are excluded from the material
+// balance check in the review UI.
+var QB_STAGING_SHEET = "QB Invoice Staging";
+var QB_STAGING_HEADERS = [
+  'Staging Id', 'PO Number', 'Row Index', 'Status', 'Vendor', 'Vendor Invoice#',
+  'Invoice File URL', 'Builder', 'Job Ref', 'QB Customer Id', 'QB Vendor Id',
+  'Line Items JSON', 'Invoice Total', 'Extracted At', 'Reviewed By', 'Approved At', 'QB Bill Id', 'Posted At'
+];
+var QB_STAGING_COL = {}; // 0-based index by header name, built once below
+QB_STAGING_HEADERS.forEach(function(h, i) { QB_STAGING_COL[h] = i; });
+
+function stagingRowToObject_(row) {
+  var lineItems = [];
+  try { lineItems = JSON.parse(row[QB_STAGING_COL['Line Items JSON']] || '[]'); } catch (e) { lineItems = []; }
+  return {
+    stagingId:      row[QB_STAGING_COL['Staging Id']] || '',
+    poNumber:       row[QB_STAGING_COL['PO Number']] || '',
+    rowIndex:       row[QB_STAGING_COL['Row Index']] || '',
+    status:         row[QB_STAGING_COL['Status']] || '',
+    vendor:         row[QB_STAGING_COL['Vendor']] || '',
+    vendorInvoice:  row[QB_STAGING_COL['Vendor Invoice#']] || '',
+    invoiceFileUrl: row[QB_STAGING_COL['Invoice File URL']] || '',
+    builder:        row[QB_STAGING_COL['Builder']] || '',
+    jobRef:         row[QB_STAGING_COL['Job Ref']] || '',
+    qbCustomerId:   row[QB_STAGING_COL['QB Customer Id']] || '',
+    qbVendorId:     row[QB_STAGING_COL['QB Vendor Id']] || '',
+    lineItems:      lineItems,
+    invoiceTotal:   row[QB_STAGING_COL['Invoice Total']] || '',
+    extractedAt:    row[QB_STAGING_COL['Extracted At']] || '',
+    reviewedBy:     row[QB_STAGING_COL['Reviewed By']] || '',
+    approvedAt:     row[QB_STAGING_COL['Approved At']] || '',
+    qbBillId:       row[QB_STAGING_COL['QB Bill Id']] || '',
+    postedAt:       row[QB_STAGING_COL['Posted At']] || ''
+  };
+}
+
+/**
+ * Internal helper: appends a new Pending staging row. Called by
+ * extractInvoiceLineItems (automatic, on upload) -- not exposed directly to
+ * the client. fields: {poNumber, rowIndex, vendor, vendorInvoice,
+ * invoiceFileUrl, builder, jobRef, qbCustomerId, qbVendorId, lineItems[]}.
+ */
+function createStagingRow_(fields) {
+  var sheet = ensureSheetWithHeaders_(QB_STAGING_SHEET, QB_STAGING_HEADERS);
+  var stagingId = Utilities.getUuid();
+  var now = new Date();
+  sheet.appendRow([
+    stagingId,
+    fields.poNumber || '',
+    fields.rowIndex || '',
+    'Pending',
+    fields.vendor || '',
+    fields.vendorInvoice || '',
+    fields.invoiceFileUrl || '',
+    fields.builder || '',
+    fields.jobRef || '',
+    fields.qbCustomerId || '',
+    fields.qbVendorId || '',
+    JSON.stringify(fields.lineItems || []),
+    fields.invoiceTotal || '',
+    now,
+    '',
+    '',
+    '',
+    ''
+  ]);
+  return stagingId;
+}
+
+/** Finds a staging row's sheet row index (1-based) by Staging Id, or -1 if not found. Not exposed to the client. */
+function findStagingRowIndex_(sheet, stagingId) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return -1;
+  var ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  for (var i = 0; i < ids.length; i++) {
+    if ((ids[i][0] || '').toString() === stagingId) return i + 2;
+  }
+  return -1;
+}
+
+/**
+ * Lists staging rows, optionally filtered by status and/or PO number.
+ * Owner-gated, same as the rest of the QuickBooks-facing workflow.
+ */
+function getInvoiceStaging(payload) {
+  var auth = authorizeQuickBooksOwner_(payload);
+  if (!auth.ok) return { error: auth.error, code: auth.code };
+  try {
+    var sheet = ensureSheetWithHeaders_(QB_STAGING_SHEET, QB_STAGING_HEADERS);
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { rows: [] };
+
+    var data = sheet.getRange(2, 1, lastRow - 1, QB_STAGING_HEADERS.length).getValues();
+    var statusFilter = payload.status ? [].concat(payload.status) : null;
+    var poFilter = (payload.poNumber || '').toString().trim();
+
+    var rows = data.map(stagingRowToObject_).filter(function(r) {
+      if (statusFilter && statusFilter.indexOf(r.status) === -1) return false;
+      if (poFilter && r.poNumber.toString().trim() !== poFilter) return false;
+      return true;
+    });
+    return { rows: rows };
+  } catch (e) {
+    return { error: e.toString() };
+  }
+}
+
+/**
+ * Persists reviewer edits to a staging row (line item overrides, matched QBO
+ * item ids, skip flags, manual customer/vendor id overrides) and/or
+ * transitions its Status. Owner-gated. Does not touch QuickBooks -- that
+ * only happens in createQuickBooksBill once Status is 'Approved'.
+ */
+function saveInvoiceStagingReview(payload) {
+  var auth = authorizeQuickBooksOwner_(payload);
+  if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
+  try {
+    var stagingId = payload.stagingId;
+    if (!stagingId) return { success: false, error: 'Missing stagingId' };
+
+    var sheet = ensureSheetWithHeaders_(QB_STAGING_SHEET, QB_STAGING_HEADERS);
+    var rowIdx = findStagingRowIndex_(sheet, stagingId);
+    if (rowIdx === -1) return { success: false, error: 'Staging row not found' };
+
+    var currentStatus = sheet.getRange(rowIdx, QB_STAGING_COL['Status'] + 1).getValue();
+    if (currentStatus === 'Posted') return { success: false, error: 'This invoice has already been posted to QuickBooks and can no longer be edited.' };
+
+    if (payload.lineItems) {
+      sheet.getRange(rowIdx, QB_STAGING_COL['Line Items JSON'] + 1).setValue(JSON.stringify(payload.lineItems));
+    }
+    if (payload.qbCustomerId !== undefined) {
+      sheet.getRange(rowIdx, QB_STAGING_COL['QB Customer Id'] + 1).setValue(payload.qbCustomerId);
+    }
+    if (payload.qbVendorId !== undefined) {
+      sheet.getRange(rowIdx, QB_STAGING_COL['QB Vendor Id'] + 1).setValue(payload.qbVendorId);
+    }
+
+    var nextStatus = payload.approve ? 'Approved' : (payload.reject ? 'Rejected' : currentStatus);
+    sheet.getRange(rowIdx, QB_STAGING_COL['Status'] + 1).setValue(nextStatus);
+    sheet.getRange(rowIdx, QB_STAGING_COL['Reviewed By'] + 1).setValue(auth.email || '');
+    if (payload.approve) {
+      sheet.getRange(rowIdx, QB_STAGING_COL['Approved At'] + 1).setValue(new Date());
+    }
+
+    return { success: true, status: nextStatus };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+/** Finds an already-Posted staging row for this PO+Vendor Invoice# pair, or null. Not exposed to the client. */
+function findPostedStagingRow_(poNumber, vendorInvoice) {
+  if (!poNumber || !vendorInvoice) return null;
+  var sheet = ensureSheetWithHeaders_(QB_STAGING_SHEET, QB_STAGING_HEADERS);
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return null;
+  var data = sheet.getRange(2, 1, lastRow - 1, QB_STAGING_HEADERS.length).getValues();
+  var wantPo = poNumber.toString().trim();
+  var wantInv = vendorInvoice.toString().trim().toLowerCase();
+  for (var i = 0; i < data.length; i++) {
+    var obj = stagingRowToObject_(data[i]);
+    if (obj.status === 'Posted' && obj.poNumber.toString().trim() === wantPo &&
+        obj.vendorInvoice.toString().trim().toLowerCase() === wantInv) {
+      return obj;
+    }
+  }
+  return null;
+}
+
+// ─── Deterministic (no-AI) invoice line-item extraction ──────────────────────
+// Per-vendor parsers, keyed by the exact VENDOR_OPTIONS name (line 103).
+// Each parser takes the array of visual invoice-text lines reconstructed
+// client-side (qbExtractInvoiceLines in index.html, which clusters pdf.js
+// text items by y-position -- NOT the same as mrExtractPdfText's single
+// flattened string, which throws away row/column structure) and returns an
+// array of line items, or null/throws if it can't confidently parse this
+// invoice. No parser registered for a vendor (or a parser that can't
+// confidently parse) falls back to an empty line-item list -- the review
+// screen starts blank for manual entry. This is the intended, first-class
+// path, not a degraded one: it's what every vendor uses until a real
+// invoice sample is available to build and verify that vendor's parser
+// against. None are implemented yet -- populate this object as samples
+// arrive, one parser function per vendor.
+function qboClassifyLineType_(description) {
+  return /freight|delivery|shipping|fuel surcharge/i.test(description || '') ? 'freight' : 'material';
+}
+
+/**
+ * Scans reconstructed lines for a "(Sales) Tax(es) ... $amount" style line
+ * and returns a tax-type line item, or null. Uses a lazy `.*?` between
+ * "tax" and the trailing amount (not a no-digit class) since real tax
+ * lines often have digits in between -- a percentage in parens ("Sales Tax
+ * (7.3%) 84.42") or an unrelated code column glued onto the same visual
+ * row ("SALES TAX 91-0000-00 14.36") -- only the LAST number on the line
+ * is taken as the amount.
+ */
+function qboExtractTaxLine_(lines) {
+  for (var i = 0; i < lines.length; i++) {
+    var m = lines[i].match(/(?:sales\s*)?tax(?:es)?\b.*?([\d,]+\.\d{2})\s*$/i);
+    if (m) {
+      var amt = parseFloat(m[1].replace(/,/g, ''));
+      if (amt > 0) return { description: 'Sales Tax', qty: '', unit: '', rate: '', amount: amt, lineType: 'tax' };
+    }
+  }
+  return null;
+}
+
+/**
+ * Castalite (Castalite Brickyard) and Harristone (G.S. Harris Co./
+ * Merrillstone) render from the same underlying invoice template: a
+ * "Quantity [Item Code] Description Price Each Amount[T]" row, T marking a
+ * taxable line. Harristone's item code is folded into the description (see
+ * header comment above INVOICE_PARSERS); Castalite has no item code
+ * column at all, so the same pattern matches both.
+ */
+function parseQtyDescPriceAmount_(lines) {
+  var rowRe = /^(\d+(?:\.\d+)?)\s+(.+?)\s+([\d,]+\.\d{2,5})\s+([\d,]+\.\d{2})T?$/;
+  var items = [];
+  lines.forEach(function(line) {
+    var m = line.match(rowRe);
+    if (!m) return;
+    var description = m[2].trim();
+    items.push({
+      description: description,
+      qty: parseFloat(m[1]),
+      unit: '',
+      rate: parseFloat(m[3].replace(/,/g, '')),
+      amount: parseFloat(m[4].replace(/,/g, '')),
+      lineType: qboClassifyLineType_(description)
+    });
+  });
+  var tax = qboExtractTaxLine_(lines);
+  if (tax) items.push(tax);
+  return items;
+}
+
+/**
+ * Timberline Exteriors: "Item Code Description Quantity Price Each
+ * Amount[T]" -- item code leads instead of quantity, so the description
+ * capture comes first here and the trailing three fields are qty/price/
+ * amount instead of price/amount alone. Qty allows a comma (Rustic Lumber's
+ * quantities run into the thousands, e.g. "1,396").
+ */
+function parseTimberlineInvoice_(lines) {
+  var rowRe = /^(.+?)\s+([\d,]+(?:\.\d+)?)\s+([\d,]+\.\d{2,5})\s+([\d,]+\.\d{2})T?$/;
+  var items = [];
+  lines.forEach(function(line) {
+    var m = line.match(rowRe);
+    if (!m) return;
+    var description = m[1].trim();
+    items.push({
+      description: description,
+      qty: parseFloat(m[2].replace(/,/g, '')),
+      unit: '',
+      rate: parseFloat(m[3].replace(/,/g, '')),
+      amount: parseFloat(m[4].replace(/,/g, '')),
+      lineType: qboClassifyLineType_(description)
+    });
+  });
+  var tax = qboExtractTaxLine_(lines);
+  if (tax) items.push(tax);
+  return items;
+}
+
+/**
+ * Lansing Building Products: "LN# Item# Description OrdQty BOQty ShipQty
+ * U/M UnitPrice Amount". Uses Ship Qty (what was actually shipped/billed),
+ * not Ordered Qty.
+ */
+function parseLansingInvoice_(lines) {
+  var rowRe = /^(\d+)\s+(\S+)\s+(.+?)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\S{1,6})\s+([\d,]+\.\d{1,5})\s+([\d,]+\.\d{2})$/;
+  var items = [];
+  lines.forEach(function(line) {
+    var m = line.match(rowRe);
+    if (!m) return;
+    var description = m[3].trim();
+    items.push({
+      description: description,
+      qty: parseFloat(m[6]),
+      unit: m[7],
+      rate: parseFloat(m[8].replace(/,/g, '')),
+      amount: parseFloat(m[9].replace(/,/g, '')),
+      lineType: qboClassifyLineType_(description)
+    });
+  });
+  var tax = qboExtractTaxLine_(lines);
+  if (tax) items.push(tax);
+  return items;
+}
+
+/**
+ * ABC Supply Interiors: "ItemCode Description QtyOrdered QtyShipped UOM
+ * ExtendedQty PriceUOM PricePerUOM ExtendedPrice" -- the most column-heavy
+ * of these templates. Anchored on the specific 7-field trailing shape
+ * (int, int, letters, decimal, letters, decimal, decimal) so embedded
+ * measurements in the description (e.g. `40" x 49'`) don't get mistaken
+ * for it -- those carry symbols (", ') that keep them from matching a
+ * pure-digit token.
+ */
+function parseABCInteriorsInvoice_(lines) {
+  var rowRe = /^(\S+)\s+(.+?)\s+(\d+)\s+(\d+)\s+([A-Za-z]{1,4})\s+([\d.]+)\s+([A-Za-z]{1,4})\s+([\d,]+\.\d{2,5})\s+([\d,]+\.\d{2})$/;
+  var items = [];
+  lines.forEach(function(line) {
+    var m = line.match(rowRe);
+    if (!m) return;
+    var description = (m[1] + ' ' + m[2]).trim();
+    items.push({
+      description: description,
+      qty: parseFloat(m[4]),
+      unit: m[5],
+      rate: parseFloat(m[8].replace(/,/g, '')),
+      amount: parseFloat(m[9].replace(/,/g, '')),
+      lineType: qboClassifyLineType_(description)
+    });
+  });
+  var tax = qboExtractTaxLine_(lines);
+  if (tax) items.push(tax);
+  return items;
+}
+
+/**
+ * Associated Materials (Alside Supply Center): "Quantity UOM
+ * ItemDescription [Color] ProductCode UnitPrice ExtendedPrice". Some rows
+ * (delivery fee, fuel surcharge) omit Quantity/UOM/UnitPrice entirely --
+ * those don't match this pattern and are intentionally left for manual
+ * entry rather than guessed at.
+ */
+function parseAssociatedMaterialsInvoice_(lines) {
+  var rowRe = /^([\d.]+)\s+([A-Za-z]{1,4})\s+(.+?)\s+([\d.]+)\s+([\d.]+)$/;
+  var items = [];
+  lines.forEach(function(line) {
+    var m = line.match(rowRe);
+    if (!m) return;
+    var description = m[3].trim();
+    items.push({
+      description: description,
+      qty: parseFloat(m[1]),
+      unit: m[2],
+      rate: parseFloat(m[4]),
+      amount: parseFloat(m[5]),
+      lineType: qboClassifyLineType_(description)
+    });
+  });
+  var tax = qboExtractTaxLine_(lines);
+  if (tax) items.push(tax);
+  return items;
+}
+
+/**
+ * Scans reconstructed lines for a "Freight ... $amount" style line and
+ * returns a freight-type line item, or null. Same lazy-match shape as
+ * qboExtractTaxLine_ -- Interstate Brick's "Total Freight 353.00" is a
+ * footer line, not a per-line charge like other vendors' freight rows.
+ */
+function qboExtractFreightLine_(lines) {
+  for (var i = 0; i < lines.length; i++) {
+    var m = lines[i].match(/freight\b.*?([\d,]+\.\d{2})\s*$/i);
+    if (m) {
+      var amt = parseFloat(m[1].replace(/,/g, ''));
+      if (amt > 0) return { description: 'Freight', qty: '', unit: '', rate: '', amount: amt, lineType: 'freight' };
+    }
+  }
+  return null;
+}
+
+/**
+ * Interstate Brick (Basalite Building Products): each line item spans TWO
+ * physical rows -- row 1 is "ItemNum ProductCode Qty[glued-or-spaced-UOM]
+ * UnitPrice Amount", row 2 is the actual product description plus a
+ * "/1,000 EA"-style per-unit-basis suffix (stripped), with an optional
+ * third "Batch: ..." row that's simply not consumed by either pattern and
+ * therefore ignored. Row 1's Qty+UOM are inconsistently glued ("4,240EA")
+ * or spaced ("2 RL") across real samples -- \s* handles both. Tax and
+ * freight are separate footer totals (multi-page invoices put them on
+ * page 2), not per-line charges, so they're pulled via the shared footer
+ * extractors instead of by line-item classification.
+ */
+function parseInterstateBrickInvoice_(lines) {
+  var rowRe = /^\d{4}\s+\d+\s+([\d,]+)\s*([A-Za-z]{1,4})\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s*$/;
+  var items = [];
+  for (var i = 0; i < lines.length; i++) {
+    var m = lines[i].match(rowRe);
+    if (!m) continue;
+    var qty = parseFloat(m[1].replace(/,/g, ''));
+    var unit = m[2];
+    var rate = parseFloat(m[3].replace(/,/g, ''));
+    var amount = parseFloat(m[4].replace(/,/g, ''));
+    var next = lines[i + 1];
+    var description = '';
+    if (next && !rowRe.test(next) && !/^batch:/i.test(next)) {
+      description = next.replace(/\/\s*[\d,]+\s*[A-Za-z]+\s*$/i, '').trim();
+    }
+    items.push({
+      description: description || 'Material',
+      qty: qty, unit: unit, rate: rate, amount: amount,
+      lineType: qboClassifyLineType_(description)
+    });
+  }
+  var tax = qboExtractTaxLine_(lines);
+  if (tax) items.push(tax);
+  var freight = qboExtractFreightLine_(lines);
+  if (freight) items.push(freight);
+  return items;
+}
+
+/**
+ * LKL Associates: each line item also spans TWO physical rows -- row 1 is
+ * "QtyOrdered QtyShipped UOM ItemCode ConvertedQty/UOM Price/UOM Amount",
+ * row 2 is the real product description. Only the item code (first token
+ * after UOM) is kept from row 1; the ConvertedQty/Price-per-UOM fields in
+ * between are dropped rather than captured, since they're glued to their
+ * UOM with a "/" (e.g. "110.90/RL") and add no value once Amount is known
+ * directly. Rate is deliberately left blank rather than guessed from that
+ * glued field -- Amount and Qty are what the Bill actually needs.
+ */
+function parseLKLAssociatesInvoice_(lines) {
+  var rowRe = /^(\d+)\s+(\d+)\s+([A-Za-z]{1,4})\s+(\S+).*?([\d,]+\.\d{2})\s*$/;
+  var items = [];
+  for (var i = 0; i < lines.length; i++) {
+    var m = lines[i].match(rowRe);
+    if (!m) continue;
+    var qtyShipped = parseFloat(m[2]);
+    var unit = m[3];
+    var itemCode = m[4];
+    var amount = parseFloat(m[5].replace(/,/g, ''));
+    var next = lines[i + 1];
+    var description = (next && !rowRe.test(next)) ? (itemCode + ' ' + next).trim() : itemCode;
+    items.push({
+      description: description, qty: qtyShipped, unit: unit, rate: '', amount: amount,
+      lineType: qboClassifyLineType_(description)
+    });
+  }
+  var tax = qboExtractTaxLine_(lines);
+  if (tax) items.push(tax);
+  return items;
+}
+
+/**
+ * Transcending Barriers Metal: "# Item&Description Qty Rate Amount", where
+ * Item&Description contains a nested "Quantity | Trim Type" sub-table for
+ * the specific trims ordered (e.g. "3 Custom Drip .5/.5 Drip"). Only ONE
+ * sample invoice available -- this parser folds the nested sub-table into
+ * the outer description (same lazy-capture technique as Timberline/Leak
+ * Tech/Rustic) rather than attempting to parse it, since a single-item,
+ * single-sample invoice isn't enough to confidently generalize a nested-
+ * table parser. Reviewer should expect the specific trim spec to still be
+ * worth double-checking against the PDF for a while until more samples
+ * confirm this holds for multi-item invoices too.
+ */
+function parseTranscendingBarriersMetalInvoice_(lines) {
+  var rowRe = /^\d+\s+(.+?)\s+([\d.]+)\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})$/;
+  var items = [];
+  lines.forEach(function(line) {
+    var m = line.match(rowRe);
+    if (!m) return;
+    var description = m[1].trim();
+    items.push({
+      description: description,
+      qty: parseFloat(m[2]),
+      unit: '',
+      rate: parseFloat(m[3].replace(/,/g, '')),
+      amount: parseFloat(m[4].replace(/,/g, '')),
+      lineType: qboClassifyLineType_(description)
+    });
+  });
+  var tax = qboExtractTaxLine_(lines);
+  if (tax) items.push(tax);
+  return items;
+}
+
+/**
+ * Leak Tech Technologies: "Description QTY RATE AMOUNT[T]", same trailing
+ * shape as Timberline. The description here is a short bold label ("Step
+ * Fascia", "J - Channel", "L - Metal") with a dimensional spec that wraps
+ * onto its own line below in the source PDF -- that wrapped continuation
+ * has no qty/rate/amount on its row, so it just won't match this pattern
+ * and is dropped, leaving the short label as the captured description.
+ * That's the better outcome anyway: a short normalized label is a closer
+ * match to a QBO Item name than the full dimensional spec would be.
+ */
+var INVOICE_PARSERS = {
+  'Castalite': parseQtyDescPriceAmount_,
+  'Harristone': parseQtyDescPriceAmount_,
+  'Timberline': parseTimberlineInvoice_,
+  'Leak Tech': parseTimberlineInvoice_,
+  'Rustic': parseTimberlineInvoice_,
+  'Lansing': parseLansingInvoice_,
+  'ABC Interiors': parseABCInteriorsInvoice_,
+  'Alside': parseAssociatedMaterialsInvoice_,
+  'Interstate Brick': parseInterstateBrickInvoice_,
+  'LKL Associates': parseLKLAssociatesInvoice_,
+  'Transcending': parseTranscendingBarriersMetalInvoice_
+};
+
+/**
+ * Extracts line items from an already-uploaded invoice PDF and stages them
+ * for review. payload: {poNumber, rowIndex, vendor, vendorInvoice,
+ * invoiceFileUrl, builder, jobRef, invoiceLines: string[], invoiceTotal}.
+ * Broad role gate (matches who can upload an invoice at all) since this
+ * only stages data -- it never touches QuickBooks. Blocks re-extraction if
+ * this PO+Vendor Invoice# was already posted, per the locked decision.
+ */
+function extractInvoiceLineItems(payload) {
+  var auth = authorizeCaller(payload, ['admin', 'office', 'site_manager']);
+  if (!auth.ok) return { error: auth.error, code: auth.code };
+  try {
+    var vendor        = (payload.vendor || '').toString().trim();
+    var poNumber      = (payload.poNumber || '').toString().trim();
+    var vendorInvoice = (payload.vendorInvoice || '').toString().trim();
+    var invoiceLines  = payload.invoiceLines || [];
+
+    var dup = findPostedStagingRow_(poNumber, vendorInvoice);
+    if (dup) {
+      return {
+        success: false, blocked: true,
+        error: 'This invoice (PO ' + poNumber + (vendorInvoice ? ', Vendor Invoice# ' + vendorInvoice : '') +
+               ') was already posted to QuickBooks as Bill ' + dup.qbBillId + '. It was not re-extracted.',
+        existingStagingId: dup.stagingId, qbBillId: dup.qbBillId
+      };
+    }
+
+    var lineItems = [];
+    var parser = INVOICE_PARSERS[vendor];
+    if (parser && invoiceLines.length) {
+      try {
+        var parsed = parser(invoiceLines, payload.invoiceTotal);
+        if (parsed && parsed.length) lineItems = parsed;
+      } catch (parseErr) {
+        lineItems = []; // parser failure -> manual entry, never a half-guessed result
+      }
+    }
+
+    var customerLookup = getProjectQuickBooksId_(payload.builder, payload.jobRef);
+    var vendorLookup    = getQuickBooksVendorId_(vendor);
+
+    var stagingId = createStagingRow_({
+      poNumber: poNumber,
+      rowIndex: payload.rowIndex,
+      vendor: vendor,
+      vendorInvoice: vendorInvoice,
+      invoiceFileUrl: payload.invoiceFileUrl,
+      builder: payload.builder,
+      jobRef: payload.jobRef,
+      qbCustomerId: customerLookup.qbCustomerId || '',
+      qbVendorId: vendorLookup.qbVendorId || '',
+      lineItems: lineItems,
+      invoiceTotal: payload.invoiceTotal || ''
+    });
+
+    return {
+      success: true, stagingId: stagingId, lineItems: lineItems,
+      needsManualEntry: lineItems.length === 0,
+      customerMatched: customerLookup.matched, vendorMatched: vendorLookup.matched
+    };
+  } catch (e) {
+    return { error: e.toString() };
   }
 }
 
