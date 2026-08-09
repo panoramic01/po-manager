@@ -1755,12 +1755,19 @@ function saveInvoiceStagingReview(payload) {
 
     if (payload.lineItems) {
       sheet.getRange(rowIdx, QB_STAGING_COL['Line Items JSON'] + 1).setValue(JSON.stringify(payload.lineItems));
+      // Keep Invoice Total in sync with whatever the reviewer edited the lines to --
+      // this is what gets pushed back onto the PO row on approve.
+      var recomputedTotal = payload.lineItems.reduce(function(s, li) { return s + (parseFloat(li.amount) || 0); }, 0);
+      sheet.getRange(rowIdx, QB_STAGING_COL['Invoice Total'] + 1).setValue(recomputedTotal);
     }
     if (payload.qbCustomerId !== undefined) {
       sheet.getRange(rowIdx, QB_STAGING_COL['QB Customer Id'] + 1).setValue(payload.qbCustomerId);
     }
     if (payload.qbVendorId !== undefined) {
       sheet.getRange(rowIdx, QB_STAGING_COL['QB Vendor Id'] + 1).setValue(payload.qbVendorId);
+    }
+    if (payload.vendorInvoice !== undefined) {
+      sheet.getRange(rowIdx, QB_STAGING_COL['Vendor Invoice#'] + 1).setValue(payload.vendorInvoice);
     }
 
     var nextStatus = payload.approve ? 'Approved' : (payload.reject ? 'Rejected' : currentStatus);
@@ -1822,6 +1829,26 @@ function qboClassifyLineType_(description) {
  * row ("SALES TAX 91-0000-00 14.36") -- only the LAST number on the line
  * is taken as the amount.
  */
+/**
+ * Best-effort scan for a "Invoice[#/Number/No] <value>" style line, used to
+ * pre-fill the Vendor Invoice # field on upload instead of leaving it for
+ * the user to retype from the PDF. Not anchored to a specific vendor
+ * layout -- covers label-adjacent formats (ABC's "Invoice Number
+ * 1018814305-001", Alside's "INVOICE # 156009990726", Transcending's
+ * "Invoice# INV-027632", Rustic's "INVOICE 8066"). Vendors whose invoice
+ * number sits in a table cell below a separate header row (Castalite,
+ * Harristone, Timberline, Leak Tech, Lansing) aren't covered by this --
+ * the field just stays blank and editable in that case, same as before
+ * this existed. Returns '' if nothing confidently matches.
+ */
+function qboDetectInvoiceNumber_(lines) {
+  for (var i = 0; i < lines.length; i++) {
+    var m = lines[i].match(/invoice\s*(?:#|number|no\.?)?\s*:?\s*([A-Za-z0-9][A-Za-z0-9-]{2,19})\s*$/i);
+    if (m) return m[1];
+  }
+  return '';
+}
+
 function qboExtractTaxLine_(lines) {
   for (var i = 0; i < lines.length; i++) {
     var m = lines[i].match(/(?:sales\s*)?tax(?:es)?\b.*?([\d,]+\.\d{2})\s*$/i);
@@ -2158,6 +2185,14 @@ function extractInvoiceLineItems(payload) {
       }
     }
 
+    // Auto-fill what the PO itself needs, so the reviewer is confirming
+    // values rather than typing them from scratch: Vendor Invoice # from a
+    // best-effort label scan, Invoice Total as the sum of extracted lines
+    // (the actual number that matters for the balance check and the Bill).
+    if (!vendorInvoice) vendorInvoice = qboDetectInvoiceNumber_(invoiceLines);
+    var computedTotal = lineItems.reduce(function(s, li) { return s + (parseFloat(li.amount) || 0); }, 0);
+    var invoiceTotal = payload.invoiceTotal || (lineItems.length ? computedTotal : '');
+
     var customerLookup = getProjectQuickBooksId_(payload.builder, payload.jobRef);
     var vendorLookup    = getQuickBooksVendorId_(vendor);
 
@@ -2172,11 +2207,11 @@ function extractInvoiceLineItems(payload) {
       qbCustomerId: customerLookup.qbCustomerId || '',
       qbVendorId: vendorLookup.qbVendorId || '',
       lineItems: lineItems,
-      invoiceTotal: payload.invoiceTotal || ''
+      invoiceTotal: invoiceTotal
     });
 
     return {
-      success: true, stagingId: stagingId, lineItems: lineItems,
+      success: true, stagingId: stagingId, lineItems: lineItems, vendorInvoice: vendorInvoice, invoiceTotal: invoiceTotal,
       needsManualEntry: lineItems.length === 0,
       customerMatched: customerLookup.matched, vendorMatched: vendorLookup.matched
     };

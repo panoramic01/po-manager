@@ -993,10 +993,6 @@
           <span class="tile-swatch ts-teal"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 7h6m-6 4h6m-6 4h4M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/></svg></span>
           <span class="tile-label">QuickBooks</span>
         </div>
-        <div id="other-card-invoice-review" class="tile" onclick="showOtherPanel('invoice-review')">
-          <span class="tile-swatch ts-teal"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5-1a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></span>
-          <span class="tile-label">Invoice Review</span>
-        </div>
       </div>
 
     </div>
@@ -1120,23 +1116,35 @@
       </div>
     </div>
 
-    <!-- Invoice Review sub-panel -->
+    <!-- Add Invoice sub-panel: opened via the "Add Invoice" button on a specific PO's
+         detail view (irStartUploadForPO), never from a nav tile. Always scoped to one
+         PO -- Back always returns to that PO, never to the Other-tab home grid. -->
     <div id="other-panel-invoice-review" style="display:none">
       <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid var(--c-border-hair);background:var(--c-surface);position:sticky;top:0;z-index:1">
-        <button onclick="irBackToList()" style="background:none;border:none;font-size:14px;font-weight:600;color:var(--c-navy);cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
-        <span style="font-size:15px;font-weight:700;color:var(--c-navy);flex:1;margin-left:2px">Invoice Review</span>
+        <button onclick="irBackToPO()" style="background:none;border:none;font-size:14px;font-weight:600;color:var(--c-navy);cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
+        <span id="ir-panel-title" style="font-size:15px;font-weight:700;color:var(--c-navy);flex:1;margin-left:2px">Add Invoice</span>
       </div>
 
-      <!-- List view: staging rows awaiting review -->
-      <div id="ir-list-view">
-        <div id="ir-loading" style="display:none"><div class="loading"><div class="spinner"></div><p>Loading staged invoices…</p></div></div>
-        <div id="ir-list" style="padding:12px 16px"></div>
+      <!-- Upload view: pick/drop the invoice file for the current PO -->
+      <div id="ir-upload-view" style="padding:16px">
+        <div id="ir-upload-po-header" style="font-size:13px;color:var(--c-ink-soft);margin-bottom:14px"></div>
+        <div id="ir-upload-drop" ondragover="event.preventDefault();this.style.background='#f0f4ff'" ondragleave="this.style.background=''" ondrop="irHandleUploadDrop(event)"
+             style="border:2px dashed var(--c-border);border-radius:12px;padding:32px 16px;text-align:center;cursor:pointer;background:var(--c-surface)"
+             onclick="document.getElementById('ir-upload-file-input').click()">
+          <div style="font-size:14px;font-weight:600;color:var(--c-navy);margin-bottom:4px">Tap to choose the invoice PDF</div>
+          <div style="font-size:12px;color:var(--c-ink-faint)">or drag and drop</div>
+        </div>
+        <input type="file" id="ir-upload-file-input" accept=".pdf,image/*" style="display:none" onchange="irHandleUploadInputChange(this)">
+        <div id="ir-upload-status" style="font-size:12px;color:var(--c-ink-soft);margin-top:12px"></div>
       </div>
 
-      <!-- Detail view: one staging row -->
+      <!-- Detail view: extracted line items for the invoice just uploaded -->
       <div id="ir-detail-view" style="display:none;padding:16px">
         <div style="background:var(--c-surface);border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:12px">
           <div id="ir-detail-header" style="font-size:13px;color:var(--c-ink-soft);line-height:1.6"></div>
+          <label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin:10px 0 4px">Vendor Invoice # <span style="font-weight:400;color:var(--c-ink-faint)">(auto-detected — check it)</span></label>
+          <input type="text" id="ir-vendor-invoice" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px">
+          <div style="font-size:11px;color:var(--c-ink-faint);margin-top:8px">Invoice Total will be set to the sum of the line items below when you Approve.</div>
         </div>
 
         <div style="background:var(--c-surface);border-radius:12px;padding:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:12px;overflow-x:auto">
@@ -2305,6 +2313,7 @@
   <div class="cleanup-header">
     <h2 id="po-detail-title">PO</h2>
     <div style="display:flex;gap:8px;flex-shrink:0">
+      <button class="po-detail-edit-btn" id="po-detail-addinvoice-btn" onclick="irStartUploadForPO(G.detailPO)" title="Add Invoice" style="display:none">Inv</button>
       <button class="po-detail-edit-btn" id="po-detail-subpo-btn" onclick="openSubPOForm(G.detailPO)" title="Create Sub-PO">+B</button>
       <button class="po-detail-edit-btn" id="po-detail-edit-btn" onclick="editFromPODetail()" title="Edit PO">&#9998;</button>
       <button class="cleanup-close" onclick="closePODetail()">Close</button>
@@ -3143,7 +3152,6 @@ function applyRole(role) {
   sd('other-card-payroll',       has(['admin', 'human_resources']));
   sd('other-card-new-project',   p.canCreate);
   sd('other-card-quickbooks',    has(['aidan']));
-  sd('other-card-invoice-review', has(['aidan']));
   sd('receive-po-card', p.canReceivePO);
   // Runner reaches Receive PO from its own Home tile -- show a quick-pick
   // list of recent orders on this tab instead for them. Re-evaluated every
@@ -4967,6 +4975,10 @@ function showPODetail(poNum) {
   if (editBtn) editBtn.style.display = G.perms.canEdit ? '' : 'none';
   var subpoBtn = document.getElementById('po-detail-subpo-btn');
   if (subpoBtn) subpoBtn.style.display = G.perms.canEdit ? '' : 'none';
+  // Owner-only, matching the rest of the QuickBooks-facing pipeline (review/approve/
+  // create-bill are all owner-gated server-side too -- see saveInvoiceStagingReview).
+  var addInvoiceBtn = document.getElementById('po-detail-addinvoice-btn');
+  if (addInvoiceBtn) addInvoiceBtn.style.display = G.isAidan ? '' : 'none';
 
   var amtRow = (G.perms.canViewInvoice && po.invoiceTotal && parseFloat(po.invoiceTotal) > 0)
     ? poDetailRow('Invoice Total', '$' + fmtCurrency(po.invoiceTotal)) : '';
@@ -5119,20 +5131,6 @@ function submitCreateSubPO(parentPoNum) {
     setBtnState('sp-create-btn', 'Create Sub-PO', false);
     if (res.success) {
       G.subPoIdemKey = null;
-      if (G.pendingSubPOInvoiceExtraction) {
-        var ext = G.pendingSubPOInvoiceExtraction;
-        G.pendingSubPOInvoiceExtraction = null;
-        var subCtx = G.subPOContext || {};
-        gasCall('extractInvoiceLineItems', {
-          poNumber: res.poNumber, rowIndex: res.rowIndex, vendor: ext.vendor,
-          vendorInvoice: ext.vendorInvoice, invoiceFileUrl: ext.invoiceFileUrl,
-          builder: subCtx.builder || '', jobRef: subCtx.jobRef || '', invoiceTotal: ext.invoiceTotal,
-          invoiceLines: ext.invoiceLines
-        }, function(exRes) {
-          if (exRes && exRes.blocked) showToast(exRes.error);
-          else if (exRes && exRes.success) showToast((exRes.lineItems && exRes.lineItems.length ? exRes.lineItems.length + ' line item(s) extracted' : 'Invoice staged') + ' — review in Invoice Review');
-        }, function(err) { console.error('extractInvoiceLineItems failed:', err); }, { timeoutMs: 30000 });
-      }
       loadData();
       showToast('Created ' + res.poNumber);
       closePODetail();
@@ -6106,34 +6104,6 @@ function qbGroupTextItemsIntoLines_(items) {
 }
 
 /**
- * Fires PDF-based invoice line-item extraction (extractInvoiceLineItems) for
- * an already-uploaded invoice. No-ops for non-PDF files -- image/scanned
- * invoices have no column structure to parse and always fall back to
- * manual entry in the review screen. Best-effort background step: the
- * upload itself already succeeded and isn't blocked on this, so failures
- * here are logged, not surfaced as an error toast.
- */
-function qbTriggerInvoiceExtraction(opts) {
-  if (!opts.file || !/\.pdf$/i.test(opts.file.name || '')) return;
-  qbExtractInvoiceLines(opts.file, function(lines) {
-    gasCall('extractInvoiceLineItems', {
-      poNumber: opts.poNumber, rowIndex: opts.rowIndex, vendor: opts.vendor,
-      vendorInvoice: opts.vendorInvoice, invoiceFileUrl: opts.invoiceFileUrl,
-      builder: opts.builder, jobRef: opts.jobRef, invoiceTotal: opts.invoiceTotal,
-      invoiceLines: lines
-    }, function(res) {
-      if (res && res.blocked) {
-        showToast(res.error);
-      } else if (res && res.success) {
-        showToast((res.lineItems && res.lineItems.length ? res.lineItems.length + ' line item(s) extracted' : 'Invoice staged') + ' — review in Invoice Review');
-      }
-    }, function(err) {
-      console.error('extractInvoiceLineItems failed:', err);
-    }, { timeoutMs: 30000 });
-  });
-}
-
-/**
  * Handles file upload for the Invoice File field in the Edit modal.
  * Mirrors handleIssuedFile but writes into #e-invoicefile and uploads
  * into the Invoices folder (docType: 'invoice').
@@ -6168,11 +6138,6 @@ function uploadInvoiceFile(file) {
         statusEl.textContent = 'Uploaded — link filled in above';
         statusEl.className   = 'photo-status done';
         if (res.noJobFolder) showNoDriveFolderNotice(builder, jobRef);
-        qbTriggerInvoiceExtraction({
-          file: file, poNumber: poNum, rowIndex: G.editRow, vendor: vendor,
-          vendorInvoice: trim('e-vinvoice'), invoiceFileUrl: res.url,
-          builder: builder, jobRef: jobRef, invoiceTotal: val('e-total')
-        });
       } else {
         console.error('savePhotoToDrive/saveFileToFolderById failed:', res.error);
         statusEl.textContent = friendlyServerError(res.error);
@@ -6276,19 +6241,6 @@ function uploadSubPOInvoiceFile(file) {
         statusEl.textContent = 'Uploaded — link filled in above';
         statusEl.className   = 'photo-status done';
         if (res.noJobFolder) showNoDriveFolderNotice(builder, jobRef);
-        // The sub-PO row doesn't exist yet (created on form submit, below),
-        // so extraction can't fire yet -- capture the PDF's reconstructed
-        // lines now and stash them; submitSubPO's success callback fires
-        // the actual extractInvoiceLineItems call once a real PO number
-        // and row index exist.
-        if (/\.pdf$/i.test(file.name || '')) {
-          qbExtractInvoiceLines(file, function(lines) {
-            G.pendingSubPOInvoiceExtraction = {
-              invoiceLines: lines, vendor: vendor, vendorInvoice: trim('sp-invoice'),
-              invoiceFileUrl: res.url, invoiceTotal: val('sp-total')
-            };
-          });
-        }
       } else {
         console.error('savePhotoToDrive/saveFileToFolderById failed:', res.error);
         statusEl.textContent = friendlyServerError(res.error);
@@ -7432,7 +7384,6 @@ function showOtherPanel(name) {
   if (name === 'payroll') { loadPayroll(0); loadPayrollCorrectionQueue(); }
   if (name === 'new-project') resetNewProjectDriveHint();
   if (name === 'quickbooks') loadQuickBooksPanel();
-  if (name === 'invoice-review') loadInvoiceReviewPanel();
 }
 
 // Several other-panel-* elements aren't actually nested inside #tab-other in
@@ -7508,54 +7459,86 @@ function disconnectQuickBooksUI() {
 }
 
 
-// ── Invoice Review (staged invoice line items → QuickBooks Bill) ──────────────
-// Standalone from Material Report by design -- separate DOM ids/state, no
-// shared functions. Line items are staged server-side by
-// extractInvoiceLineItems (fired automatically on PO/Sub-PO invoice upload,
-// see qbTriggerInvoiceExtraction) and reviewed/edited here before Approve.
-// Approve only flips Status -> 'Approved' today (Phase 1) -- Bill creation
-// against QuickBooks itself is Phase 3, not wired up yet.
-var G_ir = { stagingId: null, lineItems: [], row: null };
+// ── Add Invoice (staged invoice line items → QuickBooks Bill) ─────────────────
+// Entered ONLY via the "Add Invoice" button on a specific PO's detail view
+// (irStartUploadForPO) -- there is no nav tile and no global list. Owner-only
+// end to end, matching the rest of the QuickBooks-facing pipeline.
+var G_ir = { stagingId: null, lineItems: [], row: null, poContext: null, catalog: null };
 
-function loadInvoiceReviewPanel() {
-  document.getElementById('ir-list-view').style.display = '';
+function irStartUploadForPO(poNum) {
+  var po = G.pos.find(function(p) { return p.poNum === poNum; });
+  if (!po) return;
+  G_ir = {
+    stagingId: null, lineItems: [], row: null, catalog: null,
+    poContext: { poNumber: po.poNum, rowIndex: po.rowIndex, builder: po.builder, jobRef: po.jobRef, vendor: po.vendor }
+  };
+  document.getElementById('ir-panel-title').textContent = 'Add Invoice';
+  document.getElementById('ir-upload-view').style.display = '';
   document.getElementById('ir-detail-view').style.display = 'none';
-  G_ir = { stagingId: null, lineItems: [], row: null };
-  document.getElementById('ir-loading').style.display = '';
-  document.getElementById('ir-list').innerHTML = '';
-  gasCall('getInvoiceStaging', { status: ['Pending', 'Approved'] }, function(res) {
-    document.getElementById('ir-loading').style.display = 'none';
-    if (res.error) { document.getElementById('ir-list').innerHTML = '<div class="empty">Error: ' + esc(res.error) + '</div>'; return; }
-    renderInvoiceReviewList(res.rows || []);
-  }, function(err) {
-    document.getElementById('ir-loading').style.display = 'none';
-    document.getElementById('ir-list').innerHTML = '<div class="empty">Error: ' + esc(friendlyUploadError(err)) + '</div>';
-  });
+  document.getElementById('ir-upload-status').textContent = '';
+  document.getElementById('ir-upload-po-header').innerHTML =
+    '<div><b>PO:</b> ' + esc(po.poNum) + '</div>' +
+    '<div><b>Vendor:</b> ' + esc(po.vendor) + '</div>' +
+    '<div><b>Job:</b> ' + esc(po.builder) + ' / ' + esc(po.jobRef) + '</div>';
+  closePODetail();
+  showOtherPanel('invoice-review');
 }
 
-function irBackToList() { loadInvoiceReviewPanel(); }
+function irBackToPO() {
+  var poNumber = G_ir.poContext && G_ir.poContext.poNumber;
+  resetOtherPanels();
+  if (poNumber) showPODetail(poNumber);
+}
 
-function renderInvoiceReviewList(rows) {
-  var el = document.getElementById('ir-list');
-  if (!rows.length) { el.innerHTML = '<div class="empty">No invoices waiting for review.</div>'; return; }
-  rows.sort(function(a, b) { return (a.status === b.status) ? 0 : (a.status === 'Pending' ? -1 : 1); });
-  el.innerHTML = rows.map(function(r) {
-    var total = (r.lineItems || []).reduce(function(s, li) { return s + (parseFloat(li.amount) || 0); }, 0);
-    var badgeColor = r.status === 'Approved' ? 'var(--bd-green-fg)' : 'var(--c-ink-soft)';
-    return '<div class="po-item" onclick="irOpenDetail(\'' + esc(r.stagingId) + '\')" style="cursor:pointer;margin-bottom:8px">' +
-      '<div style="display:flex;justify-content:space-between;align-items:center">' +
-        '<div>' +
-          '<div style="font-weight:700;color:var(--c-navy)">' + esc(r.poNumber) + ' · ' + esc(r.vendor) + '</div>' +
-          '<div style="font-size:11px;color:var(--c-ink-soft)">' + esc(r.builder) + ' / ' + esc(r.jobRef) +
-            (r.lineItems.length ? ' · ' + r.lineItems.length + ' line(s)' : ' · needs manual entry') + '</div>' +
-        '</div>' +
-        '<div style="text-align:right">' +
-          '<div style="font-weight:700">$' + total.toFixed(2) + '</div>' +
-          '<div style="font-size:11px;font-weight:700;color:' + badgeColor + '">' + esc(r.status) + '</div>' +
-        '</div>' +
-      '</div>' +
-    '</div>';
-  }).join('');
+function irHandleUploadDrop(e) {
+  e.preventDefault();
+  e.currentTarget.style.background = '';
+  var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (file) irUploadInvoiceForPO(file);
+}
+function irHandleUploadInputChange(input) {
+  var file = input.files && input.files[0];
+  if (file) irUploadInvoiceForPO(file);
+}
+
+function irUploadInvoiceForPO(file) {
+  var statusEl = document.getElementById('ir-upload-status');
+  statusEl.textContent = 'Uploading…';
+  var ctx = G_ir.poContext;
+  readAndCompressFile(file, function(dataUrl, mimeType) {
+    var ext = mimeType === 'image/jpeg' ? 'jpg' : (file.name.split('.').pop() || 'bin');
+    var filename = buildDocFileName('Invoice', ctx.vendor, ctx.poNumber, ext);
+    gasCall('savePhotoToDrive', {
+      base64Data: dataUrl.split(',')[1], mimeType: mimeType, filename: filename,
+      builder: ctx.builder, jobRef: ctx.jobRef, docType: 'invoice'
+    }, function(res) {
+      if (!res.success) { statusEl.textContent = friendlyServerError(res.error); return; }
+      if (!/\.pdf$/i.test(file.name || '')) {
+        // Scanned/photo invoice -- no text layer to extract from. Stage it
+        // with zero line items so the reviewer lands straight on manual entry.
+        statusEl.textContent = "Uploaded. Not a PDF, so line items need to be entered manually.";
+        irExtractAndShow(ctx, res.url, []);
+        return;
+      }
+      statusEl.textContent = 'Reading invoice…';
+      qbExtractInvoiceLines(file, function(lines) {
+        irExtractAndShow(ctx, res.url, lines);
+      });
+    }, function(err) { statusEl.textContent = friendlyUploadError(err); });
+  }, function() { statusEl.textContent = 'Could not read file — try a different one'; });
+}
+
+function irExtractAndShow(ctx, invoiceFileUrl, invoiceLines) {
+  var statusEl = document.getElementById('ir-upload-status');
+  gasCall('extractInvoiceLineItems', {
+    poNumber: ctx.poNumber, rowIndex: ctx.rowIndex, vendor: ctx.vendor,
+    invoiceFileUrl: invoiceFileUrl, builder: ctx.builder, jobRef: ctx.jobRef,
+    invoiceLines: invoiceLines
+  }, function(res) {
+    if (res && res.blocked) { statusEl.textContent = res.error; return; }
+    if (!res || !res.success) { statusEl.textContent = (res && res.error) || 'Extraction failed'; return; }
+    irOpenDetail(res.stagingId);
+  }, function(err) { statusEl.textContent = friendlyUploadError(err); }, { timeoutMs: 30000 });
 }
 
 function irOpenDetail(stagingId) {
@@ -7565,18 +7548,21 @@ function irOpenDetail(stagingId) {
     if (!row) { showToast('Invoice not found'); return; }
     G_ir.stagingId = stagingId;
     G_ir.row = row;
+    G_ir.poContext = G_ir.poContext || { poNumber: row.poNumber, rowIndex: row.rowIndex, builder: row.builder, jobRef: row.jobRef, vendor: row.vendor };
     G_ir.lineItems = (row.lineItems || []).map(function(li) {
       return Object.assign({ lineType: 'material', qboItemId: null, qboItemName: null, matchConfidence: null, skip: false }, li);
     });
-    document.getElementById('ir-list-view').style.display = 'none';
+    document.getElementById('ir-panel-title').textContent = row.poNumber + ' Invoice';
+    document.getElementById('ir-upload-view').style.display = 'none';
     document.getElementById('ir-detail-view').style.display = '';
     document.getElementById('ir-detail-header').innerHTML =
       '<div><b>PO:</b> ' + esc(row.poNumber) + '</div>' +
-      '<div><b>Vendor:</b> ' + esc(row.vendor) + (row.vendorInvoice ? ' (Inv# ' + esc(row.vendorInvoice) + ')' : '') + '</div>' +
+      '<div><b>Vendor:</b> ' + esc(row.vendor) + '</div>' +
       '<div><b>Job:</b> ' + esc(row.builder) + ' / ' + esc(row.jobRef) + '</div>' +
       '<div><b>QB Customer Id:</b> ' + (row.qbCustomerId ? esc(row.qbCustomerId) : '<span style="color:var(--c-danger)">not linked — add to Projects sheet</span>') + '</div>' +
       '<div><b>QB Vendor Id:</b> ' + (row.qbVendorId ? esc(row.qbVendorId) : '<span style="color:var(--c-danger)">not linked — add to QB Vendor Map</span>') + '</div>' +
       (row.invoiceFileUrl ? '<div><a href="' + esc(row.invoiceFileUrl) + '" target="_blank" rel="noopener">View invoice file</a></div>' : '');
+    document.getElementById('ir-vendor-invoice').value = row.vendorInvoice || '';
     irRenderLineRows();
     var billBtn = document.getElementById('ir-create-bill-btn');
     var statusEl = document.getElementById('ir-detail-status');
@@ -7744,7 +7730,7 @@ function irUpdateBalanceCheck() {
 
 function irSaveDraft() {
   if (!G_ir.stagingId) return;
-  gasCall('saveInvoiceStagingReview', { stagingId: G_ir.stagingId, lineItems: G_ir.lineItems }, function(res) {
+  gasCall('saveInvoiceStagingReview', { stagingId: G_ir.stagingId, lineItems: G_ir.lineItems, vendorInvoice: trim('ir-vendor-invoice') }, function(res) {
     if (!res.success) { showToast(res.error || 'Save failed'); return; }
     showToast('Draft saved');
   }, function(err) { showToast(friendlyUploadError(err)); });
@@ -7753,11 +7739,28 @@ function irSaveDraft() {
 function irApprove() {
   if (!G_ir.stagingId) return;
   if (!G_ir.lineItems.length) { showToast('Add at least one line item before approving'); return; }
-  gasCall('saveInvoiceStagingReview', { stagingId: G_ir.stagingId, lineItems: G_ir.lineItems, approve: true }, function(res) {
+  var vendorInvoice = trim('ir-vendor-invoice');
+  gasCall('saveInvoiceStagingReview', { stagingId: G_ir.stagingId, lineItems: G_ir.lineItems, vendorInvoice: vendorInvoice, approve: true }, function(res) {
     if (!res.success) { showToast(res.error || 'Approve failed'); return; }
-    showToast('Approved');
+    showToast('Approved — PO updated');
+    irPatchPOFromStaging(vendorInvoice);
     irOpenDetail(G_ir.stagingId);
   }, function(err) { showToast(friendlyUploadError(err)); });
+}
+
+// Fills in the "blanks the app needs" once the reviewer confirms the parsed
+// invoice is correct: Vendor Invoice # and Invoice Total (sum of the
+// approved line items) land directly on the PO row, same fields the Edit
+// form would otherwise require typing by hand.
+function irPatchPOFromStaging(vendorInvoice) {
+  var ctx = G_ir.poContext;
+  if (!ctx || !ctx.rowIndex) return;
+  var invoiceTotal = G_ir.lineItems.reduce(function(s, li) { return s + (parseFloat(li.amount) || 0); }, 0);
+  var updates = { vendorInvoice: vendorInvoice, invoiceTotal: Math.round(invoiceTotal * 100) / 100 };
+  if (G_ir.row && G_ir.row.invoiceFileUrl) updates.invoiceFile = G_ir.row.invoiceFileUrl;
+  gasCall('updatePO', { rowIndex: ctx.rowIndex, updates: updates }, function(res) {
+    if (res.success) loadData();
+  }, function(err) { console.error('Failed to patch PO from invoice review:', err); });
 }
 
 function irCreateBill() {
