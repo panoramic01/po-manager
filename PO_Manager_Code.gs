@@ -2132,17 +2132,22 @@ function parseTranscendingBarriersMetalInvoice_(lines) {
 // regex parser below -- Gemini's vision + structured-output handles messier
 // multi-row templates (Interstate Brick, LKL Associates) and scanned/photo
 // invoices (no text layer, so the regex parsers can never handle them) that
-// the deterministic parsers above can't. Requires a GEMINI_API_KEY Script
-// Property (Apps Script editor -> Project Settings -> Script Properties);
-// get a free key at aistudio.google.com. Any failure (missing key, non-2xx,
-// quota/429, malformed JSON, safety block, empty result) returns null
-// uniformly -- extractInvoiceLineItems falls back to INVOICE_PARSERS below,
-// then manual entry, exactly as it did before Gemini existed.
+// the deterministic parsers above can't -- and also reads the vendor invoice
+// number directly off the document, closing a gap qboDetectInvoiceNumber_'s
+// label-scan never covered for some vendors (e.g. Timberline, whose invoice
+// number sits in a table cell rather than next to an "Invoice #" label).
+// Requires a GEMINI_API_KEY Script Property (Apps Script editor -> Project
+// Settings -> Script Properties); get a free key at aistudio.google.com. Any
+// failure (missing key, non-2xx, quota/429, malformed JSON, safety block,
+// empty lineItems) returns null uniformly -- extractInvoiceLineItems falls
+// back to INVOICE_PARSERS below, then manual entry, exactly as it did before
+// Gemini existed.
 var GEMINI_MODEL_ = 'gemini-3.6-flash';
 
-var GEMINI_LINE_ITEM_SCHEMA_ = {
+var GEMINI_INVOICE_SCHEMA_ = {
   type: 'object',
   properties: {
+    vendorInvoice: { type: 'string' },
     lineItems: {
       type: 'array',
       items: {
@@ -2164,9 +2169,12 @@ var GEMINI_LINE_ITEM_SCHEMA_ = {
 
 /**
  * Calls Gemini with the raw invoice file (PDF or photo) as inline data and
- * asks for structured JSON line items in the same shape the regex parsers
- * return: {description, qty, unit, rate, amount, lineType}. Returns an array
- * on success, or null on ANY failure -- see section comment above.
+ * asks for the vendor's invoice number plus structured JSON line items in
+ * the same shape the regex parsers return: {description, qty, unit, rate,
+ * amount, lineType}. Returns {vendorInvoice, lineItems} on success, or null
+ * on ANY failure -- see section comment above. vendorInvoice may be '' even
+ * on success if Gemini didn't find one; qboDetectInvoiceNumber_ is still the
+ * fallback for that case (see extractInvoiceLineItems).
  */
 function callGeminiForInvoiceExtraction_(base64Data, mimeType, vendor) {
   try {
@@ -2174,10 +2182,11 @@ function callGeminiForInvoiceExtraction_(base64Data, mimeType, vendor) {
     if (!apiKey) return null;
 
     var prompt = 'This is a vendor invoice' + (vendor ? ' from ' + vendor : '') + '. ' +
-      'Extract every line item as JSON. For each: description (string), qty (number, ' +
-      'omit if not shown), unit (string, omit if not shown), rate (number, omit if not ' +
-      'shown), amount (number, required), lineType ("material" for products/services, ' +
-      '"tax" for sales tax lines, "freight" for shipping/delivery/freight charges). ' +
+      'Extract the vendor\'s own invoice/document number (vendorInvoice, string, omit if ' +
+      'not shown) and every line item as JSON. For each line item: description (string), ' +
+      'qty (number, omit if not shown), unit (string, omit if not shown), rate (number, ' +
+      'omit if not shown), amount (number, required), lineType ("material" for products/' +
+      'services, "tax" for sales tax lines, "freight" for shipping/delivery/freight charges). ' +
       'Include footer tax and freight totals as their own line items. Do not include ' +
       'subtotal or grand-total rows as line items.';
 
@@ -2193,7 +2202,7 @@ function callGeminiForInvoiceExtraction_(base64Data, mimeType, vendor) {
           ] }],
           generationConfig: {
             responseMimeType: 'application/json',
-            responseSchema: GEMINI_LINE_ITEM_SCHEMA_
+            responseSchema: GEMINI_INVOICE_SCHEMA_
           }
         }),
         muteHttpExceptions: true
@@ -2211,16 +2220,19 @@ function callGeminiForInvoiceExtraction_(base64Data, mimeType, vendor) {
     var parsed = JSON.parse(textOut);
     if (!parsed || !Array.isArray(parsed.lineItems) || !parsed.lineItems.length) return null;
 
-    return parsed.lineItems.map(function(li) {
-      return {
-        description: (li.description || '').toString(),
-        qty:      li.qty  !== undefined && li.qty  !== null && li.qty  !== '' ? parseFloat(li.qty)  : '',
-        unit:     (li.unit || '').toString(),
-        rate:     li.rate !== undefined && li.rate !== null && li.rate !== '' ? parseFloat(li.rate) : '',
-        amount:   parseFloat(li.amount) || 0,
-        lineType: ['material', 'tax', 'freight'].indexOf(li.lineType) !== -1 ? li.lineType : 'material'
-      };
-    });
+    return {
+      vendorInvoice: (parsed.vendorInvoice || '').toString().trim(),
+      lineItems: parsed.lineItems.map(function(li) {
+        return {
+          description: (li.description || '').toString(),
+          qty:      li.qty  !== undefined && li.qty  !== null && li.qty  !== '' ? parseFloat(li.qty)  : '',
+          unit:     (li.unit || '').toString(),
+          rate:     li.rate !== undefined && li.rate !== null && li.rate !== '' ? parseFloat(li.rate) : '',
+          amount:   parseFloat(li.amount) || 0,
+          lineType: ['material', 'tax', 'freight'].indexOf(li.lineType) !== -1 ? li.lineType : 'material'
+        };
+      })
+    };
   } catch (e) {
     return null;
   }
@@ -2283,10 +2295,15 @@ function extractInvoiceLineItems(payload) {
 
     var lineItems = [];
     var extractionMethod = 'manual';
+    var geminiVendorInvoice = '';
 
     if (payload.base64Data && payload.mimeType) {
       var geminiResult = callGeminiForInvoiceExtraction_(payload.base64Data, payload.mimeType, vendor);
-      if (geminiResult) { lineItems = geminiResult; extractionMethod = 'gemini'; }
+      if (geminiResult) {
+        lineItems = geminiResult.lineItems;
+        geminiVendorInvoice = geminiResult.vendorInvoice || '';
+        extractionMethod = 'gemini';
+      }
     }
 
     if (!lineItems.length) {
@@ -2302,10 +2319,13 @@ function extractInvoiceLineItems(payload) {
     }
 
     // Auto-fill what the PO itself needs, so the reviewer is confirming
-    // values rather than typing them from scratch: Vendor Invoice # from a
-    // best-effort label scan, Invoice Total as the sum of extracted lines
-    // (the actual number that matters for the balance check and the Bill).
-    if (!vendorInvoice) vendorInvoice = qboDetectInvoiceNumber_(invoiceLines);
+    // values rather than typing them from scratch: Vendor Invoice # from
+    // Gemini's read of the document (falling back to the best-effort label
+    // scan when Gemini didn't find one, e.g. it wasn't attempted or the
+    // number sits somewhere the model missed), Invoice Total as the sum of
+    // extracted lines (the actual number that matters for the balance check
+    // and the Bill).
+    if (!vendorInvoice) vendorInvoice = geminiVendorInvoice || qboDetectInvoiceNumber_(invoiceLines);
     var computedTotal = lineItems.reduce(function(s, li) { return s + (parseFloat(li.amount) || 0); }, 0);
     var invoiceTotal = payload.invoiceTotal || (lineItems.length ? computedTotal : '');
 

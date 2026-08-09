@@ -7617,6 +7617,16 @@ function irLoadCatalogAndMatch() {
     if (!res.success) { G_ir.catalog = []; irRenderLineRows(); return; }
     G_ir.catalog = irGroupCatalog_(res.items || []);
 
+    // Tax/freight lines skip the fuzzy-match below (matching "Sales Tax"
+    // against a materials catalog makes no sense) -- pre-fill them from the
+    // configured fixed Item instead, if one's set (QBO_TAX_ITEM_NAME /
+    // QBO_FREIGHT_ITEM_NAME Script Properties). No-op if unset or already matched.
+    G_ir.lineItems.forEach(function(li) {
+      if (li.qboItemId) return;
+      if (li.lineType === 'tax' && res.taxItemId) li.qboItemId = res.taxItemId;
+      if (li.lineType === 'freight' && res.freightItemId) li.qboItemId = res.freightItemId;
+    });
+
     var toMatch = G_ir.lineItems
       .map(function(li, i) { return { li: li, i: i }; })
       .filter(function(x) { return x.li.lineType === 'material' && !x.li.qboItemId && x.li.description; });

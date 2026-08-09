@@ -232,11 +232,37 @@ function refreshQuickBooksItemCatalog(payload) {
   return getQuickBooksItemCatalog_();
 }
 
-/** Client-facing: cached catalog fetch for populating the review screen's Item dropdown. */
+/**
+ * Client-facing: cached catalog fetch for populating the review screen's
+ * Item dropdown. Also resolves the optional QBO_TAX_ITEM_NAME/
+ * QBO_FREIGHT_ITEM_NAME Script Properties (exact item name, e.g. "Sales
+ * Tax") to their catalog Item Id -- irLoadCatalogAndMatch uses these to
+ * pre-fill tax/freight lines the same way material lines get fuzzy-matched,
+ * so the reviewer isn't re-picking the same tax/freight Item on every
+ * invoice. '' (unset or not found in the catalog) means "leave unmatched,
+ * same as before this existed" -- purely additive, no behavior change if
+ * these properties are never set.
+ */
 function getQuickBooksItemCatalogForReview(payload) {
   var auth = authorizeQuickBooksOwner_(payload);
   if (!auth.ok) return { error: auth.error, code: auth.code };
-  return getQuickBooksItemCatalog_();
+  var catalog = getQuickBooksItemCatalog_();
+  if (!catalog.success) return catalog;
+  var props = PropertiesService.getScriptProperties();
+  return {
+    success: true,
+    items: catalog.items,
+    taxItemId: findQBOItemIdByName_(catalog.items, props.getProperty('QBO_TAX_ITEM_NAME')),
+    freightItemId: findQBOItemIdByName_(catalog.items, props.getProperty('QBO_FREIGHT_ITEM_NAME'))
+  };
+}
+
+/** Resolves a Script-Property-configured item name (case/punctuation-insensitive exact match, via the same normalizer as the fuzzy matcher below) to its QBO Item Id, or '' if unset or not found. */
+function findQBOItemIdByName_(items, name) {
+  if (!name) return '';
+  var wantNorm = qboNormalizeItemText_(name);
+  var match = (items || []).find(function(it) { return it.type !== 'Category' && qboNormalizeItemText_(it.name) === wantNorm; });
+  return match ? match.id : '';
 }
 
 /** Lowercases, strips punctuation, collapses whitespace, and normalizes common size notation so "8-inch"/"8 in"/"8\"" compare equal. */
