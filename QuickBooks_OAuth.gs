@@ -313,11 +313,36 @@ function matchLineItemToQBOItem_(description, catalogItems) {
 }
 
 /**
+ * Loads the full learned item-mapping sheet (QB_ITEM_MAP_SHEET, written by
+ * saveQBItemMapping_ in PO_Manager_Code.gs on Approve) in one read: normalized
+ * description -> {qboItemId, qboItemName}. Returns {} (never throws) if the
+ * sheet is empty or doesn't exist yet -- matchInvoiceLineItems then falls
+ * through to the fuzzy matcher exactly as it did before this existed.
+ */
+function getQBItemMap_() {
+  var map = {};
+  try {
+    var sheet = ensureSheetWithHeaders_(QB_ITEM_MAP_SHEET, QB_ITEM_MAP_HEADERS);
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return map;
+    var data = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
+    data.forEach(function(row) {
+      var key = (row[0] || '').toString().trim();
+      var qboItemId = (row[2] || '').toString().trim();
+      if (!key || !qboItemId) return;
+      map[key] = { qboItemId: qboItemId, qboItemName: (row[3] || '').toString().trim() };
+    });
+  } catch (e) { /* best-effort, same fail-open convention as getQuickBooksVendorId_ */ }
+  return map;
+}
+
+/**
  * Client-facing: matches a batch of line-item descriptions against the
- * cached catalog in one round trip (used when the review screen opens a
- * staging row). payload: {descriptions: string[]}. Returns one match (or
- * null) per input description, same order. Skips matching for descriptions
- * belonging to tax/freight lines -- callers should only pass material-line
+ * learned item-mapping sheet first, falling back to the cached QBO catalog
+ * fuzzy matcher on a miss (used when the review screen opens a staging
+ * row). payload: {descriptions: string[]}. Returns one match (or null) per
+ * input description, same order. Skips matching for descriptions belonging
+ * to tax/freight lines -- callers should only pass material-line
  * descriptions, since those map to fixed dedicated Items instead.
  */
 function matchInvoiceLineItems(payload) {
@@ -327,8 +352,14 @@ function matchInvoiceLineItems(payload) {
   var catalogRes = getQuickBooksItemCatalog_();
   if (!catalogRes.success) return { error: catalogRes.error || 'Could not load QuickBooks Item catalog' };
 
+  var learnedMap = getQBItemMap_();
   var descriptions = payload.descriptions || [];
-  var matches = descriptions.map(function(d) { return matchLineItemToQBOItem_(d, catalogRes.items); });
+  var matches = descriptions.map(function(d) {
+    var key = qboNormalizeItemText_(d);
+    var learned = key && learnedMap[key];
+    if (learned) return { qboItemId: learned.qboItemId, qboItemName: learned.qboItemName, matchConfidence: 1 };
+    return matchLineItemToQBOItem_(d, catalogRes.items);
+  });
   return { success: true, matches: matches };
 }
 

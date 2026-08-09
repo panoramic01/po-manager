@@ -465,6 +465,24 @@
       flex: 1; border: none; width: 100%; background: white;
     }
 
+    /* ── Invoice review split pane (PDF/photo left, editor right) --
+       this app's first responsive breakpoint; side-by-side above 900px,
+       stacked (preview above editor, via source order) below it. ── */
+    .ir-split { display: flex; flex-direction: column; gap: 12px; }
+    .ir-preview-pane {
+      background: var(--c-surface); border-radius: 12px; overflow: hidden;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+      height: 45vh; min-height: 260px;
+    }
+    .ir-preview-pane iframe { width: 100%; height: 100%; border: none; }
+    .ir-preview-pane.ir-preview-empty { display: none; }
+    .ir-editor-pane { min-width: 0; }
+    @media (min-width: 900px) {
+      .ir-split { flex-direction: row; align-items: flex-start; gap: 16px; }
+      .ir-preview-pane { flex: 1 1 42%; height: calc(100vh - 140px); position: sticky; top: 76px; }
+      .ir-editor-pane { flex: 1 1 58%; min-width: 0; }
+    }
+
     /* ── Quick status modal ── */
     .status-btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
     .status-option { padding: 12px 8px; border-radius: 10px; border: 2px solid var(--c-border); background: var(--c-surface); font-size: 13px; font-weight: 700; cursor: pointer; text-align: center; color: var(--c-ink); transition: all 0.15s; min-height: 44px; }
@@ -1140,40 +1158,48 @@
 
       <!-- Detail view: extracted line items for the invoice just uploaded -->
       <div id="ir-detail-view" style="display:none;padding:16px">
-        <div style="background:var(--c-surface);border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:12px">
-          <div id="ir-detail-header" style="font-size:13px;color:var(--c-ink-soft);line-height:1.6"></div>
-          <label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin:10px 0 4px">Vendor Invoice # <span style="font-weight:400;color:var(--c-ink-faint)">(auto-detected — check it)</span></label>
-          <input type="text" id="ir-vendor-invoice" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px">
-          <div style="font-size:11px;color:var(--c-ink-faint);margin-top:8px">Invoice Total will be set to the sum of the line items below when you Approve.</div>
-        </div>
+        <div class="ir-split">
+          <div id="ir-preview-pane" class="ir-preview-pane ir-preview-empty">
+            <iframe id="ir-preview-frame" src="about:blank" title="Invoice file preview"></iframe>
+          </div>
 
-        <div style="background:var(--c-surface);border-radius:12px;padding:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:12px;overflow-x:auto">
-          <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:640px">
-            <thead>
-              <tr style="text-align:left;color:var(--c-ink-soft);font-weight:700;border-bottom:1.5px solid var(--c-border-hair)">
-                <th style="padding:6px 4px">Type</th>
-                <th style="padding:6px 4px">Description</th>
-                <th style="padding:6px 4px;width:70px">Qty</th>
-                <th style="padding:6px 4px;width:70px">Unit</th>
-                <th style="padding:6px 4px;width:90px">Rate</th>
-                <th style="padding:6px 4px;width:100px">Amount</th>
-                <th style="padding:6px 4px;width:160px">QB Item</th>
-                <th style="padding:6px 4px;width:32px"></th>
-              </tr>
-            </thead>
-            <tbody id="ir-line-rows"></tbody>
-          </table>
-          <button onclick="irAddLine()" style="margin-top:10px;background:var(--c-bg);color:var(--c-navy);border:1px solid var(--c-border);border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer">+ Add line</button>
-        </div>
+          <div class="ir-editor-pane">
+            <div style="background:var(--c-surface);border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:12px">
+              <div id="ir-detail-header" style="font-size:13px;color:var(--c-ink-soft);line-height:1.6"></div>
+              <label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin:10px 0 4px">Vendor Invoice # <span style="font-weight:400;color:var(--c-ink-faint)">(auto-detected — check it)</span></label>
+              <input type="text" id="ir-vendor-invoice" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px">
+              <div style="font-size:11px;color:var(--c-ink-faint);margin-top:8px">Invoice Total will be set to the sum of the line items below when you Approve.</div>
+            </div>
 
-        <div id="ir-balance-check" style="font-size:12px;padding:10px 12px;border-radius:8px;margin-bottom:12px"></div>
+            <div style="background:var(--c-surface);border-radius:12px;padding:12px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:12px;overflow-x:auto">
+              <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:640px">
+                <thead>
+                  <tr style="text-align:left;color:var(--c-ink-soft);font-weight:700;border-bottom:1.5px solid var(--c-border-hair)">
+                    <th style="padding:6px 4px">Type</th>
+                    <th style="padding:6px 4px">Description</th>
+                    <th style="padding:6px 4px;width:70px">Qty</th>
+                    <th style="padding:6px 4px;width:70px">Unit</th>
+                    <th style="padding:6px 4px;width:90px">Rate</th>
+                    <th style="padding:6px 4px;width:100px">Amount</th>
+                    <th style="padding:6px 4px;width:160px">QB Item</th>
+                    <th style="padding:6px 4px;width:32px"></th>
+                  </tr>
+                </thead>
+                <tbody id="ir-line-rows"></tbody>
+              </table>
+              <button onclick="irAddLine()" style="margin-top:10px;background:var(--c-bg);color:var(--c-navy);border:1px solid var(--c-border);border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer">+ Add line</button>
+            </div>
 
-        <div style="display:flex;gap:8px">
-          <button onclick="irSaveDraft()" style="flex:1;background:var(--c-bg);color:var(--c-navy);border:1px solid var(--c-border);border-radius:8px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">Save Draft</button>
-          <button onclick="irApprove()" style="flex:1;background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">Approve</button>
+            <div id="ir-balance-check" style="font-size:12px;padding:10px 12px;border-radius:8px;margin-bottom:12px"></div>
+
+            <div style="display:flex;gap:8px">
+              <button onclick="irSaveDraft()" style="flex:1;background:var(--c-bg);color:var(--c-navy);border:1px solid var(--c-border);border-radius:8px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">Save Draft</button>
+              <button onclick="irApprove()" style="flex:1;background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">Approve</button>
+            </div>
+            <button id="ir-create-bill-btn" onclick="irCreateBill()" style="display:none;width:100%;margin-top:8px;background:var(--bd-green-fg);color:#fff;border:none;border-radius:8px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">Create Bill in QuickBooks</button>
+            <div id="ir-detail-status" style="font-size:12px;color:var(--c-ink-soft);margin-top:8px"></div>
+          </div>
         </div>
-        <button id="ir-create-bill-btn" onclick="irCreateBill()" style="display:none;width:100%;margin-top:8px;background:var(--bd-green-fg);color:#fff;border:none;border-radius:8px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">Create Bill in QuickBooks</button>
-        <div id="ir-detail-status" style="font-size:12px;color:var(--c-ink-soft);margin-top:8px"></div>
       </div>
     </div>
 
@@ -7556,6 +7582,15 @@ function irOpenDetail(stagingId) {
     document.getElementById('ir-panel-title').textContent = row.poNumber + ' Invoice';
     document.getElementById('ir-upload-view').style.display = 'none';
     document.getElementById('ir-detail-view').style.display = '';
+    var previewPane = document.getElementById('ir-preview-pane');
+    var previewFrame = document.getElementById('ir-preview-frame');
+    if (row.invoiceFileUrl) {
+      previewFrame.src = docViewerSrc(row.invoiceFileUrl);
+      previewPane.classList.remove('ir-preview-empty');
+    } else {
+      previewFrame.src = 'about:blank';
+      previewPane.classList.add('ir-preview-empty');
+    }
     document.getElementById('ir-detail-header').innerHTML =
       '<div><b>PO:</b> ' + esc(row.poNumber) + '</div>' +
       '<div><b>Vendor:</b> ' + esc(row.vendor) + '</div>' +

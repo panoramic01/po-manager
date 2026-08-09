@@ -1618,6 +1618,35 @@ function saveQuickBooksVendorMapping(payload) {
   }
 }
 
+// ─── QuickBooks item mapping (learns from reviewer picks) ────────────────────
+// Same self-creating-sheet, upsert-by-key pattern as QB Vendor Map above, but
+// keyed by qboNormalizeItemText_(description) instead of vendor name --
+// deliberately NOT vendor-scoped, since a generic product ("Aluminum
+// Fascia") should map the same way regardless of which vendor's invoice it
+// came from. Read side (getQBItemMap_, checked before the fuzzy matcher) is
+// in QuickBooks_OAuth.gs next to matchLineItemToQBOItem_; this is just the
+// write side, called from saveInvoiceStagingReview on Approve.
+var QB_ITEM_MAP_SHEET = "QB Item Map";
+var QB_ITEM_MAP_HEADERS = ['Normalized Description', 'Description Sample', 'QB Item Id', 'QB Item Name'];
+
+/** Upserts one description -> QBO Item mapping by normalized-description key. Idempotent -- safe to call every Approve even when unchanged. */
+function saveQBItemMapping_(description, qboItemId, qboItemName) {
+  var key = qboNormalizeItemText_(description);
+  if (!key || !qboItemId) return;
+  var sheet = ensureSheetWithHeaders_(QB_ITEM_MAP_SHEET, QB_ITEM_MAP_HEADERS);
+  var lastRow = sheet.getLastRow();
+  if (lastRow >= 2) {
+    var data = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (var i = 0; i < data.length; i++) {
+      if ((data[i][0] || '').toString().trim() === key) {
+        sheet.getRange(i + 2, 2, 1, 3).setValues([[description, qboItemId, qboItemName || '']]);
+        return;
+      }
+    }
+  }
+  sheet.appendRow([key, description, qboItemId, qboItemName || '']);
+}
+
 // ─── QuickBooks invoice staging (review-before-post) ─────────────────────────
 // One row per invoice extraction attempt -- the durable "extracted but not
 // yet posted to QuickBooks" record. A sheet (not Cache/PropertiesService)
@@ -1763,6 +1792,18 @@ function saveInvoiceStagingReview(payload) {
       // this is what gets pushed back onto the PO row on approve.
       var recomputedTotal = payload.lineItems.reduce(function(s, li) { return s + (parseFloat(li.amount) || 0); }, 0);
       sheet.getRange(rowIdx, QB_STAGING_COL['Invoice Total'] + 1).setValue(recomputedTotal);
+    }
+
+    // Only learn from a real Approve, never a Save Draft -- an unreviewed
+    // draft's item pairing hasn't been confirmed yet. Upsert is idempotent,
+    // so already-correct auto-matches just get reinforced alongside fresh
+    // manual overrides -- no need to detect which case this is.
+    if (payload.approve === true && payload.lineItems) {
+      payload.lineItems.forEach(function(li) {
+        if (li.lineType === 'material' && li.qboItemId && li.description) {
+          saveQBItemMapping_(li.description, li.qboItemId, li.qboItemName);
+        }
+      });
     }
     if (payload.qbCustomerId !== undefined) {
       sheet.getRange(rowIdx, QB_STAGING_COL['QB Customer Id'] + 1).setValue(payload.qbCustomerId);
