@@ -3177,7 +3177,7 @@ function applyRole(role) {
   sd('other-card-pto-overview',  has(['admin', 'human_resources']));
   sd('other-card-payroll',       has(['admin', 'human_resources']));
   sd('other-card-new-project',   p.canCreate);
-  sd('other-card-quickbooks',    has(['aidan']));
+  sd('other-card-quickbooks',    G.isAidan);
   sd('receive-po-card', p.canReceivePO);
   // Runner reaches Receive PO from its own Home tile -- show a quick-pick
   // list of recent orders on this tab instead for them. Re-evaluated every
