@@ -2802,6 +2802,8 @@ function bootWithEmail(email) {
           if (fresh && fresh.userRole) {
             localStorage.setItem('panoramic_ops_config', JSON.stringify(fresh));
             G.config = fresh;
+            G.role = fresh.userRole;
+            applyRole(G.role, true); // true = don't navigate, just re-sync permissions/tile visibility
             fillSelects();
           }
         }, function(){});
@@ -3119,7 +3121,7 @@ function formatRoleLabel(roleStr) {
   return labels.join(' + ') || 'Runner';
 }
 
-function applyRole(role) {
+function applyRole(role, skipNav) {
   hideSplash();
   var effRoles = effRoleTokens(role);
   function has(arr) { return arr.some(function(r) { return effRoles.indexOf(r) !== -1; }); }
@@ -3310,7 +3312,11 @@ function applyRole(role) {
       ' &nbsp;<span onclick="switchAccount()" style="cursor:pointer;font-size:11px;background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:6px" title="Switch account">' + esc(formatRoleLabel(role)) + '</span>';
   }
 
-  // Navigate to the correct default tab
+  // Navigate to the correct default tab -- skipped when silently re-applying
+  // a freshly-fetched role in the background (bootWithEmail's config
+  // refresh), since that would otherwise yank the user back to their home
+  // tab out of nowhere while they're mid-task.
+  if (skipNav) return;
   if (G.isAidan) {
     showTabDirect('home', document.getElementById('nav-dashboard'));
   } else if (G.isRunnerHome) {
