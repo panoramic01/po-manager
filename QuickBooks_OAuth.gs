@@ -51,6 +51,18 @@ function getQuickBooksService_() {
     .setTokenHeaders({
       'Authorization': 'Basic ' + Utilities.base64Encode(clientId + ':' + clientSecret),
       'Content-Type': 'application/x-www-form-urlencoded'
+    })
+    // The library still puts client_id/client_secret in the request BODY by
+    // default, in addition to the Basic-Auth header above -- the OAuth2 spec
+    // treats Basic auth and body-based client auth as alternatives, not to
+    // be combined. This worked against Sandbox regardless, but Intuit's
+    // Production token endpoint has been reported (Aug 2026) to reject the
+    // duplicate with invalid_client where Sandbox tolerates it. Stripping
+    // them from the body leaves Basic Auth as the sole credential channel.
+    .setTokenPayloadHandler(function(payload) {
+      delete payload.client_id;
+      delete payload.client_secret;
+      return payload;
     });
 }
 
