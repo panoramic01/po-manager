@@ -483,12 +483,11 @@ function createQuickBooksBill(payload) {
           Qty: li.qty !== '' && li.qty != null ? parseFloat(li.qty) : undefined,
           UnitPrice: li.rate !== '' && li.rate != null ? parseFloat(li.rate) : undefined,
           CustomerRef: { value: staging.qbCustomerId },
-          // Confirmed via QBO's own "New Bill" form URL when scoped to a
-          // Project (?customerId=...&billable=true&projectRef=...) --
-          // without this the line isn't marked billable-to-customer even
-          // with a valid CustomerRef, so it wouldn't show correctly in
-          // QBO's own job-cost/billable-expense reporting for this job.
-          BillableStatus: 'Billable'
+          // CustomerRef alone attributes the cost to the job for job-cost
+          // reporting without exposing it as a pass-through charge to be
+          // re-invoiced to the customer later -- NotBillable set explicitly
+          // (not omitted) so this stays deliberate, not QBO's ambient default.
+          BillableStatus: 'NotBillable'
         }
       });
     });
