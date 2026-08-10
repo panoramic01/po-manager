@@ -216,21 +216,27 @@ function testQuickBooksVendors(payload) {
 /**
  * Read-only diagnostic: pulls Customers/Projects (Job=true rows are
  * sub-customers, which is what Projects are built on) with their actual
- * Accounting-API Id, DisplayName, and ParentRef, so a QBO Projects-tab URL
- * id can be checked against what CustomerRef.value actually needs -- the
- * two are not guaranteed to be the same identifier. Filters by DisplayName
- * (QBO renders sub-customers as "Parent:Child") rather than ParentRef --
- * QBO's query engine rejects ParentRef in a WHERE clause (error 4001,
- * "not queryable"), so name-prefix matching is the standard workaround for
- * finding a parent's sub-customers.
+ * Accounting-API Id, DisplayName, and ParentRef. A purely-numeric filter is
+ * treated as an exact Id lookup (Id is always queryable); anything else is
+ * a DisplayName-prefix search (QBO renders sub-customers as "Parent:Child")
+ * -- QBO's query engine rejects ParentRef in a WHERE clause entirely
+ * (error 4001, "not queryable"), so these two are the only reliable ways
+ * in. A QBO Projects-tab URL id (e.g. the "id=" in /app/projects/...) is
+ * NOT the same identifier as CustomerRef.value needs -- confirmed via QBO's
+ * own "New Bill" form URL, which separately exposes customerId=<real
+ * CustomerRef value> and projectRef=<the Projects-tab id>.
  */
 function testQuickBooksCustomers(payload) {
   var auth = authorizeQuickBooksOwner_(payload);
   if (!auth.ok) return { error: auth.error, code: auth.code };
-  var nameFilter = (payload.nameFilter || '').toString().trim().replace(/'/g, "\\'");
-  var query = nameFilter
-    ? "select Id, DisplayName, Job, Active, ParentRef, SubCustomer, BillWithParent from Customer where DisplayName like '" + nameFilter + "%' maxresults 100"
-    : 'select Id, DisplayName, Job, Active, ParentRef, SubCustomer, BillWithParent from Customer maxresults 100';
+  var filter = (payload.nameFilter || '').toString().trim();
+  var isNumeric = /^[0-9]+$/.test(filter);
+  var escaped = filter.replace(/'/g, "\\'");
+  var query = !filter
+    ? 'select Id, DisplayName, Job, Active, ParentRef, SubCustomer, BillWithParent from Customer maxresults 100'
+    : isNumeric
+      ? "select Id, DisplayName, Job, Active, ParentRef, SubCustomer, BillWithParent from Customer where Id = '" + escaped + "'"
+      : "select Id, DisplayName, Job, Active, ParentRef, SubCustomer, BillWithParent from Customer where DisplayName like '" + escaped + "%' maxresults 100";
   return quickbooksApiGet_('/query?query=' + encodeURIComponent(query));
 }
 
@@ -476,7 +482,13 @@ function createQuickBooksBill(payload) {
           ItemRef: { value: li.qboItemId },
           Qty: li.qty !== '' && li.qty != null ? parseFloat(li.qty) : undefined,
           UnitPrice: li.rate !== '' && li.rate != null ? parseFloat(li.rate) : undefined,
-          CustomerRef: { value: staging.qbCustomerId }
+          CustomerRef: { value: staging.qbCustomerId },
+          // Confirmed via QBO's own "New Bill" form URL when scoped to a
+          // Project (?customerId=...&billable=true&projectRef=...) --
+          // without this the line isn't marked billable-to-customer even
+          // with a valid CustomerRef, so it wouldn't show correctly in
+          // QBO's own job-cost/billable-expense reporting for this job.
+          BillableStatus: 'Billable'
         }
       });
     });
