@@ -1129,6 +1129,10 @@
             <button onclick="runQBTest('vendors')" style="flex:1;background:var(--sh-green-bg);color:var(--c-navy);border:none;border-radius:8px;padding:11px;font-size:12px;font-weight:700;cursor:pointer">Test: Vendors</button>
             <button onclick="runQBTest('customers')" style="flex:1;background:var(--sh-green-bg);color:var(--c-navy);border:none;border-radius:8px;padding:11px;font-size:12px;font-weight:700;cursor:pointer">Test: Customers</button>
           </div>
+          <div id="qbo-subcustomer-row" style="display:none;gap:8px;margin-bottom:8px">
+            <input type="text" id="qbo-parent-id" placeholder="Parent Customer Id (e.g. 84)" style="flex:1;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px">
+            <button onclick="runQBTest('customers', document.getElementById('qbo-parent-id').value)" style="background:var(--sh-green-bg);color:var(--c-navy);border:none;border-radius:8px;padding:11px 14px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap">Test: Sub-customers</button>
+          </div>
           <button id="qbo-disconnect-btn" onclick="disconnectQuickBooksUI()" style="display:none;width:100%;background:none;color:var(--c-danger);border:1px solid var(--c-danger);border-radius:8px;padding:10px;font-size:12px;font-weight:600;cursor:pointer">Disconnect</button>
         </div>
         <pre id="qbo-output" style="white-space:pre-wrap;word-break:break-all;background:var(--c-surface);border-radius:12px;padding:14px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-top:12px;font-size:11px;color:var(--c-ink);max-height:400px;overflow:auto"></pre>
@@ -7470,6 +7474,7 @@ function renderQBOStatus(connected, realmId, environment) {
     : '<span style="color:var(--c-danger);font-weight:700">Not connected</span>';
   document.getElementById('qbo-connect-btn').style.display = connected ? 'none' : '';
   document.getElementById('qbo-test-row').style.display = connected ? 'flex' : 'none';
+  document.getElementById('qbo-subcustomer-row').style.display = connected ? 'flex' : 'none';
   document.getElementById('qbo-disconnect-btn').style.display = connected ? '' : 'none';
 }
 
@@ -7481,11 +7486,11 @@ function connectQuickBooks() {
   }, function(err) { showToast(friendlyUploadError(err)); });
 }
 
-function runQBTest(kind) {
+function runQBTest(kind, parentId) {
   var outEl = document.getElementById('qbo-output');
   outEl.textContent = 'Loading…';
   var action = kind === 'vendors' ? 'testQuickBooksVendors' : kind === 'customers' ? 'testQuickBooksCustomers' : 'testQuickBooksConnection';
-  gasCall(action, {}, function(res) {
+  gasCall(action, { parentId: parentId || '' }, function(res) {
     outEl.textContent = JSON.stringify(res, null, 2);
   }, function(err) { outEl.textContent = 'Error: ' + friendlyUploadError(err); });
 }

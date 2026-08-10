@@ -223,7 +223,11 @@ function testQuickBooksVendors(payload) {
 function testQuickBooksCustomers(payload) {
   var auth = authorizeQuickBooksOwner_(payload);
   if (!auth.ok) return { error: auth.error, code: auth.code };
-  return quickbooksApiGet_('/query?query=' + encodeURIComponent('select Id, DisplayName, Job, ParentRef from Customer maxresults 100'));
+  var parentId = (payload.parentId || '').toString().replace(/[^0-9]/g, '');
+  var query = parentId
+    ? "select Id, DisplayName, Job, ParentRef from Customer where ParentRef = '" + parentId + "' maxresults 100"
+    : 'select Id, DisplayName, Job, ParentRef from Customer maxresults 100';
+  return quickbooksApiGet_('/query?query=' + encodeURIComponent(query));
 }
 
 // ─── QBO Item catalog (Products/Services) + deterministic matching ──────────
