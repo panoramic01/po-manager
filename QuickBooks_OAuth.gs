@@ -213,6 +213,19 @@ function testQuickBooksVendors(payload) {
   return quickbooksApiGet_('/query?query=' + encodeURIComponent('select Id, DisplayName from Vendor maxresults 20'));
 }
 
+/**
+ * Read-only diagnostic: pulls Customers/Projects (Job=true rows are
+ * sub-customers, which is what Projects are built on) with their actual
+ * Accounting-API Id, DisplayName, and ParentRef, so a QBO Projects-tab URL
+ * id can be checked against what CustomerRef.value actually needs -- the
+ * two are not guaranteed to be the same identifier.
+ */
+function testQuickBooksCustomers(payload) {
+  var auth = authorizeQuickBooksOwner_(payload);
+  if (!auth.ok) return { error: auth.error, code: auth.code };
+  return quickbooksApiGet_('/query?query=' + encodeURIComponent('select Id, DisplayName, Job, ParentRef from Customer maxresults 100'));
+}
+
 // ─── QBO Item catalog (Products/Services) + deterministic matching ──────────
 var QBO_ITEM_CATALOG_CACHE_KEY = 'qbo_item_catalog_v1';
 var QBO_ITEM_CATALOG_CACHE_TTL_SEC = 21600; // 6h, CacheService's max -- refreshQuickBooksItemCatalog forces a refetch on demand
