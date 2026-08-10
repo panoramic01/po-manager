@@ -238,6 +238,12 @@ function doPost(e) {
     else if (action === 'getMaterialInventory')        result = getMaterialInventory(payload);
     else if (action === 'logMaterialTransaction')      result = logMaterialTransaction(payload);
     else if (action === 'deleteMaterialLogEntry')      result = deleteMaterialLogEntry(payload);
+    else if (action === 'getInternalInvoices')         result = getInternalInvoices(payload);
+    else if (action === 'getInternalInvoicePdf')       result = getInternalInvoicePdf(payload);
+    else if (action === 'getPortalCredentials')        result = getPortalCredentials(payload);
+    else if (action === 'savePortalCredential')        result = savePortalCredential(payload);
+    else if (action === 'updatePortalCredential')      result = updatePortalCredential(payload);
+    else if (action === 'deletePortalCredential')      result = deletePortalCredential(payload);
     else if (action === 'getQuickBooksAuthUrl')        result = getQuickBooksAuthorizationUrl(payload);
     else if (action === 'getQuickBooksStatus')         result = getQuickBooksStatus(payload);
     else if (action === 'disconnectQuickBooks')        result = disconnectQuickBooks(payload);
@@ -3070,8 +3076,23 @@ function logMaterialTransaction(payload) {
       var sheet = ensureSheetWithHeaders_('Material Inventory Log', MATERIAL_LOG_HEADERS);
       sheet.appendRow([new Date(), material, unit, type, qty, jobRef, notes, callerName]);
       SpreadsheetApp.flush();
+      var logRowIndex = sheet.getLastRow();
 
-      var result = { success: true, rowIndex: sheet.getLastRow() };
+      var result = { success: true, rowIndex: logRowIndex };
+
+      // Material moving to/from a job gets invoiced/credited automatically.
+      // A doc-generation failure must never fail the underlying log entry.
+      if (jobRef) {
+        try {
+          var docType = (type === 'Out') ? 'Invoice' : 'Credit Memo';
+          result.invoiceDoc = createInternalInvoiceDoc_(docType, {
+            material: material, unit: unit, qty: qty, jobRef: jobRef, notes: notes, logRowIndex: logRowIndex
+          }, callerName);
+        } catch (docErr) {
+          result.invoiceDocError = docErr.toString();
+        }
+      }
+
       if (cacheKey) { try { cache.put(cacheKey, JSON.stringify(result), 300); } catch (e) {} }
       return result;
     } finally {
@@ -3091,6 +3112,322 @@ function deleteMaterialLogEntry(payload) {
 
     var sheet = ensureSheetWithHeaders_('Material Inventory Log', MATERIAL_LOG_HEADERS);
     if (rowIndex < 2 || rowIndex > sheet.getLastRow()) return { success: false, error: 'Log entry not found' };
+    sheet.deleteRow(rowIndex);
+    SpreadsheetApp.flush();
+    return { success: true };
+  } catch(e) { return { success: false, error: e.toString() }; }
+}
+
+// ── Internal Invoices / Credit Memos (material-to-job costing) ────────────
+// Material leaving the warehouse for a job is invoiced to that job; material
+// coming back is credited. These are internal-only documents -- nothing is
+// sent to QuickBooks or any outside party. PDF generation reuses the same
+// approach as getPayrollPdf(): render an HTML string via HtmlService and
+// hand back base64 for direct download.
+
+var INTERNAL_INVOICE_SHEET_NAME = 'Internal Invoices';
+var INTERNAL_INVOICE_HEADERS = ['Doc Number', 'Type', 'Date', 'Job / Reference', 'Material', 'Unit', 'Qty', 'Unit Price', 'Amount', 'Material Log Row', 'Created By'];
+
+var COMPANY_NAME = 'Panoramic Building LLC';
+var COMPANY_ADDRESS_LINE1 = '1460 N Stonecrest Ln';
+var COMPANY_ADDRESS_LINE2 = 'Logan, UT 84341';
+var COMPANY_PHONE = '801-689-3553';
+var COMPANY_LOGO_URL = 'https://ops.panoramicbuildingllc.com/panoramic-logo.png';
+
+/** Looks up a material's Best Price (Pricing sheet column C) by exact description match. Returns 0 if not found. */
+function getMaterialUnitPrice_(materialDescription) {
+  try {
+    var want = (materialDescription || '').toString().trim().toLowerCase();
+    if (!want) return 0;
+    var data = getPricingSheetRaw_().data; // A=Description, B=U/M, C=Best Price
+    for (var i = 0; i < data.length; i++) {
+      var desc = (data[i][0] || '').toString().trim().toLowerCase();
+      if (desc === want) return parseFloat(data[i][2]) || 0;
+    }
+    return 0;
+  } catch (e) { return 0; }
+}
+
+/** Next sequential doc number for a type, e.g. 'INV-0001' / 'CM-0001'. Scans existing rows -- fine at this volume, same no-extra-state approach the PO numbering already uses. */
+function getNextInternalInvoiceNumber_(sheet, type) {
+  var prefix = type === 'Credit Memo' ? 'CM-' : 'INV-';
+  var lastRow = sheet.getLastRow();
+  var maxN = 0;
+  if (lastRow >= 2) {
+    var rows = sheet.getRange(2, 1, lastRow - 1, 2).getValues(); // Doc Number, Type
+    rows.forEach(function(r) {
+      if (r[1] !== type) return;
+      var n = parseInt((r[0] || '').toString().replace(prefix, ''), 10);
+      if (!isNaN(n) && n > maxN) maxN = n;
+    });
+  }
+  return prefix + ('0000' + (maxN + 1)).slice(-4);
+}
+
+/** Builds the invoice/credit-memo PDF HTML, styled after the paper vendor invoice this internal doc replaces. */
+function buildInternalInvoiceHtml_(doc) {
+  var esc = function(s) { return (s == null ? '' : s.toString()).replace(/[&<>]/g, function(c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); };
+  var titleColor = doc.type === 'Credit Memo' ? '#b02a2a' : '#1a1a1a';
+  var amountLabel = doc.type === 'Credit Memo' ? 'Credit' : 'Amount';
+
+  return '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' +
+    'body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#222;margin:32px}' +
+    '.header{display:flex;justify-content:space-between;align-items:flex-start}' +
+    '.company img{max-width:220px;max-height:70px}' +
+    '.company .name{font-weight:bold;font-size:14px;margin-top:4px}' +
+    '.doctitle{font-size:26px;font-weight:bold;color:' + titleColor + ';text-align:right}' +
+    'table.meta{border-collapse:collapse;margin-top:8px}' +
+    'table.meta th, table.meta td{border:1px solid #333;padding:5px 12px;font-size:11px}' +
+    'table.meta th{background:#f4f4f4;text-align:left}' +
+    '.billto{border:1px solid #333;padding:10px 14px;width:280px;margin-top:24px}' +
+    '.billto .label{font-weight:bold;border-bottom:1px solid #333;margin:-10px -14px 8px;padding:6px 14px;background:#f4f4f4}' +
+    'table.items{width:100%;border-collapse:collapse;margin-top:24px}' +
+    'table.items th{background:#f4f4f4;text-align:left;padding:6px 8px;font-size:11px;border:1px solid #333}' +
+    'table.items td{padding:6px 8px;border:1px solid #333;font-size:11px}' +
+    '.num{text-align:right}' +
+    '.totals{margin-top:12px;text-align:right;font-size:13px;font-weight:bold}' +
+    '</style></head><body>' +
+    '<div class="header">' +
+      '<div class="company"><img src="' + COMPANY_LOGO_URL + '"><div class="name">' + esc(COMPANY_NAME) + '</div>' +
+        '<div>' + esc(COMPANY_ADDRESS_LINE1) + '</div><div>' + esc(COMPANY_ADDRESS_LINE2) + '</div><div>' + esc(COMPANY_PHONE) + '</div></div>' +
+      '<div><div class="doctitle">' + esc(doc.type) + '</div>' +
+        '<table class="meta"><tr><th>Date</th><th>Doc #</th></tr><tr><td>' + esc(doc.dateStr) + '</td><td>' + esc(doc.docNumber) + '</td></tr></table></div>' +
+    '</div>' +
+    '<div class="billto"><div class="label">Job / Reference</div>' + esc(doc.jobRef) + '</div>' +
+    '<table class="items"><tr><th>Item</th><th>Description</th><th class="num">Quantity</th><th class="num">Price Each</th><th class="num">' + amountLabel + '</th></tr>' +
+    '<tr><td>' + esc(doc.material) + '</td><td>' + esc(doc.material) + '</td><td class="num">' + doc.qty + ' ' + esc(doc.unit) + '</td>' +
+    '<td class="num">' + doc.unitPrice.toFixed(2) + '</td><td class="num">' + doc.amount.toFixed(2) + '</td></tr>' +
+    '</table>' +
+    '<div class="totals">Total ' + amountLabel + ': $' + doc.amount.toFixed(2) + '</div>' +
+    (doc.notes ? '<div style="margin-top:16px;font-size:11px;color:#555">Notes: ' + esc(doc.notes) + '</div>' : '') +
+    '</body></html>';
+}
+
+/**
+ * Creates one Internal Invoice or Credit Memo for a single material log
+ * transaction: writes a row to the "Internal Invoices" sheet and returns the
+ * generated PDF as base64. Called from logMaterialTransaction() right after
+ * the log row is appended.
+ */
+function createInternalInvoiceDoc_(type, materialRow, callerName) {
+  var sheet = ensureSheetWithHeaders_(INTERNAL_INVOICE_SHEET_NAME, INTERNAL_INVOICE_HEADERS);
+  var docNumber = getNextInternalInvoiceNumber_(sheet, type);
+  var unitPrice = getMaterialUnitPrice_(materialRow.material);
+  var amount = Math.round(unitPrice * materialRow.qty * 100) / 100;
+  var now = new Date();
+  var tz = Session.getScriptTimeZone();
+  var dateStr = Utilities.formatDate(now, tz, 'M/d/yyyy');
+
+  sheet.appendRow([docNumber, type, now, materialRow.jobRef, materialRow.material, materialRow.unit, materialRow.qty, unitPrice, amount, materialRow.logRowIndex, callerName]);
+
+  var html = buildInternalInvoiceHtml_({
+    type: type, docNumber: docNumber, dateStr: dateStr, jobRef: materialRow.jobRef,
+    material: materialRow.material, unit: materialRow.unit, qty: materialRow.qty,
+    unitPrice: unitPrice, amount: amount, notes: materialRow.notes
+  });
+  var pdfBlob = HtmlService.createHtmlOutput(html).getAs('application/pdf');
+  var filename = docNumber + ' - ' + materialRow.jobRef + '.pdf';
+  return { docNumber: docNumber, type: type, amount: amount, filename: filename, base64: Utilities.base64Encode(pdfBlob.getBytes()) };
+}
+
+/** Recent internal invoices/credit memos, most recent first. */
+function getInternalInvoices(payload) {
+  try {
+    var auth = authorizeCaller(payload, ['admin', 'office', 'site_manager', 'runner']);
+    if (!auth.ok) return { docs: [], error: auth.error, code: auth.code };
+
+    var sheet = ensureSheetWithHeaders_(INTERNAL_INVOICE_SHEET_NAME, INTERNAL_INVOICE_HEADERS);
+    var data = sheet.getDataRange().getValues();
+    if (data.length < 2) return { docs: [] };
+
+    var docs = [];
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      docs.push({
+        _rowIndex: i + 1,
+        docNumber: row[0], type: row[1],
+        date: row[2] instanceof Date ? row[2].toISOString() : (row[2] || '').toString(),
+        jobRef: row[3], material: row[4], unit: row[5], qty: row[6], unitPrice: row[7], amount: row[8],
+        materialLogRow: row[9], createdBy: row[10]
+      });
+    }
+    docs.sort(function(a, b) { return b._rowIndex - a._rowIndex; });
+    return { docs: docs.slice(0, 50) };
+  } catch (e) { return { docs: [], error: e.toString() }; }
+}
+
+/** Regenerates the PDF for an existing doc number (reprint). */
+function getInternalInvoicePdf(payload) {
+  try {
+    var auth = authorizeCaller(payload, ['admin', 'office', 'site_manager', 'runner']);
+    if (!auth.ok) return { error: auth.error, code: auth.code };
+
+    var docNumber = (payload.docNumber || '').toString().trim();
+    if (!docNumber) return { error: 'Missing docNumber' };
+
+    var sheet = ensureSheetWithHeaders_(INTERNAL_INVOICE_SHEET_NAME, INTERNAL_INVOICE_HEADERS);
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      if ((row[0] || '').toString() !== docNumber) continue;
+      var tz = Session.getScriptTimeZone();
+      var html = buildInternalInvoiceHtml_({
+        type: row[1], docNumber: row[0], dateStr: Utilities.formatDate(row[2], tz, 'M/d/yyyy'),
+        jobRef: row[3], material: row[4], unit: row[5], qty: row[6], unitPrice: row[7], amount: row[8], notes: ''
+      });
+      var pdfBlob = HtmlService.createHtmlOutput(html).getAs('application/pdf');
+      return { success: true, filename: docNumber + ' - ' + row[3] + '.pdf', base64: Utilities.base64Encode(pdfBlob.getBytes()) };
+    }
+    return { error: 'Document not found' };
+  } catch (e) { return { error: e.toString() }; }
+}
+
+// ── Portal Storage (website credential vault) ────────────────────────────────
+// Stores login credentials for external websites/portals. Passwords are
+// AES-256-CBC encrypted (see Aes_Helper.gs) before ever touching the sheet --
+// unlike the plain-text HR password column, this is a purpose-built vault.
+
+var PORTAL_STORAGE_ROLES = ['admin', 'office', 'human_resources'];
+var PORTAL_STORAGE_HEADERS = ['Site Name', 'Link', 'Username', 'Password', 'Notes', 'Added By', 'Date Added', 'Last Updated By', 'Last Updated'];
+
+/** Full credential list, passwords decrypted server-side for display. */
+function getPortalCredentials(payload) {
+  try {
+    var auth = authorizeCaller(payload, PORTAL_STORAGE_ROLES);
+    if (!auth.ok) return { credentials: [], error: auth.error, code: auth.code };
+
+    var keyBytes = getPortalStorageKeyBytes_();
+    var sheet = ensureSheetWithHeaders_('Portal Storage', PORTAL_STORAGE_HEADERS);
+    var data = sheet.getDataRange().getValues();
+    var credentials = [];
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      var siteName = (row[0] || '').toString().trim();
+      if (!siteName) continue;
+      var password = '';
+      try { password = row[3] ? aesDecrypt_(row[3].toString(), keyBytes) : ''; } catch (e) { password = ''; }
+      credentials.push({
+        _rowIndex: i + 1,
+        siteName: siteName,
+        link: (row[1] || '').toString(),
+        username: (row[2] || '').toString(),
+        password: password,
+        notes: (row[4] || '').toString(),
+        addedBy: (row[5] || '').toString(),
+        dateAdded: row[6] instanceof Date ? row[6].toISOString() : (row[6] || '').toString(),
+        updatedBy: (row[7] || '').toString(),
+        lastUpdated: row[8] instanceof Date ? row[8].toISOString() : (row[8] || '').toString()
+      });
+    }
+    credentials.sort(function(a, b) { return a.siteName.localeCompare(b.siteName); });
+    return { credentials: credentials };
+  } catch(e) { return { credentials: [], error: e.toString() }; }
+}
+
+/** Adds a new credential entry. */
+function savePortalCredential(payload) {
+  try {
+    var auth = authorizeCaller(payload, PORTAL_STORAGE_ROLES);
+    if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
+
+    var siteName = (payload.siteName || '').toString().trim();
+    var link     = (payload.link || '').toString().trim();
+    var username = (payload.username || '').toString().trim();
+    var password = (payload.password || '').toString();
+    var notes    = (payload.notes || '').toString().trim();
+
+    if (!siteName) return { success: false, error: 'Site name is required' };
+    if (!username) return { success: false, error: 'Username is required' };
+    if (!password) return { success: false, error: 'Password is required' };
+
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(10000)) return { success: false, error: 'Server is busy - try again in a moment.' };
+    try {
+      var idemKey = (payload.idempotencyKey || '').toString().trim();
+      var cache = CacheService.getScriptCache();
+      var cacheKey = idemKey ? ('idem_portalsave_' + idemKey) : null;
+      if (cacheKey) {
+        var cached = null;
+        try { cached = cache.get(cacheKey); } catch (e) {}
+        if (cached) return JSON.parse(cached);
+      }
+
+      var callerName = getRoleByEmail(auth.email).name || auth.email;
+      var keyBytes = getPortalStorageKeyBytes_();
+      var encrypted = aesEncrypt_(password, keyBytes);
+      var now = new Date();
+
+      var sheet = ensureSheetWithHeaders_('Portal Storage', PORTAL_STORAGE_HEADERS);
+      sheet.appendRow([siteName, link, username, encrypted, notes, callerName, now, callerName, now]);
+      SpreadsheetApp.flush();
+
+      var result = { success: true, rowIndex: sheet.getLastRow() };
+      if (cacheKey) { try { cache.put(cacheKey, JSON.stringify(result), 300); } catch (e) {} }
+      return result;
+    } finally {
+      lock.releaseLock();
+    }
+  } catch(e) { return { success: false, error: e.toString() }; }
+}
+
+/** Updates an existing credential entry (password only re-encrypted if changed). */
+function updatePortalCredential(payload) {
+  try {
+    var auth = authorizeCaller(payload, PORTAL_STORAGE_ROLES);
+    if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
+
+    var rowIndex = payload.rowIndex;
+    if (!rowIndex) return { success: false, error: 'Missing rowIndex' };
+
+    var siteName = (payload.siteName || '').toString().trim();
+    var link     = (payload.link || '').toString().trim();
+    var username = (payload.username || '').toString().trim();
+    var password = (payload.password || '').toString();
+    var notes    = (payload.notes || '').toString().trim();
+
+    if (!siteName) return { success: false, error: 'Site name is required' };
+    if (!username) return { success: false, error: 'Username is required' };
+
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(10000)) return { success: false, error: 'Server is busy - try again in a moment.' };
+    try {
+      var sheet = ensureSheetWithHeaders_('Portal Storage', PORTAL_STORAGE_HEADERS);
+      if (rowIndex < 2 || rowIndex > sheet.getLastRow()) return { success: false, error: 'Credential not found' };
+
+      var callerName = getRoleByEmail(auth.email).name || auth.email;
+      var now = new Date();
+
+      var encryptedPassword;
+      if (password) {
+        encryptedPassword = aesEncrypt_(password, getPortalStorageKeyBytes_());
+      } else {
+        encryptedPassword = sheet.getRange(rowIndex, 4).getValue(); // unchanged
+      }
+
+      sheet.getRange(rowIndex, 1, 1, 9).setValues([[
+        siteName, link, username, encryptedPassword, notes,
+        sheet.getRange(rowIndex, 6).getValue(), sheet.getRange(rowIndex, 7).getValue(),
+        callerName, now
+      ]]);
+      SpreadsheetApp.flush();
+      return { success: true };
+    } finally {
+      lock.releaseLock();
+    }
+  } catch(e) { return { success: false, error: e.toString() }; }
+}
+
+/** Removes a credential entry. Admin-only. */
+function deletePortalCredential(payload) {
+  try {
+    var auth = authorizeCaller(payload, ['admin']);
+    if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
+
+    var rowIndex = payload.rowIndex;
+    if (!rowIndex) return { success: false, error: 'Missing rowIndex' };
+
+    var sheet = ensureSheetWithHeaders_('Portal Storage', PORTAL_STORAGE_HEADERS);
+    if (rowIndex < 2 || rowIndex > sheet.getLastRow()) return { success: false, error: 'Credential not found' };
     sheet.deleteRow(rowIndex);
     SpreadsheetApp.flush();
     return { success: true };

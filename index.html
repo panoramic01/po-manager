@@ -790,17 +790,9 @@
                style="display:none;margin-top:10px">
       </div>
       <div class="form-group">
-        <label class="form-label">Vendor Invoice #</label>
-        <input type="text" class="form-control" id="c-invoice" placeholder="Optional">
-      </div>
-      <div class="form-group">
         <label class="form-label">Status</label>
         <select class="form-control" id="c-status" onchange="toggleOtherVendor('c-status','c-status-other')"></select>
         <input type="text" class="form-control" id="c-status-other" placeholder="Enter custom status…" style="display:none;margin-top:8px">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Invoice Total ($)</label>
-        <input type="number" class="form-control" id="c-total" placeholder="0.00" step="0.01" min="0">
       </div>
       <div class="form-group">
         <label class="form-label">Notes</label>
@@ -1011,6 +1003,10 @@
           <span class="tile-swatch ts-teal"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 7h6m-6 4h6m-6 4h4M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/></svg></span>
           <span class="tile-label">QuickBooks</span>
         </div>
+        <div id="other-card-portal-storage" class="tile" onclick="showOtherPanel('portal-storage')">
+          <span class="tile-swatch ts-navy"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg></span>
+          <span class="tile-label">Portal Storage</span>
+        </div>
       </div>
 
     </div>
@@ -1110,6 +1106,35 @@
         <div style="font-size:13px;font-weight:700;color:var(--c-navy);margin:20px 0 8px">Recent Activity</div>
         <div id="mi-log-list"></div>
       </div>
+    </div>
+
+    <!-- Portal Storage sub-panel -->
+    <div id="other-panel-portal-storage" style="display:none">
+      <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid var(--c-border-hair);background:var(--c-surface);position:sticky;top:0;z-index:1">
+        <button onclick="showOtherHome()" style="background:none;border:none;font-size:14px;font-weight:600;color:var(--c-navy);cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
+        <span style="font-size:15px;font-weight:700;color:var(--c-navy);flex:1;margin-left:2px">Portal Storage</span>
+        <button id="ps-add-btn" onclick="showAddPortalCredentialForm()" style="background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:700;cursor:pointer">+ Add</button>
+      </div>
+      <div id="ps-add-form" style="display:none;background:var(--c-surface);border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin:12px 16px 0">
+        <div style="font-size:14px;font-weight:700;color:var(--c-navy);margin-bottom:12px">New Credential</div>
+        <div id="ps-add-fields"></div>
+        <div style="display:flex;gap:8px;margin-top:4px">
+          <button onclick="doAddPortalCredential()" style="flex:1;background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:700;cursor:pointer">Save</button>
+          <button onclick="document.getElementById('ps-add-form').style.display='none'" style="flex:1;background:var(--c-bg);color:var(--c-ink-soft);border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+        </div>
+      </div>
+      <div class="search-row">
+        <div class="search-wrap">
+          <input type="text" class="search-input" id="ps-input"
+                 placeholder="Search Portal Storage…"
+                 oninput="toggleClear('ps-input','ps-clear'); renderPortalCredentials()">
+          <button class="search-clear" id="ps-clear" onclick="clearSearch('ps-input','ps-clear'); renderPortalCredentials()">✕</button>
+        </div>
+      </div>
+      <div id="ps-loading" style="display:none">
+        <div class="loading"><div class="spinner"></div><p>Loading Portal Storage…</p></div>
+      </div>
+      <div id="ps-results"><div class="empty">Loading Portal Storage…</div></div>
     </div>
 
     <!-- QuickBooks sub-panel -->
@@ -3190,6 +3215,7 @@ function applyRole(role, skipNav) {
   sd('other-card-payroll',       has(['admin', 'human_resources']));
   sd('other-card-new-project',   p.canCreate);
   sd('other-card-quickbooks',    G.isAidan);
+  sd('other-card-portal-storage', has(['admin', 'office', 'human_resources']));
   sd('receive-po-card', p.canReceivePO);
   // Runner reaches Receive PO from its own Home tile -- show a quick-pick
   // list of recent orders on this tab instead for them. Re-evaluated every
@@ -4243,9 +4269,7 @@ function submitCreate() {
     builder:       builder,
     jobRef:        job,
     vendor:        vendor,
-    vendorInvoice: trim('c-invoice'),
     status:        getVendorValue('c-status', 'c-status-other'),
-    invoiceTotal:  val('c-total'),
     notes:         trim('c-notes'),
     orderedBy:     G.config.userName || G.userEmail,
     idempotencyKey: G.createIdemKey
@@ -4282,7 +4306,7 @@ function submitCreate() {
 }
 
 function clearCreate() {
-  ['c-job-combo','c-invoice','c-total','c-notes'].forEach(function(id){ document.getElementById(id).value=''; });
+  ['c-job-combo','c-notes'].forEach(function(id){ document.getElementById(id).value=''; });
   document.getElementById('c-vendor').value = '';
   document.getElementById('c-vendor-other').value = '';
   document.getElementById('c-vendor-other').style.display = 'none';
@@ -5096,20 +5120,6 @@ function openSubPOForm(poNum) {
       '<p id="sp-issued-status" class="photo-status" style="margin-top:8px"></p>' +
     '</div>';
 
-  var subInvoiceField = G.perms.canViewInvoice ?
-    '<div class="form-group">' +
-      '<label class="form-label">Invoice File</label>' +
-      '<input type="url" class="form-control" id="sp-invoicefile" placeholder="Paste link, or upload file below…" style="margin-bottom:10px">' +
-      '<input type="file" id="sp-invoicefile-file" accept="image/*,.pdf" style="display:none" onchange="handleSubPOInvoiceFile(this)">' +
-      '<div id="sp-invoicefile-drop" onclick="document.getElementById(\'sp-invoicefile-file\').click()" ' +
-        'style="background:var(--c-surface);border-radius:10px;padding:20px 16px;text-align:center;border:2px dashed var(--photo-bd);cursor:pointer;transition:background .15s,border-color .15s">' +
-        '<svg width="26" height="26" fill="none" stroke="var(--photo-accent)" stroke-width="1.5" viewBox="0 0 24 24" style="margin:0 auto 6px;display:block"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>' +
-        '<p style="font-size:13px;font-weight:600;color:var(--c-navy);margin:0 0 2px">Drop file here or tap to upload</p>' +
-        '<p style="font-size:11px;color:var(--c-ink-soft);margin:0">Image or PDF</p>' +
-      '</div>' +
-      '<p id="sp-invoicefile-status" class="photo-status" style="margin-top:8px"></p>' +
-    '</div>' : '';
-
   document.getElementById('po-detail-body').innerHTML =
     '<div style="background:var(--c-surface);border-radius:12px;padding:2px 16px;margin-bottom:12px">' +
       poDetailRow('Builder', po.builder) +
@@ -5120,13 +5130,10 @@ function openSubPOForm(poNum) {
         '<option value="">— Select Vendor —</option>' + vendorOpts +
       '</select>' +
       '<input type="text" class="form-control" id="sp-vendor-other" placeholder="Type vendor name…" style="margin-top:10px;display:none">') +
-    fg('Vendor Invoice #','<input type="text" class="form-control" id="sp-invoice" placeholder="Optional">') +
     fg('Status',
       '<select class="form-control" id="sp-status" onchange="toggleOtherVendor(\'sp-status\',\'sp-status-other\')">' + statusOpts + '</select>' +
       '<input type="text" class="form-control" id="sp-status-other" placeholder="Enter custom status…" style="margin-top:10px;display:none">') +
-    fg('Invoice Total ($)','<input type="number" class="form-control" id="sp-total" placeholder="0.00" step="0.01" min="0">') +
     subIssuedField +
-    subInvoiceField +
     fg('Notes','<textarea class="form-control" id="sp-notes" placeholder="Details about this order…"></textarea>') +
     '<div class="modal-actions">' +
       '<button class="btn btn-primary" style="flex:1" id="sp-create-btn" onclick="submitCreateSubPO(\''+esc(poNum)+'\')">Create Sub-PO</button>' +
@@ -5142,7 +5149,6 @@ function openSubPOForm(poNum) {
 // initEditFileDrops().
 function initSubPOFileDrops() {
   wireDropZone('sp-issued-drop', uploadSubPOIssuedFile);
-  wireDropZone('sp-invoicefile-drop', uploadSubPOInvoiceFile);
 }
 
 function submitCreateSubPO(parentPoNum) {
@@ -5160,11 +5166,8 @@ function submitCreateSubPO(parentPoNum) {
   gasCall('createSubPO', {
     parentPoNumber: parentPoNum,
     vendor:         vendor,
-    vendorInvoice:  trim('sp-invoice'),
     status:         getVendorValue('sp-status', 'sp-status-other'),
-    invoiceTotal:   val('sp-total'),
     issuedPO:       trim('sp-issued'),
-    invoiceFile:    G.perms.canViewInvoice ? trim('sp-invoicefile') : undefined,
     notes:          trim('sp-notes'),
     orderedBy:      G.config.userName || G.userEmail,
     idempotencyKey: G.subPoIdemKey
@@ -5234,20 +5237,6 @@ function openEdit(poNum) {
       '<p id="e-issued-status" class="photo-status" style="margin-top:8px"></p>' +
     '</div>';
 
-  var invoiceField = G.perms.canViewInvoice ?
-    '<div class="form-group">' +
-      '<label class="form-label">' + (po.invoiceLink ? 'Update Invoice File' : 'Add Invoice File') + '</label>' +
-      '<input type="url" class="form-control" id="e-invoicefile" value="'+esc(po.invoiceLink)+'" placeholder="Paste link, or upload file below…" style="margin-bottom:10px">' +
-      '<input type="file" id="e-invoicefile-file" accept="image/*,.pdf" style="display:none" onchange="handleInvoiceFile(this)">' +
-      '<div id="e-invoicefile-drop" onclick="document.getElementById(\'e-invoicefile-file\').click()" ' +
-        'style="background:var(--c-surface);border-radius:10px;padding:20px 16px;text-align:center;border:2px dashed var(--photo-bd);cursor:pointer;transition:background .15s,border-color .15s">' +
-        '<svg width="26" height="26" fill="none" stroke="var(--photo-accent)" stroke-width="1.5" viewBox="0 0 24 24" style="margin:0 auto 6px;display:block"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>' +
-        '<p style="font-size:13px;font-weight:600;color:var(--c-navy);margin:0 0 2px">Drop file here or tap to upload</p>' +
-        '<p style="font-size:11px;color:var(--c-ink-soft);margin:0">Image or PDF</p>' +
-      '</div>' +
-      '<p id="e-invoicefile-status" class="photo-status" style="margin-top:8px"></p>' +
-    '</div>' : '';
-
   document.getElementById('po-detail-body').innerHTML =
     buildDocLinks(po) +
     fg('Builder',         '<input type="text"   class="form-control" id="e-builder"  value="'+esc(po.builder)+'">') +
@@ -5259,15 +5248,12 @@ function openEdit(poNum) {
       '<input type="text" class="form-control" id="e-vendor-other" placeholder="Type vendor name…" ' +
         'style="margin-top:10px;display:' + (isCustomVendor ? 'block' : 'none') + '" ' +
         'value="' + (isCustomVendor ? esc(po.vendor) : '') + '">') +
-    fg('Vendor Invoice #','<input type="text"   class="form-control" id="e-vinvoice" value="'+esc(po.vendorInvoice)+'">') +
     fg('Status',          '<select class="form-control" id="e-status" onchange="toggleOtherVendor(\'e-status\',\'e-status-other\')">'+statusOpts+'</select>' +
       '<input type="text" class="form-control" id="e-status-other" placeholder="Enter custom status…" ' +
         'style="margin-top:10px;display:' + (isCustomStatus ? 'block' : 'none') + '" ' +
         'value="' + (isCustomStatus ? esc(po.status) : '') + '">') +
-    (G.perms.canViewInvoice ? fg('Invoice Total ($)','<input type="number" class="form-control" id="e-total" value="'+esc(po.invoiceTotal)+'" step="0.01" min="0">') : '') +
     fg('Delivery / Pickup Date','<input type="date" class="form-control" id="e-date" value="'+esc(toInputDate(po.deliveryDate))+'">') +
     issuedField +
-    invoiceField +
     buildPhotoSection(po.receivedNote) +
     fg('Notes',           '<textarea class="form-control" id="e-notes" rows="3">'+esc(po.notes)+'</textarea>') +
     fg('Additional Notes','<textarea class="form-control" id="e-additional-notes" rows="3">'+esc(po.additionalNotes)+'</textarea>') +
@@ -5284,7 +5270,6 @@ function openEdit(poNum) {
 // zones are always fresh — no idempotency guard needed.
 function initEditFileDrops() {
   wireDropZone('e-issued-drop', uploadIssuedFile);
-  wireDropZone('e-invoicefile-drop', uploadInvoiceFile);
 }
 
 function wireDropZone(zoneId, onFile) {
@@ -5498,12 +5483,9 @@ function submitEdit() {
     builder:       trim('e-builder'),
     jobRef:        trim('e-job'),
     vendor:        getVendorValue('e-vendor', 'e-vendor-other'),
-    vendorInvoice: trim('e-vinvoice'),
     status:        getVendorValue('e-status', 'e-status-other'),
-    invoiceTotal:  G.perms.canViewInvoice ? val('e-total') : undefined,
     deliveryDate:  fromInputDate(trim('e-date')),
     issuedPO:      trim('e-issued'),
-    invoiceFile:   G.perms.canViewInvoice ? trim('e-invoicefile') : undefined,
     notes:         trim('e-notes'),
     additionalNotes: trim('e-additional-notes')
   };
@@ -6146,56 +6128,6 @@ function qbGroupTextItemsIntoLines_(items) {
 }
 
 /**
- * Handles file upload for the Invoice File field in the Edit modal.
- * Mirrors handleIssuedFile but writes into #e-invoicefile and uploads
- * into the Invoices folder (docType: 'invoice').
- */
-function handleInvoiceFile(input) {
-  var file = input.files && input.files[0];
-  if (!file) return;
-  uploadInvoiceFile(file);
-}
-
-function uploadInvoiceFile(file) {
-  var statusEl = document.getElementById('e-invoicefile-status');
-  statusEl.textContent = file.size > 3 * 1024 * 1024
-    ? 'Uploading large file (' + (file.size / 1024 / 1024).toFixed(1) + ' MB) — this may take a bit…'
-    : 'Uploading…';
-  statusEl.className   = 'photo-status uploading';
-
-  var poNum   = document.getElementById('po-detail-title').textContent || 'invoice';
-  var builder = trim('e-builder');
-  var jobRef  = trim('e-job');
-  var vendor  = getVendorValue('e-vendor', 'e-vendor-other');
-
-  readAndCompressFile(file, function(dataUrl, mimeType) {
-    var ext = mimeType === 'image/jpeg' ? 'jpg' : (file.name.split('.').pop() || 'bin');
-    var filename = buildDocFileName('Invoice', vendor, poNum, ext);
-    gasCall('savePhotoToDrive', {
-      base64Data: dataUrl.split(',')[1], mimeType: mimeType, filename: filename,
-      builder: builder, jobRef: jobRef, docType: 'invoice'
-    }, function(res) {
-      if (res.success) {
-        document.getElementById('e-invoicefile').value = res.url;
-        statusEl.textContent = 'Uploaded — link filled in above';
-        statusEl.className   = 'photo-status done';
-        if (res.noJobFolder) showNoDriveFolderNotice(builder, jobRef);
-      } else {
-        console.error('savePhotoToDrive/saveFileToFolderById failed:', res.error);
-        statusEl.textContent = friendlyServerError(res.error);
-        statusEl.className   = 'photo-status error';
-      }
-    }, function(err) {
-      statusEl.textContent = friendlyUploadError(err);
-      statusEl.className   = 'photo-status error';
-    }, { timeoutMs: 90000 });
-  }, function(err) {
-    statusEl.textContent = 'Could not read file — try a different one';
-    statusEl.className   = 'photo-status error';
-  });
-}
-
-/**
  * Handles file upload for the Issued PO field on the Sub-PO creation form.
  * Mirrors handleIssuedFile, but the Sub-PO doesn't have a row yet -- builder/
  * jobRef/PO-number-for-filename come from G.subPOContext (set by
@@ -6229,57 +6161,6 @@ function uploadSubPOIssuedFile(file) {
     }, function(res) {
       if (res.success) {
         document.getElementById('sp-issued').value = res.url;
-        statusEl.textContent = 'Uploaded — link filled in above';
-        statusEl.className   = 'photo-status done';
-        if (res.noJobFolder) showNoDriveFolderNotice(builder, jobRef);
-      } else {
-        console.error('savePhotoToDrive/saveFileToFolderById failed:', res.error);
-        statusEl.textContent = friendlyServerError(res.error);
-        statusEl.className   = 'photo-status error';
-      }
-    }, function(err) {
-      statusEl.textContent = friendlyUploadError(err);
-      statusEl.className   = 'photo-status error';
-    }, { timeoutMs: 90000 });
-  }, function(err) {
-    statusEl.textContent = 'Could not read file — try a different one';
-    statusEl.className   = 'photo-status error';
-  });
-}
-
-/**
- * Handles file upload for the Invoice File field on the Sub-PO creation
- * form. Mirrors uploadSubPOIssuedFile but writes into #sp-invoicefile and
- * uploads into the Invoices folder (docType: 'invoice').
- */
-function handleSubPOInvoiceFile(input) {
-  var file = input.files && input.files[0];
-  if (!file) return;
-  uploadSubPOInvoiceFile(file);
-}
-
-function uploadSubPOInvoiceFile(file) {
-  var statusEl = document.getElementById('sp-invoicefile-status');
-  statusEl.textContent = file.size > 3 * 1024 * 1024
-    ? 'Uploading large file (' + (file.size / 1024 / 1024).toFixed(1) + ' MB) — this may take a bit…'
-    : 'Uploading…';
-  statusEl.className   = 'photo-status uploading';
-
-  var ctx     = G.subPOContext || {};
-  var poNum   = ctx.parentPoNum || 'sub-po';
-  var builder = ctx.builder || '';
-  var jobRef  = ctx.jobRef  || '';
-  var vendor  = getVendorValue('sp-vendor', 'sp-vendor-other');
-
-  readAndCompressFile(file, function(dataUrl, mimeType) {
-    var ext = mimeType === 'image/jpeg' ? 'jpg' : (file.name.split('.').pop() || 'bin');
-    var filename = buildDocFileName('Invoice', vendor, poNum, ext);
-    gasCall('savePhotoToDrive', {
-      base64Data: dataUrl.split(',')[1], mimeType: mimeType, filename: filename,
-      builder: builder, jobRef: jobRef, docType: 'invoice'
-    }, function(res) {
-      if (res.success) {
-        document.getElementById('sp-invoicefile').value = res.url;
         statusEl.textContent = 'Uploaded — link filled in above';
         statusEl.className   = 'photo-status done';
         if (res.noJobFolder) showNoDriveFolderNotice(builder, jobRef);
@@ -6985,6 +6866,201 @@ function doAddContact() {
   }, { timeoutMs: 45000 });
 }
 
+// ── Portal Storage (website credential vault) ──────────────────────────────────
+function openPortalStoragePanel() {
+  loadPortalCredentials();
+}
+
+function loadPortalCredentials() {
+  if (G.portalCredentialsLoaded) { renderPortalCredentials(); return; }
+  document.getElementById('ps-loading').style.display = 'block';
+  document.getElementById('ps-results').style.display = 'none';
+
+  gasCall('getPortalCredentials', {}, function(data) {
+    G.portalCredentials = data.credentials || [];
+    G.portalCredentialsLoaded = true;
+    document.getElementById('ps-loading').style.display = 'none';
+    document.getElementById('ps-results').style.display = 'block';
+    renderPortalCredentials();
+  }, function() {
+    document.getElementById('ps-loading').style.display = 'none';
+    document.getElementById('ps-results').innerHTML = '<div class="empty">⚠️ Could not load Portal Storage.</div>';
+    document.getElementById('ps-results').style.display = 'block';
+  });
+}
+
+function renderPortalCredentials() {
+  var q = (document.getElementById('ps-input').value || '').toLowerCase().trim();
+  var el = document.getElementById('ps-results');
+  var list = G.portalCredentials || [];
+  if (!list.length) { el.innerHTML = '<div class="empty">No saved credentials yet.</div>'; return; }
+
+  var filtered = q ? list.filter(function(c) {
+    return (c.siteName + ' ' + c.username + ' ' + c.link + ' ' + c.notes).toLowerCase().indexOf(q) !== -1;
+  }) : list;
+
+  if (!filtered.length) { el.innerHTML = '<div class="empty">No credentials match "' + esc(q) + '".</div>'; return; }
+
+  el.innerHTML = filtered.map(function(c) {
+    return portalCredentialCard(c, G.portalCredentials.indexOf(c));
+  }).join('');
+}
+
+function portalCredentialCard(c, idx) {
+  var linkHtml = c.link ? '<a href="' + esc(c.link) + '" target="_blank" rel="noopener">' + esc(c.link) + '</a>' : '<span style="color:var(--c-ink-faint)">—</span>';
+  return '<div class="contact-card">' +
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start">' +
+      '<div class="contact-name">' + esc(c.siteName) + '</div>' +
+    '</div>' +
+    '<div class="contact-field"><span class="contact-key">Link</span>' + linkHtml + '</div>' +
+    '<div class="contact-field"><span class="contact-key">Username</span>' + esc(c.username) + '</div>' +
+    '<div class="contact-field"><span class="contact-key">Password</span>' +
+      '<span id="ps-pw-' + idx + '" style="font-family:monospace">••••••••</span> ' +
+      '<button onclick="togglePortalPassword(' + idx + ')" style="border:none;background:none;cursor:pointer;font-size:12px;color:var(--c-navy);font-weight:600">Show</button> ' +
+      '<button onclick="copyPortalPassword(' + idx + ')" style="border:none;background:none;cursor:pointer;font-size:12px;color:var(--c-navy);font-weight:600">Copy</button>' +
+    '</div>' +
+    (c.notes ? '<div class="contact-field"><span class="contact-key">Notes</span>' + esc(c.notes) + '</div>' : '') +
+    '<button class="btn btn-sm btn-edit" onclick="openPortalCredentialEdit(' + idx + ')" style="margin-top:12px">Edit</button>' +
+  '</div>';
+}
+
+function togglePortalPassword(idx) {
+  var el = document.getElementById('ps-pw-' + idx);
+  var cred = G.portalCredentials[idx];
+  if (!el || !cred) return;
+  var showing = el.getAttribute('data-showing') === '1';
+  el.textContent = showing ? '••••••••' : cred.password;
+  el.setAttribute('data-showing', showing ? '0' : '1');
+}
+
+function copyPortalPassword(idx) {
+  var cred = G.portalCredentials[idx];
+  if (!cred) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(cred.password).then(function() { showToast('Password copied'); }, function() { showToast('Copy failed'); });
+  } else {
+    showToast('Clipboard not available');
+  }
+}
+
+function showAddPortalCredentialForm() {
+  var f = document.getElementById('ps-add-form');
+  var willShow = f.style.display === 'none';
+  f.style.display = willShow ? '' : 'none';
+  if (willShow) {
+    document.getElementById('ps-add-fields').innerHTML =
+      '<input type="text" id="psn-site" placeholder="Site Name" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">' +
+      '<input type="text" id="psn-link" placeholder="Link (https://…)" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">' +
+      '<input type="text" id="psn-username" placeholder="Username" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">' +
+      '<input type="text" id="psn-password" placeholder="Password" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">' +
+      '<input type="text" id="psn-notes" placeholder="Notes (optional)" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">';
+  }
+}
+
+function doAddPortalCredential() {
+  var siteName = (document.getElementById('psn-site').value || '').trim();
+  var link     = (document.getElementById('psn-link').value || '').trim();
+  var username = (document.getElementById('psn-username').value || '').trim();
+  var password = (document.getElementById('psn-password').value || '');
+  var notes    = (document.getElementById('psn-notes').value || '').trim();
+  if (!siteName) { showToast('Site name is required'); return; }
+  if (!username) { showToast('Username is required'); return; }
+  if (!password) { showToast('Password is required'); return; }
+
+  if (!G.portalIdemKey) G.portalIdemKey = newIdemKey();
+
+  gasCall('savePortalCredential', { siteName: siteName, link: link, username: username, password: password, notes: notes, idempotencyKey: G.portalIdemKey }, function(res) {
+    if (res.success) {
+      G.portalIdemKey = null;
+      document.getElementById('ps-add-form').style.display = 'none';
+      showToast('Credential saved!');
+      G.portalCredentialsLoaded = false;
+      loadPortalCredentials();
+    } else {
+      showToast('Error: ' + (res.error || 'Save failed'));
+    }
+  }, function(err) {
+    showToast('Error: ' + abortAwareError(err, 'Could not connect'));
+  }, { timeoutMs: 45000 });
+}
+
+function openPortalCredentialEdit(idx) {
+  var c = G.portalCredentials[idx];
+  if (!c) return;
+  G.portalEditIdx = idx;
+  var isAdmin = effRoleTokens(G.role || '').indexOf('admin') !== -1;
+
+  var fields =
+    fg('Site Name', '<input type="text" class="form-control" id="pse-site" value="' + esc(c.siteName) + '">') +
+    fg('Link', '<input type="text" class="form-control" id="pse-link" value="' + esc(c.link) + '">') +
+    fg('Username', '<input type="text" class="form-control" id="pse-username" value="' + esc(c.username) + '">') +
+    fg('Password', '<input type="text" class="form-control" id="pse-password" value="" placeholder="Leave blank to keep current password">') +
+    fg('Notes', '<input type="text" class="form-control" id="pse-notes" value="' + esc(c.notes) + '">');
+
+  document.getElementById('edit-modal-title').textContent = c.siteName || 'Credential';
+  document.getElementById('edit-modal-body').innerHTML =
+    fields +
+    '<div class="modal-actions">' +
+      '<button class="btn btn-primary" style="flex:1" id="portal-save-btn" onclick="submitPortalCredentialEdit()">Save</button>' +
+      '<button class="btn btn-secondary" style="flex:0 0 auto" onclick="closeEdit()">Cancel</button>' +
+    '</div>' +
+    (isAdmin ? '<button id="portal-delete-btn" onclick="doDeletePortalCredential(' + idx + ')" style="width:100%;margin-top:8px;background:none;border:none;color:var(--c-danger);font-size:13px;font-weight:600;cursor:pointer;padding:8px">Delete Credential</button>' : '');
+
+  document.getElementById('edit-modal').classList.add('open');
+}
+
+function submitPortalCredentialEdit() {
+  var c = G.portalCredentials[G.portalEditIdx];
+  if (!c) return;
+  var siteName = (document.getElementById('pse-site').value || '').trim();
+  var link     = (document.getElementById('pse-link').value || '').trim();
+  var username = (document.getElementById('pse-username').value || '').trim();
+  var password = (document.getElementById('pse-password').value || '');
+  var notes    = (document.getElementById('pse-notes').value || '').trim();
+  if (!siteName) { showToast('Site name is required'); return; }
+  if (!username) { showToast('Username is required'); return; }
+
+  var btn = document.getElementById('portal-save-btn');
+  if (btn) { btn.textContent = 'Saving…'; btn.disabled = true; }
+
+  gasCall('updatePortalCredential', { rowIndex: c._rowIndex, siteName: siteName, link: link, username: username, password: password, notes: notes }, function(res) {
+    if (res.success) {
+      closeEdit();
+      showToast('Credential updated!');
+      G.portalCredentialsLoaded = false;
+      loadPortalCredentials();
+    } else {
+      showToast('Error: ' + (res.error || 'Save failed'));
+      if (btn) { btn.textContent = 'Save'; btn.disabled = false; }
+    }
+  }, function(err) {
+    showToast('Error: ' + abortAwareError(err, 'Could not connect'));
+    if (btn) { btn.textContent = 'Save'; btn.disabled = false; }
+  }, { timeoutMs: 45000 });
+}
+
+function doDeletePortalCredential(idx) {
+  var c = G.portalCredentials[idx];
+  if (!c) return;
+  if (!confirm('Delete this credential? This cannot be undone.')) return;
+  var btn = document.getElementById('portal-delete-btn');
+  if (btn) { btn.textContent = 'Deleting…'; btn.disabled = true; }
+  gasCall('deletePortalCredential', { rowIndex: c._rowIndex }, function(res) {
+    if (res.success) {
+      closeEdit();
+      showToast('Credential deleted');
+      G.portalCredentialsLoaded = false;
+      loadPortalCredentials();
+    } else {
+      showToast('Error: ' + (res.error || 'Delete failed'));
+      if (btn) { btn.textContent = 'Delete Credential'; btn.disabled = false; }
+    }
+  }, function(err) {
+    showToast('Error: ' + abortAwareError(err, 'Could not connect'));
+    if (btn) { btn.textContent = 'Delete Credential'; btn.disabled = false; }
+  }, { timeoutMs: 45000 });
+}
+
 // ── Inventory (fleet + field assets) ───────────────────────────────────────────
 var ASSET_STATUS_OPTIONS = ['In Service', 'In Maintenance', 'Retired', 'Lost/Missing'];
 var ASSET_LOG_TYPE_OPTIONS = ['Inspection', 'Oil Change', 'Maintenance', 'Repair', 'Other'];
@@ -7405,7 +7481,7 @@ function showOtherPanel(name) {
   var activeTab = document.querySelector('.tab.active');
   if (activeTab) activeTab.style.display = 'none';
   document.getElementById('other-home').style.display = 'none';
-  ['pricing', 'contacts', 'inventory', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'material-inventory', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project', 'quickbooks', 'invoice-review'].forEach(function(p) {
+  ['pricing', 'contacts', 'inventory', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'material-inventory', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project', 'quickbooks', 'invoice-review', 'portal-storage'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
     if (el) el.style.display = p === name ? '' : 'none';
   });
@@ -7426,6 +7502,7 @@ function showOtherPanel(name) {
   if (name === 'payroll') { loadPayroll(0); loadPayrollCorrectionQueue(); }
   if (name === 'new-project') resetNewProjectDriveHint();
   if (name === 'quickbooks') loadQuickBooksPanel();
+  if (name === 'portal-storage') openPortalStoragePanel();
 }
 
 // Several other-panel-* elements aren't actually nested inside #tab-other in
@@ -7440,7 +7517,7 @@ function resetOtherPanels() {
   // always wins over the .tab/.tab.active CSS class rule.
   document.querySelectorAll('.tab').forEach(function(t) { t.style.display = ''; });
   document.getElementById('other-home').style.display = '';
-  ['pricing', 'contacts', 'inventory', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'material-inventory', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project', 'quickbooks', 'invoice-review'].forEach(function(p) {
+  ['pricing', 'contacts', 'inventory', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'material-inventory', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project', 'quickbooks', 'invoice-review', 'portal-storage'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
     if (el) el.style.display = 'none';
   });
@@ -7976,7 +8053,12 @@ function submitMaterialLog() {
     if (res.success) {
       G.matLogIdemKey = null;
       document.getElementById('mi-form').style.display = 'none';
-      showToast(type === 'In' ? 'Material logged in!' : 'Material taken out!');
+      if (res.invoiceDoc) {
+        downloadBase64Pdf_(res.invoiceDoc.base64, res.invoiceDoc.filename);
+        showToast(res.invoiceDoc.type + ' ' + res.invoiceDoc.docNumber + ' downloaded');
+      } else {
+        showToast(type === 'In' ? 'Material logged in!' : 'Material taken out!');
+      }
       loadMaterialInventory();
     } else {
       showToast('Error: ' + (res.error || 'Save failed'));
@@ -7984,6 +8066,19 @@ function submitMaterialLog() {
   }, function(err) {
     showToast('Error: ' + abortAwareError(err, 'Could not connect'));
   }, { timeoutMs: 45000 });
+}
+
+/** Decodes a base64 PDF and triggers a browser download -- shared by any feature that generates a PDF server-side. */
+function downloadBase64Pdf_(base64, filename) {
+  var byteChars = atob(base64);
+  var bytes = new Uint8Array(byteChars.length);
+  for (var i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+  var blob = new Blob([bytes], { type: 'application/pdf' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = filename || 'document.pdf';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function deleteMaterialLog(rowIndex) {
