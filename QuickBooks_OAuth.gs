@@ -218,14 +218,18 @@ function testQuickBooksVendors(payload) {
  * sub-customers, which is what Projects are built on) with their actual
  * Accounting-API Id, DisplayName, and ParentRef, so a QBO Projects-tab URL
  * id can be checked against what CustomerRef.value actually needs -- the
- * two are not guaranteed to be the same identifier.
+ * two are not guaranteed to be the same identifier. Filters by DisplayName
+ * (QBO renders sub-customers as "Parent:Child") rather than ParentRef --
+ * QBO's query engine rejects ParentRef in a WHERE clause (error 4001,
+ * "not queryable"), so name-prefix matching is the standard workaround for
+ * finding a parent's sub-customers.
  */
 function testQuickBooksCustomers(payload) {
   var auth = authorizeQuickBooksOwner_(payload);
   if (!auth.ok) return { error: auth.error, code: auth.code };
-  var parentId = (payload.parentId || '').toString().replace(/[^0-9]/g, '');
-  var query = parentId
-    ? "select Id, DisplayName, Job, ParentRef from Customer where ParentRef = '" + parentId + "' maxresults 100"
+  var nameFilter = (payload.nameFilter || '').toString().trim().replace(/'/g, "\\'");
+  var query = nameFilter
+    ? "select Id, DisplayName, Job, ParentRef from Customer where DisplayName like '" + nameFilter + "%' maxresults 100"
     : 'select Id, DisplayName, Job, ParentRef from Customer maxresults 100';
   return quickbooksApiGet_('/query?query=' + encodeURIComponent(query));
 }
