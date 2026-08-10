@@ -240,6 +240,23 @@ function testQuickBooksCustomers(payload) {
   return quickbooksApiGet_('/query?query=' + encodeURIComponent(query));
 }
 
+/**
+ * Read-only diagnostic: every sub-customer/job (Job=true) in one shot, with
+ * its real Id and ParentRef -- the bulk alternative to looking up jobs one
+ * at a time via testQuickBooksCustomers. Projects created through QBO's
+ * Projects tab do create an underlying Job=true Customer record (confirmed
+ * empirically), just not always named predictably as "Parent:Child", so a
+ * full export to cross-reference by name/parent against the Projects sheet
+ * is more reliable than guessing a search prefix per job. Single page (up
+ * to QBO's 1000-per-query cap) -- not paginated, since this is a manual
+ * one-off lookup, not a cached/repeated call.
+ */
+function testQuickBooksAllJobs(payload) {
+  var auth = authorizeQuickBooksOwner_(payload);
+  if (!auth.ok) return { error: auth.error, code: auth.code };
+  return quickbooksApiGet_('/query?query=' + encodeURIComponent('select Id, DisplayName, ParentRef from Customer where Job = true maxresults 1000'));
+}
+
 // ─── QBO Item catalog (Products/Services) + deterministic matching ──────────
 var QBO_ITEM_CATALOG_CACHE_KEY = 'qbo_item_catalog_v1';
 var QBO_ITEM_CATALOG_CACHE_TTL_SEC = 21600; // 6h, CacheService's max -- refreshQuickBooksItemCatalog forces a refetch on demand

@@ -1128,6 +1128,7 @@
             <button onclick="runQBTest('company')" style="flex:1;background:var(--sh-green-bg);color:var(--c-navy);border:none;border-radius:8px;padding:11px;font-size:12px;font-weight:700;cursor:pointer">Test: Company Info</button>
             <button onclick="runQBTest('vendors')" style="flex:1;background:var(--sh-green-bg);color:var(--c-navy);border:none;border-radius:8px;padding:11px;font-size:12px;font-weight:700;cursor:pointer">Test: Vendors</button>
             <button onclick="runQBTest('customers')" style="flex:1;background:var(--sh-green-bg);color:var(--c-navy);border:none;border-radius:8px;padding:11px;font-size:12px;font-weight:700;cursor:pointer">Test: Customers</button>
+            <button onclick="runQBTest('alljobs')" style="flex:1;background:var(--sh-green-bg);color:var(--c-navy);border:none;border-radius:8px;padding:11px;font-size:12px;font-weight:700;cursor:pointer">Test: All Jobs</button>
           </div>
           <div id="qbo-subcustomer-row" style="display:none;gap:8px;margin-bottom:8px">
             <input type="text" id="qbo-parent-name" placeholder="Parent name (e.g. OLO_BE)" style="flex:1;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px">
@@ -7489,7 +7490,8 @@ function connectQuickBooks() {
 function runQBTest(kind, nameFilter) {
   var outEl = document.getElementById('qbo-output');
   outEl.textContent = 'Loading…';
-  var action = kind === 'vendors' ? 'testQuickBooksVendors' : kind === 'customers' ? 'testQuickBooksCustomers' : 'testQuickBooksConnection';
+  var actions = { vendors: 'testQuickBooksVendors', customers: 'testQuickBooksCustomers', alljobs: 'testQuickBooksAllJobs' };
+  var action = actions[kind] || 'testQuickBooksConnection';
   gasCall(action, { nameFilter: nameFilter || '' }, function(res) {
     outEl.textContent = JSON.stringify(res, null, 2);
   }, function(err) { outEl.textContent = 'Error: ' + friendlyUploadError(err); });

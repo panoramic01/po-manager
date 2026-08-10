@@ -244,6 +244,7 @@ function doPost(e) {
     else if (action === 'testQuickBooksConnection')    result = testQuickBooksConnection(payload);
     else if (action === 'testQuickBooksVendors')       result = testQuickBooksVendors(payload);
     else if (action === 'testQuickBooksCustomers')     result = testQuickBooksCustomers(payload);
+    else if (action === 'testQuickBooksAllJobs')       result = testQuickBooksAllJobs(payload);
     else if (action === 'getQuickBooksVendorMap')      result = getQuickBooksVendorMap(payload);
     else if (action === 'saveQuickBooksVendorMapping') result = saveQuickBooksVendorMapping(payload);
     else if (action === 'extractInvoiceLineItems')     result = extractInvoiceLineItems(payload);
