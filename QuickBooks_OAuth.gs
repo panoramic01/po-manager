@@ -229,8 +229,8 @@ function testQuickBooksCustomers(payload) {
   if (!auth.ok) return { error: auth.error, code: auth.code };
   var nameFilter = (payload.nameFilter || '').toString().trim().replace(/'/g, "\\'");
   var query = nameFilter
-    ? "select Id, DisplayName, Job, ParentRef from Customer where DisplayName like '" + nameFilter + "%' maxresults 100"
-    : 'select Id, DisplayName, Job, ParentRef from Customer maxresults 100';
+    ? "select Id, DisplayName, Job, Active, ParentRef, SubCustomer, BillWithParent from Customer where DisplayName like '" + nameFilter + "%' maxresults 100"
+    : 'select Id, DisplayName, Job, Active, ParentRef, SubCustomer, BillWithParent from Customer maxresults 100';
   return quickbooksApiGet_('/query?query=' + encodeURIComponent(query));
 }
 
@@ -496,7 +496,10 @@ function createQuickBooksBill(payload) {
     var postRes = quickbooksApiPost_('/bill', billPayload);
     if (!postRes.success) {
       // Leave Status at 'Approved' (not reverted) so this can be fixed and retried without redoing the whole review.
-      return { success: false, error: postRes.error };
+      // sentPayload included for debugging "Invalid Reference Id" faults --
+      // shows the exact JSON QuickBooks received, since a rejected reference
+      // can look valid everywhere except in the literal request bytes.
+      return { success: false, error: postRes.error, sentPayload: billPayload };
     }
 
     var qbBillId = postRes.data && postRes.data.Bill && postRes.data.Bill.Id;

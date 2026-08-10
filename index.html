@@ -7841,7 +7841,14 @@ function irCreateBill() {
   gasCall('createQuickBooksBill', { stagingId: G_ir.stagingId }, function(res) {
     btn.disabled = false;
     btn.textContent = 'Create Bill in QuickBooks';
-    if (!res.success) { showToast(res.error || 'Failed to create Bill'); return; }
+    if (!res.success) {
+      showToast(res.error || 'Failed to create Bill');
+      if (res.sentPayload) {
+        var statusEl = document.getElementById('ir-detail-status');
+        statusEl.innerHTML = '<b>' + esc(res.error) + '</b><br><pre style="white-space:pre-wrap;word-break:break-all;font-size:11px;margin-top:6px">' + esc(JSON.stringify(res.sentPayload, null, 2)) + '</pre>';
+      }
+      return;
+    }
     showToast(res.alreadyPosted ? 'Already posted as Bill ' + res.qbBillId : 'Created QuickBooks Bill ' + res.qbBillId);
     irOpenDetail(G_ir.stagingId);
   }, function(err) {
