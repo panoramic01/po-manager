@@ -900,11 +900,11 @@
 <!-- ══ OTHER (admin/office) ══ -->
   <div class="tab" id="tab-other">
 
-    <!-- Home grid -- shared by admin/aidan/office/human_resources (aidan's
-         nav-other button is just relabeled "More", same tab underneath).
-         site_manager still gets its own tab-sitemanagermore. Every tile is
-         individually sd()-gated per role in applyRole() -- add a tile once
-         here and gate it, no separate tab to keep in sync. -->
+    <!-- Home grid -- shared by every role (admin/aidan/office/human_resources/
+         site_manager). aidan's and site_manager's nav-other button is just
+         relabeled "More", same tab underneath. Every tile is individually
+         sd()-gated per role in applyRole() -- add a tile once here and gate
+         it, no separate tab to keep in sync. -->
     <div id="other-home" style="padding:16px">
 
       <div class="sec-head sh-teal">Receiving &amp; Field</div>
@@ -2098,60 +2098,11 @@
        (see applyRole()) but points at the same tab, so every tile only
        needs to be added/gated once. See #other-home above. -->
 
-  <!-- ══ SITE MANAGER MORE (site_manager-only, pure role) ══
-       Own tab -- that tile grid is
-       hardcoded with admin-only tiles (Payroll, Employees, PTO Overview,
-       Reconcile, Vendor Spend, Job Dashboard, Pricing, Contacts) that
-       site_manager has never had access to (all admin/office/HR-gated
-       on their existing Other tab) -- this mirrors only the tiles
-       site_manager actually has today. -->
-  <div class="tab" id="tab-sitemanagermore" style="padding:0 12px">
-
-    <div class="sec-head sh-teal">Receiving &amp; Field</div>
-    <div class="tile-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-      <div class="tile" onclick="openQualityCheck()">
-        <span class="tile-swatch ts-teal"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></span>
-        <span class="tile-label">Quality Check</span>
-      </div>
-      <div class="tile" onclick="openFormOverlay('cleanup-overlay')">
-        <span class="tile-swatch ts-navy"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg></span>
-        <span class="tile-label">Runner Cleanup Log</span>
-      </div>
-      <div class="tile" onclick="openFormOverlay('materialrequest-overlay')">
-        <span class="tile-swatch ts-navy"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg></span>
-        <span class="tile-label">Runner Request</span>
-      </div>
-      <div class="tile" onclick="showOtherPanel('material-inventory')">
-        <span class="tile-swatch ts-teal"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg></span>
-        <span class="tile-label">Material Inventory</span>
-      </div>
-    </div>
-
-    <div class="sec-head sh-amber">Money</div>
-    <div class="tile-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-      <div class="tile" onclick="openFormOverlay('reimbursement-overlay')">
-        <span class="tile-swatch ts-amber"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/></svg></span>
-        <span class="tile-label">Reimbursement</span>
-      </div>
-      <div class="tile" onclick="openFormOverlay('creditcard-overlay')">
-        <span class="tile-swatch ts-amber"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg></span>
-        <span class="tile-label">Credit Card</span>
-      </div>
-    </div>
-
-    <div class="sec-head sh-blue">General</div>
-    <div class="tile-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding-bottom:16px">
-      <div class="tile" onclick="openOfficeNotes()">
-        <span class="tile-swatch ts-navy"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></span>
-        <span class="tile-label">Office Notes</span>
-      </div>
-      <div class="tile" onclick="showOtherPanel('contacts')">
-        <span class="tile-swatch ts-navy"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg></span>
-        <span class="tile-label">Contacts</span>
-      </div>
-    </div>
-
-  </div>
+  <!-- tab-sitemanagermore was removed -- site_manager shares tab-other/
+       #other-home too now, same as aidan (see above). Its tile subset
+       (no Vendor Spend/Reconcile/Payroll/Pricing/Job Dashboard/Employees/
+       PTO Overview/QuickBooks/Portal Storage) is already exactly what the
+       existing sd() gates in applyRole() grant it. -->
 
 </main>
 
@@ -3188,12 +3139,11 @@ function applyRole(role, skipNav) {
   }
 
   // Site-manager-only rollout: same Dashboard/Purchasing/More/Account shape
-  // as aidan's, but on its OWN 'sitemanagerhome'/'sitemanagermore' tabs
-  // rather than sharing tab-home / the shared tab-other -- those contain
-  // admin-only content (Pricing/Contacts search, Job Dashboard, Payroll,
-  // etc.) that site_manager doesn't have permission for. Purchasing is
-  // shared with aidan's though (both just repoint to the same unchanged
-  // tab-dashboard PO board, which has no admin-only content of its own).
+  // as aidan's, but on its OWN 'sitemanagerhome' dashboard tab rather than
+  // sharing tab-home -- that contains admin-only content site_manager
+  // doesn't have permission for. Purchasing and More/Other ARE shared with
+  // aidan's (both just repoint to the same tab-dashboard/tab-other, which
+  // are already gated per-tile/per-role, no admin-only content leaks through).
   if (G.isSiteManagerHome) {
     var smNavDashBtn = document.getElementById('nav-dashboard');
     if (smNavDashBtn) smNavDashBtn.setAttribute('onclick', "showTab('sitemanagerhome',this)");
@@ -3205,8 +3155,8 @@ function applyRole(role, skipNav) {
     var smReceivePoCard = document.getElementById('receive-po-card');
     if (smReceivePoCard) smReceivePoCard.style.display = 'none';
 
-    var smNavOtherBtn = document.getElementById('nav-other');
-    if (smNavOtherBtn) smNavOtherBtn.setAttribute('onclick', "showTab('sitemanagermore',this)");
+    // Other tab is shared with every role now (tab-sitemanagermore was
+    // removed) -- onclick stays the default showTab('other',this), just relabeled.
     var smNavOtherLabel = document.getElementById('nav-other-label');
     if (smNavOtherLabel) smNavOtherLabel.textContent = 'More';
   }
@@ -5428,7 +5378,6 @@ function showTab(name, btn) {
     home:      !G.isAidan,
     runnerhome: !G.isRunnerHome,
     sitemanagerhome: !G.isSiteManagerHome,
-    sitemanagermore: !G.isSiteManagerHome,
     officehome: !G.isOfficeHome
   };
   if (blocked[name]) { showToast("You don't have access to that."); return; }
@@ -7429,7 +7378,7 @@ function resetOtherPanels() {
 }
 
 function showOtherHome() {
-  var backTab = G.isRunnerHome ? 'runnerhome' : (G.isSiteManagerHome ? 'sitemanagermore' : 'other');
+  var backTab = G.isRunnerHome ? 'runnerhome' : 'other';
   if (!_navPop) history.pushState({ view: 'tab', tab: backTab }, '');
   resetOtherPanels();
 }
@@ -11175,10 +11124,11 @@ window.addEventListener('popstate', function(e) {
     showOtherHome();
   } else if (state.view === 'tab') {
     // Going back to a tab
-    if (state.tab === 'other' || state.tab === 'more') {
-      // 'more' is a legacy history-state value from before tab-more was
-      // merged into tab-other -- normalize it so an in-flight session
-      // (or stale back-button history) doesn't look for a removed tab.
+    if (state.tab === 'other' || state.tab === 'more' || state.tab === 'sitemanagermore') {
+      // 'more'/'sitemanagermore' are legacy history-state values from
+      // before those tabs were merged into tab-other -- normalize so an
+      // in-flight session (or stale back-button history) doesn't look
+      // for a removed tab.
       showOtherHome();
       showTabDirect('other', null);
     } else {
