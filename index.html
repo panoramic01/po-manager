@@ -900,9 +900,11 @@
 <!-- ══ OTHER (admin/office) ══ -->
   <div class="tab" id="tab-other">
 
-    <!-- Home grid -- grouped into the same sections/colors as aidan's
-         tab-more and tab-sitemanagermore, just with every tile individually
-         sd()-gated per role instead of being a separate hardcoded tab. -->
+    <!-- Home grid -- shared by admin/aidan/office/human_resources (aidan's
+         nav-other button is just relabeled "More", same tab underneath).
+         site_manager still gets its own tab-sitemanagermore. Every tile is
+         individually sd()-gated per role in applyRole() -- add a tile once
+         here and gate it, no separate tab to keep in sync. -->
     <div id="other-home" style="padding:16px">
 
       <div class="sec-head sh-teal">Receiving &amp; Field</div>
@@ -2091,113 +2093,13 @@
       </div>
     </div>
 
-  <!-- ══ MORE (aidan-only: merged Log + Other, grouped) ══ -->
-  <div class="tab" id="tab-more" style="padding:0 12px">
-
-    <div class="sec-head sh-teal">Receiving &amp; Field</div>
-    <div class="tile-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-      <div class="tile" onclick="openQualityCheck()">
-        <span class="tile-swatch ts-teal"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></span>
-        <span class="tile-label">Quality Check</span>
-      </div>
-      <div class="tile" onclick="openFormOverlay('cleanup-overlay')">
-        <span class="tile-swatch ts-navy"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg></span>
-        <span class="tile-label">Runner Cleanup Log</span>
-      </div>
-      <div class="tile" onclick="openFormOverlay('materialrequest-overlay')">
-        <span class="tile-swatch ts-navy"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg></span>
-        <span class="tile-label">Runner Request</span>
-      </div>
-      <div class="tile" onclick="showOtherPanel('material-inventory')">
-        <span class="tile-swatch ts-teal"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg></span>
-        <span class="tile-label">Material Inventory</span>
-      </div>
-      <div class="tile" onclick="showOtherPanel('inventory')">
-        <span class="tile-swatch ts-teal"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7l9-4 9 4-9 4-9-4zm0 0v10l9 4 9-4V7M12 11v10"/></svg></span>
-        <span class="tile-label">Inventory</span>
-      </div>
-    </div>
-
-    <div class="sec-head sh-amber">Money</div>
-    <div class="tile-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-      <div class="tile" onclick="openFormOverlay('reimbursement-overlay')">
-        <span class="tile-swatch ts-amber"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/></svg></span>
-        <span class="tile-label">Reimbursement</span>
-      </div>
-      <div class="tile" onclick="openFormOverlay('creditcard-overlay')">
-        <span class="tile-swatch ts-amber"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg></span>
-        <span class="tile-label">Credit Card</span>
-      </div>
-      <div class="tile" onclick="showOtherPanel('vendor-spend')">
-        <span class="tile-swatch ts-amber"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></span>
-        <span class="tile-label">Vendor Spend</span>
-      </div>
-      <div class="tile" onclick="showOtherPanel('reconcile')">
-        <span class="tile-swatch ts-teal"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg></span>
-        <span class="tile-label">Reconcile Statement</span>
-      </div>
-      <div class="tile" onclick="showOtherPanel('payroll')">
-        <span class="tile-swatch ts-amber"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/></svg></span>
-        <span class="tile-label">Payroll</span>
-      </div>
-    </div>
-
-    <div class="sec-head sh-blue">Reference</div>
-    <div class="tile-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-      <div class="tile" onclick="showOtherPanel('pricing')">
-        <span class="tile-swatch ts-navy"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z"/></svg></span>
-        <span class="tile-label">Pricing</span>
-      </div>
-      <div class="tile" onclick="showOtherPanel('material-report')">
-        <span class="tile-swatch ts-teal"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg></span>
-        <span class="tile-label">Material Report</span>
-      </div>
-      <div class="tile" onclick="showOtherPanel('job-cost')">
-        <span class="tile-swatch ts-navy"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg></span>
-        <span class="tile-label">Job Dashboard</span>
-      </div>
-    </div>
-
-    <div class="sec-head sh-indigo">People</div>
-    <div class="tile-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-      <div class="tile" onclick="showOtherPanel('contacts')">
-        <span class="tile-swatch ts-navy"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg></span>
-        <span class="tile-label">Contacts</span>
-      </div>
-      <div class="tile" onclick="showOtherPanel('emp-mgr')">
-        <span class="tile-swatch ts-navy"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg></span>
-        <span class="tile-label">Employees</span>
-      </div>
-      <div class="tile" onclick="showOtherPanel('pto-overview')">
-        <span class="tile-swatch ts-navy"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg></span>
-        <span class="tile-label">PTO Overview</span>
-      </div>
-      <div class="tile" onclick="openOfficeNotes()">
-        <span class="tile-swatch ts-navy"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></span>
-        <span class="tile-label">Office Notes</span>
-      </div>
-    </div>
-
-    <div class="sec-head sh-green">Setup</div>
-    <div class="tile-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding-bottom:16px">
-      <div class="tile" onclick="showOtherPanel('new-project')">
-        <span class="tile-swatch ts-solid"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg></span>
-        <span class="tile-label">New Project</span>
-      </div>
-      <div class="tile" onclick="showOtherPanel('quickbooks')">
-        <span class="tile-swatch ts-teal"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 7h6m-6 4h6m-6 4h4M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/></svg></span>
-        <span class="tile-label">QuickBooks</span>
-      </div>
-      <div class="tile" onclick="showOtherPanel('portal-storage')">
-        <span class="tile-swatch ts-navy"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg></span>
-        <span class="tile-label">Portal Storage</span>
-      </div>
-    </div>
-
-  </div>
+  <!-- tab-more was removed -- aidan now shares tab-other/#other-home like
+       every other role; the nav-other button is relabeled "More" for aidan
+       (see applyRole()) but points at the same tab, so every tile only
+       needs to be added/gated once. See #other-home above. -->
 
   <!-- ══ SITE MANAGER MORE (site_manager-only, pure role) ══
-       Own tab, not shared with aidan's tab-more: that tile grid is
+       Own tab -- that tile grid is
        hardcoded with admin-only tiles (Payroll, Employees, PTO Overview,
        Reconcile, Vendor Spend, Job Dashboard, Pricing, Contacts) that
        site_manager has never had access to (all admin/office/HR-gated
@@ -3279,15 +3181,15 @@ function applyRole(role, skipNav) {
     var receivePoCard = document.getElementById('receive-po-card');
     if (receivePoCard) receivePoCard.style.display = 'none';
 
-    var navOtherBtn = document.getElementById('nav-other');
-    if (navOtherBtn) navOtherBtn.setAttribute('onclick', "showTab('more',this)");
+    // Other tab is shared with every role now (tab-more was removed) --
+    // onclick stays the default showTab('other',this), just relabeled.
     var navOtherLabel = document.getElementById('nav-other-label');
     if (navOtherLabel) navOtherLabel.textContent = 'More';
   }
 
   // Site-manager-only rollout: same Dashboard/Purchasing/More/Account shape
   // as aidan's, but on its OWN 'sitemanagerhome'/'sitemanagermore' tabs
-  // rather than sharing aidan's tab-home/tab-more -- those contain
+  // rather than sharing tab-home / the shared tab-other -- those contain
   // admin-only content (Pricing/Contacts search, Job Dashboard, Payroll,
   // etc.) that site_manager doesn't have permission for. Purchasing is
   // shared with aidan's though (both just repoint to the same unchanged
@@ -3646,7 +3548,7 @@ function setHomeAttentionCount(key, n, onClick) {
 }
 
 function goToMorePanel(panel) {
-  showTab('more', document.getElementById('nav-other'));
+  showTab('other', document.getElementById('nav-other'));
   showOtherPanel(panel);
 }
 
@@ -5524,7 +5426,6 @@ function showTab(name, btn) {
     other:     !G.perms.canOther,
     account:   false,
     home:      !G.isAidan,
-    more:      !G.isAidan,
     runnerhome: !G.isRunnerHome,
     sitemanagerhome: !G.isSiteManagerHome,
     sitemanagermore: !G.isSiteManagerHome,
@@ -7528,7 +7429,7 @@ function resetOtherPanels() {
 }
 
 function showOtherHome() {
-  var backTab = G.isAidan ? 'more' : (G.isRunnerHome ? 'runnerhome' : (G.isSiteManagerHome ? 'sitemanagermore' : 'other'));
+  var backTab = G.isRunnerHome ? 'runnerhome' : (G.isSiteManagerHome ? 'sitemanagermore' : 'other');
   if (!_navPop) history.pushState({ view: 'tab', tab: backTab }, '');
   resetOtherPanels();
 }
@@ -11275,8 +11176,11 @@ window.addEventListener('popstate', function(e) {
   } else if (state.view === 'tab') {
     // Going back to a tab
     if (state.tab === 'other' || state.tab === 'more') {
+      // 'more' is a legacy history-state value from before tab-more was
+      // merged into tab-other -- normalize it so an in-flight session
+      // (or stale back-button history) doesn't look for a removed tab.
       showOtherHome();
-      showTabDirect(state.tab, null);
+      showTabDirect('other', null);
     } else {
       showTabDirect(state.tab, document.querySelector('.nav-btn[onclick*=\"' + state.tab + '\"]'));
     }
