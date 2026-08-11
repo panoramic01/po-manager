@@ -3028,6 +3028,7 @@ function applyRole(role, skipNav) {
     canEdit:        has(['admin', 'office', 'site_manager']),
     canViewInvoice: has(['admin', 'office']),
     canContacts:    has(['admin', 'office', 'site_manager']),
+    canNewProject:  has(['admin', 'office']),
     canOther:       true,
     canAccount:     true
   };
@@ -3056,7 +3057,7 @@ function applyRole(role, skipNav) {
   sd('other-card-missing-inv', has(['admin']));
   sd('other-card-vendor-spend', has(['admin', 'office']));
   sd('other-card-material-report', has(['admin', 'office']));
-  sd('other-card-material-inventory', has(['admin', 'office', 'site_manager', 'runner']));
+  sd('other-card-material-inventory', has(['admin', 'office', 'runner']));
   sd('other-card-inventory', has(['admin', 'office']));
   // Moved here from the Log tab's quick-tile grid -- gated by canReceivePO
   // (not HR-only) to match who could reach them there before the move.
@@ -3070,7 +3071,7 @@ function applyRole(role, skipNav) {
   sd('other-card-emp-mgr',      has(['admin', 'human_resources']));
   sd('other-card-pto-overview',  has(['admin', 'human_resources']));
   sd('other-card-payroll',       has(['admin', 'human_resources']));
-  sd('other-card-new-project',   p.canCreate);
+  sd('other-card-new-project',   p.canNewProject);
   sd('other-card-quickbooks',    G.isAidan);
   sd('other-card-portal-storage', has(['admin', 'office', 'human_resources']));
   sd('receive-po-card', p.canReceivePO);
@@ -4840,7 +4841,11 @@ function runSearch() {
 
   // Sort
   if (G.sort === 'oldest') {
-    results.sort(function(a,b){ return a.rowIndex - b.rowIndex; });
+    results.sort(function(a,b){
+      var ta = poIssuedTime_(a), tb = poIssuedTime_(b);
+      if (ta !== tb) return ta - tb;
+      return a.rowIndex - b.rowIndex;
+    });
   } else if (G.sort === 'duedate') {
     results.sort(function(a,b){
       var da = parseMMDDYYYY(a.deliveryDate), db = parseMMDDYYYY(b.deliveryDate);
@@ -4850,7 +4855,11 @@ function runSearch() {
   } else if (G.sort === 'vendor') {
     results.sort(function(a,b){ return (a.vendor||'').localeCompare(b.vendor||''); });
   } else {
-    results.sort(function(a,b){ return b.rowIndex - a.rowIndex; }); // newest
+    results.sort(function(a,b){ // newest
+      var ta = poIssuedTime_(a), tb = poIssuedTime_(b);
+      if (ta !== tb) return tb - ta;
+      return b.rowIndex - a.rowIndex;
+    });
   }
 
   var h = '';

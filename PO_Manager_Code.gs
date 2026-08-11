@@ -2706,7 +2706,7 @@ function authorizeDrive() {
  */
 function getContacts(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin', 'office']);
+    var auth = authorizeCaller(payload, ['admin', 'office', 'site_manager']);
     if (!auth.ok) return { headers: [], contacts: [], error: auth.error, code: auth.code };
 
     var ss    = SpreadsheetApp.getActiveSpreadsheet();
@@ -2734,7 +2734,7 @@ function getContacts(payload) {
  */
 function updateContact(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin', 'office']);
+    var auth = authorizeCaller(payload, ['admin', 'office', 'site_manager']);
     if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
 
     var rowIndex = payload.rowIndex;
@@ -2761,7 +2761,7 @@ function updateContact(payload) {
  */
 function addContact(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin', 'office']);
+    var auth = authorizeCaller(payload, ['admin', 'office', 'site_manager']);
     if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
 
     var values = payload.values || {};
@@ -2791,7 +2791,7 @@ function addContact(payload) {
  */
 function deleteContact(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin', 'office']);
+    var auth = authorizeCaller(payload, ['admin', 'office', 'site_manager']);
     if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
 
     var rowIndex = payload.rowIndex;
@@ -2976,7 +2976,7 @@ var MATERIAL_LOG_HEADERS = ['Date', 'Material', 'Unit', 'Type', 'Qty', 'Job / Re
 /** Material-name/unit picklist for the log-in/out form, sourced from the Pricing sheet (no vendor prices exposed). */
 function getMaterialCatalog(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin', 'office', 'site_manager', 'runner']);
+    var auth = authorizeCaller(payload, ['admin', 'office', 'runner']);
     if (!auth.ok) return { items: [], error: auth.error, code: auth.code };
 
     var data = getPricingSheetRaw_().data; // A=Description, B=U/M (only columns this needs)
@@ -2994,7 +2994,7 @@ function getMaterialCatalog(payload) {
 /** On-hand balances per material plus the most recent log activity. */
 function getMaterialInventory(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin', 'office', 'site_manager', 'runner']);
+    var auth = authorizeCaller(payload, ['admin', 'office', 'runner']);
     if (!auth.ok) return { materials: [], recentLog: [], error: auth.error, code: auth.code };
 
     var sheet = ensureSheetWithHeaders_('Material Inventory Log', MATERIAL_LOG_HEADERS);
@@ -3043,7 +3043,7 @@ function getMaterialInventory(payload) {
 /** Appends one In or Out row to the material log. */
 function logMaterialTransaction(payload) {
   try {
-    var auth = authorizeCaller(payload, ['admin', 'office', 'site_manager', 'runner']);
+    var auth = authorizeCaller(payload, ['admin', 'office', 'runner']);
     if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
 
     var material = (payload.material || '').toString().trim();
