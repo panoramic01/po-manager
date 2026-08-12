@@ -2426,6 +2426,21 @@ function extractDriveFolderId(driveUrlOrId) {
 }
 
 /**
+ * Pulls a file ID out of a Drive file URL (the file.getUrl() format,
+ * https://drive.google.com/file/d/<id>/view...), or passes through a bare
+ * ID. Used to re-fetch an already-uploaded invoice file's bytes (e.g. for
+ * attaching it to a QuickBooks Bill) from just the URL stored on a row.
+ */
+function extractDriveFileId_(driveUrlOrId) {
+  var s = (driveUrlOrId || "").toString().trim();
+  if (!s) return null;
+  var m = s.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || s.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (m) return m[1];
+  if (/^[a-zA-Z0-9_-]{10,}$/.test(s)) return s;
+  return null;
+}
+
+/**
  * Writes (or dedupes against) a single file in `folder`. If a file with
  * this exact name already exists there, reuses it instead of uploading a
  * second copy -- callers' filenames are either fully deterministic

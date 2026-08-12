@@ -7791,7 +7791,8 @@ function irCreateBill() {
       }
       return;
     }
-    showToast(res.alreadyPosted ? 'Already posted as Bill ' + res.qbBillId : 'Created QuickBooks Bill ' + res.qbBillId);
+    showToast(res.attachmentWarning ||
+      (res.alreadyPosted ? 'Already posted as Bill ' + res.qbBillId : 'Created QuickBooks Bill ' + res.qbBillId));
     irOpenDetail(G_ir.stagingId);
   }, function(err) {
     btn.disabled = false;

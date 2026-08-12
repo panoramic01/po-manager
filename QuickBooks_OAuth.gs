@@ -443,6 +443,66 @@ function matchInvoiceLineItems(payload) {
   return { success: true, matches: matches };
 }
 
+/**
+ * Uploads a file as a QuickBooks Attachable linked to a specific entity
+ * (e.g. a just-created Bill) via AttachableRef -- this is what makes the
+ * invoice PDF show up as an attachment on the Bill inside QuickBooks
+ * itself, not just linked from our own Drive copy. QBO's Attachable API is
+ * a dedicated multipart endpoint (/upload), separate from the JSON-only
+ * quickbooksApiPost_ above, so it needs its own request shape: a JSON
+ * metadata part (AttachableRef) plus the raw file bytes.
+ */
+function quickbooksUploadAttachment_(fileBlob, entityType, entityId) {
+  var service = getQuickBooksService_();
+  if (!service.hasAccess()) {
+    return { success: false, error: 'QuickBooks is not connected yet.' };
+  }
+  var realmId = PropertiesService.getScriptProperties().getProperty('QBO_REALM_ID');
+  if (!realmId) {
+    return { success: false, error: 'Missing QuickBooks company (realm) id - reconnect QuickBooks.' };
+  }
+
+  var metadata = {
+    AttachableRef: [{
+      EntityRef: { type: entityType, value: entityId.toString() },
+      IncludeOnSend: false
+    }],
+    FileName: fileBlob.getName(),
+    ContentType: fileBlob.getContentType()
+  };
+  var metadataBlob = Utilities.newBlob(JSON.stringify(metadata), 'application/json', 'metadata.json');
+
+  var url = getQuickBooksBaseUrl_() + '/v3/company/' + realmId + '/upload';
+  var response = UrlFetchApp.fetch(url, {
+    method: 'post',
+    headers: {
+      Authorization: 'Bearer ' + service.getAccessToken(),
+      Accept: 'application/json'
+    },
+    // UrlFetchApp builds a multipart/form-data body automatically when
+    // payload is an object of Blobs -- one part per key, named after the
+    // key, per Intuit's documented two-part (metadata + content) contract.
+    payload: {
+      file_metadata_01: metadataBlob,
+      file_content_01: fileBlob
+    },
+    muteHttpExceptions: true
+  });
+
+  var code = response.getResponseCode();
+  var body = response.getContentText();
+  if (code < 200 || code >= 300) {
+    return { success: false, error: 'QuickBooks attachment upload error ' + code + ': ' + qboParseErrorBody_(body) };
+  }
+  var parsed;
+  try { parsed = JSON.parse(body); } catch (e) { return { success: false, error: 'Unexpected attachment response: ' + body }; }
+  var entry = parsed.AttachableResponse && parsed.AttachableResponse[0];
+  if (!entry || entry.Fault) {
+    return { success: false, error: qboParseErrorBody_(body) };
+  }
+  return { success: true, attachableId: entry.Attachable && entry.Attachable.Id };
+}
+
 // ─── QuickBooks Bill creation (write path) ───────────────────────────────────
 /**
  * Creates a Bill in QuickBooks from an Approved staging row. Owner-gated,
@@ -451,7 +511,10 @@ function matchInvoiceLineItems(payload) {
  * decision. Reloads the staging row server-side rather than trusting
  * whatever line items the client submits, since this posts real financial
  * data. Idempotent: a staging row that already has a QB Bill Id returns
- * that Bill instead of posting again, covering retries/double-clicks.
+ * that Bill instead of posting again, covering retries/double-clicks. Also
+ * attaches the uploaded invoice PDF to the new Bill (see
+ * quickbooksUploadAttachment_) -- best-effort, reported via
+ * attachmentWarning on the response rather than failing the whole call.
  */
 function createQuickBooksBill(payload) {
   var auth = authorizeQuickBooksOwner_(payload);
@@ -535,7 +598,29 @@ function createQuickBooksBill(payload) {
     sheet.getRange(rowIdx, QB_STAGING_COL['QB Bill Id'] + 1).setValue(qbBillId || '');
     sheet.getRange(rowIdx, QB_STAGING_COL['Posted At'] + 1).setValue(new Date());
 
-    return { success: true, qbBillId: qbBillId };
+    // Best-effort: attach the same invoice PDF the reviewer uploaded (already
+    // sitting in Drive at staging.invoiceFileUrl) to the Bill we just created,
+    // so the file is visible directly on the Bill in QuickBooks. Non-fatal --
+    // the Bill itself is already posted and Approved->Posted at this point,
+    // so a Drive/attachment hiccup surfaces as a warning, not a failure.
+    var attachmentWarning;
+    if (qbBillId && staging.invoiceFileUrl) {
+      try {
+        var invoiceFileId = extractDriveFileId_(staging.invoiceFileUrl);
+        if (!invoiceFileId) {
+          attachmentWarning = 'Bill ' + qbBillId + ' created, but the invoice file link could not be read to attach it.';
+        } else {
+          var attachRes = quickbooksUploadAttachment_(DriveApp.getFileById(invoiceFileId).getBlob(), 'Bill', qbBillId);
+          if (!attachRes.success) {
+            attachmentWarning = 'Bill ' + qbBillId + ' created, but attaching the invoice PDF failed: ' + attachRes.error;
+          }
+        }
+      } catch (attachErr) {
+        attachmentWarning = 'Bill ' + qbBillId + ' created, but attaching the invoice PDF failed: ' + attachErr.toString();
+      }
+    }
+
+    return { success: true, qbBillId: qbBillId, attachmentWarning: attachmentWarning };
   } catch (e) {
     return { success: false, error: e.toString() };
   } finally {
