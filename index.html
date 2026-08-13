@@ -4241,10 +4241,10 @@ function uploadHomePlansFile(file) {
   setBtnState('new-project-btn', 'Uploading plans…', true);
 
   readAndCompressFile(file, function(dataUrl, mimeType) {
-    var ext = mimeType === 'image/jpeg' ? 'jpg' : (file.name.split('.').pop() || 'bin');
-    // Stable (non-timestamped) filename -- lets saveFileToFolderById detect
-    // an existing upload for this job and skip creating a second copy.
-    var filename = 'HomePlans-' + trim('np-job').replace(/[^a-zA-Z0-9]+/g,'-') + '.' + ext;
+    // Keep the original filename -- lets saveFileToFolderById detect a
+    // re-upload of the same file and skip creating a second copy, and
+    // avoids renaming the user's PDF away from what they uploaded.
+    var filename = file.name;
     gasCall('saveFileToFolderById', {
       base64Data: dataUrl.split(',')[1], mimeType: mimeType, filename: filename,
       folderId: driveLink
