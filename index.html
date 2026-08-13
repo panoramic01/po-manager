@@ -1230,7 +1230,10 @@
                 </thead>
                 <tbody id="ir-line-rows"></tbody>
               </table>
-              <button onclick="irAddLine()" style="margin-top:10px;background:var(--c-bg);color:var(--c-navy);border:1px solid var(--c-border);border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer">+ Add line</button>
+              <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
+                <button onclick="irAddLine()" style="background:var(--c-bg);color:var(--c-navy);border:1px solid var(--c-border);border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer">+ Add line</button>
+                <button onclick="irRefreshCatalog()" id="ir-refresh-catalog-btn" title="Reload the QB Item list from QuickBooks -- use this if a product you added/edited in QuickBooks isn't showing up" style="background:var(--c-bg);color:var(--c-navy);border:1px solid var(--c-border);border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer">↻ Refresh QB Items</button>
+              </div>
             </div>
 
             <div id="ir-balance-check" style="font-size:12px;padding:10px 12px;border-radius:8px;margin-bottom:12px"></div>
@@ -7783,6 +7786,26 @@ function irLoadCatalogAndMatch() {
       irRenderLineRows();
     }, function() { irRenderLineRows(); });
   }, function() { G_ir.catalog = []; irRenderLineRows(); });
+}
+
+// Forces a re-fetch of the QBO Item catalog, bypassing the server-side cache
+// (getQuickBooksItemCatalog_ caches for up to 6h) -- the "+ Add new item"
+// path invalidates that cache itself since it knows exactly what changed,
+// but a product added/edited directly in QuickBooks has no such trigger, so
+// this button is the manual escape hatch for that case.
+function irRefreshCatalog() {
+  var btn = document.getElementById('ir-refresh-catalog-btn');
+  if (btn) { btn.textContent = 'Refreshing…'; btn.disabled = true; }
+  gasCall('refreshQuickBooksItemCatalog', {}, function(res) {
+    if (btn) { btn.textContent = '↻ Refresh QB Items'; btn.disabled = false; }
+    if (!res.success) { showToast(res.error || 'Could not refresh QB Items'); return; }
+    G_ir.catalog = irGroupCatalog_(res.items || []);
+    irRenderLineRows();
+    showToast('QB Item list refreshed');
+  }, function(err) {
+    if (btn) { btn.textContent = '↻ Refresh QB Items'; btn.disabled = false; }
+    showToast(abortAwareError(err, 'Could not refresh QB Items'));
+  });
 }
 
 function irRenderLineRows() {
