@@ -260,6 +260,10 @@ function doPost(e) {
     else if (action === 'refreshQuickBooksItemCatalog') result = refreshQuickBooksItemCatalog(payload);
     else if (action === 'matchInvoiceLineItems')       result = matchInvoiceLineItems(payload);
     else if (action === 'createQuickBooksBill')        result = createQuickBooksBill(payload);
+    else if (action === 'getQuickBooksAccountsForNewItem') result = getQuickBooksAccountsForNewItem(payload);
+    else if (action === 'createQuickBooksItem')        result = createQuickBooksItem(payload);
+    else if (action === 'getQuickBooksLinkStatusForInvoice') result = getQuickBooksLinkStatusForInvoice(payload);
+    else if (action === 'saveProjectQuickBooksCustomerId') result = saveProjectQuickBooksCustomerId(payload);
     else                                        result = { error: 'Unknown action: ' + action };
 
     if (result && result.success === false) {
@@ -1547,6 +1551,51 @@ function getProjectQuickBooksId_(builder, jobRef) {
   }
 }
 
+/**
+ * Upserts the QuickBooks Customer/Sub-customer Id (column E) for an
+ * existing Contractor + Job Name row in the Projects sheet -- the write
+ * counterpart to getProjectQuickBooksId_ above. Owner-gated, same as the
+ * rest of the QuickBooks-facing pipeline: this is what the invoice-upload
+ * link gate (irCheckLinkGate/irSaveJobLink in index.html) uses to fill in a
+ * missing job link inline instead of editing the sheet by hand. Deliberately
+ * does NOT create a new Projects row if none matches -- the job is expected
+ * to already exist (it's tied to a real PO), so a missing row means the
+ * project itself was never set up, not that this Id is wrong.
+ */
+function saveProjectQuickBooksCustomerId(payload) {
+  var auth = authorizeQuickBooksOwner_(payload);
+  if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
+
+  var builder = (payload.builder || '').toString().trim();
+  var jobRef = (payload.jobRef || '').toString().trim();
+  var qbCustomerId = (payload.qbCustomerId || '').toString().trim();
+  if (!builder || !jobRef) return { success: false, error: 'builder and jobRef are required' };
+  if (!qbCustomerId) return { success: false, error: 'qbCustomerId is required' };
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) return { success: false, error: 'Server is busy - try again in a moment.' };
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PROJECTS_SHEET_NAME);
+    if (!sheet) return { success: false, error: "Sheet '" + PROJECTS_SHEET_NAME + "' not found." };
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { success: false, error: 'No project found for ' + builder + ' / ' + jobRef + '.' };
+
+    var data = sheet.getRange(2, 1, lastRow - 1, 2).getValues(); // A:Contractor, B:Job Name
+    var wantBuilder = builder.toLowerCase(), wantJob = jobRef.toLowerCase();
+    for (var i = 0; i < data.length; i++) {
+      var rowBuilder = (data[i][0] || '').toString().trim().toLowerCase();
+      var rowJob = (data[i][1] || '').toString().trim().toLowerCase();
+      if (rowBuilder === wantBuilder && rowJob === wantJob) {
+        sheet.getRange(i + 2, 5).setValue(qbCustomerId); // column E
+        return { success: true };
+      }
+    }
+    return { success: false, error: 'No project found for ' + builder + ' / ' + jobRef + ' in the Projects sheet.' };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 // ─── QuickBooks vendor ID mapping ────────────────────────────────────────────
 // No existing sheet ties a vendor to its QuickBooks Vendor Id -- VENDOR_OPTIONS
 // (line 103) is just a name list. This small sheet is the mapping, keyed by
@@ -1624,6 +1673,28 @@ function saveQuickBooksVendorMapping(payload) {
   } catch (e) {
     return { success: false, error: e.toString() };
   }
+}
+
+/**
+ * Client-facing status check for the invoice-upload link gate
+ * (irCheckLinkGate in index.html): does this PO's vendor have a QuickBooks
+ * Vendor Id, and does its Contractor+Job have a QuickBooks Customer/
+ * Sub-customer Id? Read-only, cheap -- called before the upload dropzone is
+ * ever shown so a missing link can be fixed inline instead of only
+ * surfacing once Bill creation fails at the very end of the review flow.
+ * Owner-gated, same as the rest of the QuickBooks-facing pipeline.
+ */
+function getQuickBooksLinkStatusForInvoice(payload) {
+  var auth = authorizeQuickBooksOwner_(payload);
+  if (!auth.ok) return { error: auth.error, code: auth.code };
+  var vendorLookup = getQuickBooksVendorId_(payload.vendor);
+  var customerLookup = getProjectQuickBooksId_(payload.builder, payload.jobRef);
+  return {
+    success: true,
+    qbVendorId: vendorLookup.qbVendorId || '',
+    qbCustomerId: customerLookup.qbCustomerId || '',
+    projectFound: customerLookup.matched
+  };
 }
 
 // ─── QuickBooks item mapping (learns from reviewer picks) ────────────────────

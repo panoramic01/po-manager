@@ -337,6 +337,82 @@ function getQuickBooksItemCatalogForReview(payload) {
   };
 }
 
+/**
+ * Client-facing: active Income + Expense/COGS accounts for the "Add New
+ * QuickBooks Item" form's account pickers. IncomeAccountRef is a required
+ * field on every Service/NonInventory Item per QBO's schema, even for an
+ * item that will only ever appear on Bills -- ExpenseAccountRef is optional
+ * but lets the new item categorize correctly on the Bill it's about to be
+ * used on instead of falling back to QBO's default expense account.
+ */
+function getQuickBooksAccountsForNewItem(payload) {
+  var auth = authorizeQuickBooksOwner_(payload);
+  if (!auth.ok) return { error: auth.error, code: auth.code };
+  var query = 'select Id, Name, AccountType from Account where Active = true maxresults 1000';
+  var res = quickbooksApiGet_('/query?query=' + encodeURIComponent(query));
+  if (!res.success) return res;
+  var accounts = ((res.data && res.data.QueryResponse && res.data.QueryResponse.Account) || []).map(function(a) {
+    return { id: a.Id, name: a.Name, accountType: a.AccountType };
+  });
+  var incomeTypes = { 'Income': true, 'Other Income': true };
+  var expenseTypes = { 'Expense': true, 'Cost of Goods Sold': true, 'Other Expense': true };
+  return {
+    success: true,
+    incomeAccounts: accounts.filter(function(a) { return incomeTypes[a.accountType]; }),
+    expenseAccounts: accounts.filter(function(a) { return expenseTypes[a.accountType]; })
+  };
+}
+
+/**
+ * Creates a new Product/Service Item directly in QuickBooks so an invoice
+ * line that doesn't match anything in the catalog can be paired without
+ * leaving the review screen. Owner-gated, same as the rest of the QBO write
+ * path (createQuickBooksBill). Invalidates the cached catalog on success so
+ * the next full catalog load picks the new item up too; also returns the
+ * item directly so the caller can splice it into an already-loaded catalog
+ * without waiting on a refetch.
+ */
+function createQuickBooksItem(payload) {
+  var auth = authorizeQuickBooksOwner_(payload);
+  if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
+
+  var name = (payload.name || '').toString().trim();
+  if (!name) return { success: false, error: 'Item name is required.' };
+  var incomeAccountId = (payload.incomeAccountId || '').toString().trim();
+  if (!incomeAccountId) return { success: false, error: 'Income account is required.' };
+  var type = payload.type === 'NonInventory' ? 'NonInventory' : 'Service';
+
+  var body = {
+    Name: name,
+    Type: type,
+    IncomeAccountRef: { value: incomeAccountId }
+  };
+  if (payload.expenseAccountId) body.ExpenseAccountRef = { value: payload.expenseAccountId.toString() };
+  if (payload.parentId) {
+    body.SubItem = true;
+    body.ParentRef = { value: payload.parentId.toString() };
+  }
+
+  var postRes = quickbooksApiPost_('/item', body);
+  if (!postRes.success) return { success: false, error: postRes.error };
+
+  var item = postRes.data && postRes.data.Item;
+  if (!item) return { success: false, error: 'Unexpected response creating item.' };
+
+  try { CacheService.getScriptCache().remove(QBO_ITEM_CATALOG_CACHE_KEY); } catch (e) { /* best-effort invalidation */ }
+
+  return {
+    success: true,
+    item: {
+      id: item.Id,
+      name: item.Name,
+      fullyQualifiedName: item.FullyQualifiedName,
+      type: item.Type,
+      parentId: item.ParentRef ? item.ParentRef.value : null
+    }
+  };
+}
+
 /** Resolves a Script-Property-configured item name (case/punctuation-insensitive exact match, via the same normalizer as the fuzzy matcher below) to its QBO Item Id, or '' if unset or not found. */
 function findQBOItemIdByName_(items, name) {
   if (!name) return '';

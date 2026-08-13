@@ -1176,8 +1176,18 @@
         <span id="ir-panel-title" style="font-size:15px;font-weight:700;color:var(--c-navy);flex:1;margin-left:2px">Add Invoice</span>
       </div>
 
+      <!-- Link-gate view: blocks the upload until this PO's vendor and job both
+           have a QuickBooks Vendor/Customer Id on file -- irStartUploadForPO
+           checks this before ever showing the upload dropzone below, so a
+           missing link surfaces (and gets fixed) up front instead of only at
+           Bill-creation time at the very end of the review flow. -->
+      <div id="ir-link-gate-view" style="display:none;padding:16px">
+        <div id="ir-link-gate-header" style="font-size:13px;color:var(--c-ink-soft);margin-bottom:14px"></div>
+        <div id="ir-link-gate-body"></div>
+      </div>
+
       <!-- Upload view: pick/drop the invoice file for the current PO -->
-      <div id="ir-upload-view" style="padding:16px">
+      <div id="ir-upload-view" style="display:none;padding:16px">
         <div id="ir-upload-po-header" style="font-size:13px;color:var(--c-ink-soft);margin-bottom:14px"></div>
         <div id="ir-upload-drop" ondragover="event.preventDefault();this.style.background='#f0f4ff'" ondragleave="this.style.background=''" ondrop="irHandleUploadDrop(event)"
              style="border:2px dashed var(--c-border);border-radius:12px;padding:32px 16px;text-align:center;cursor:pointer;background:var(--c-surface)"
@@ -7457,10 +7467,12 @@ function irStartUploadForPO(poNum) {
   if (!po) return;
   G_ir = {
     stagingId: null, lineItems: [], row: null, catalog: null,
-    poContext: { poNumber: po.poNum, rowIndex: po.rowIndex, builder: po.builder, jobRef: po.jobRef, vendor: po.vendor }
+    poContext: { poNumber: po.poNum, rowIndex: po.rowIndex, builder: po.builder, jobRef: po.jobRef, vendor: po.vendor },
+    linkGate: null
   };
   document.getElementById('ir-panel-title').textContent = 'Add Invoice';
-  document.getElementById('ir-upload-view').style.display = '';
+  document.getElementById('ir-link-gate-view').style.display = 'none';
+  document.getElementById('ir-upload-view').style.display = 'none';
   document.getElementById('ir-detail-view').style.display = 'none';
   document.getElementById('ir-upload-status').textContent = '';
   document.getElementById('ir-upload-po-header').innerHTML =
@@ -7469,6 +7481,135 @@ function irStartUploadForPO(poNum) {
     '<div><b>Job:</b> ' + esc(po.builder) + ' / ' + esc(po.jobRef) + '</div>';
   closePODetail();
   showOtherPanel('invoice-review');
+  irCheckLinkGate();
+}
+
+// Before the upload dropzone ever shows, confirm this PO's vendor and job
+// each have a QuickBooks Id on file -- extractInvoiceLineItems looks these
+// up again server-side once a file is uploaded, but surfacing a missing
+// link only after the reviewer has already picked a file and waited on
+// extraction is a bad time to discover it. Blocks upload until both are
+// resolved.
+function irCheckLinkGate() {
+  var ctx = G_ir.poContext;
+  document.getElementById('ir-link-gate-view').style.display = '';
+  document.getElementById('ir-link-gate-header').textContent = 'Checking QuickBooks links…';
+  document.getElementById('ir-link-gate-body').innerHTML = '';
+  gasCall('getQuickBooksLinkStatusForInvoice', { vendor: ctx.vendor, builder: ctx.builder, jobRef: ctx.jobRef }, function(res) {
+    if (!res.success) {
+      document.getElementById('ir-link-gate-header').textContent = '';
+      document.getElementById('ir-link-gate-body').innerHTML =
+        '<div style="font-size:13px;color:var(--c-danger)">' + esc(res.error || 'Could not check QuickBooks links.') + '</div>';
+      return;
+    }
+    G_ir.linkGate = {
+      qbVendorId: res.qbVendorId || '',
+      qbCustomerId: res.qbCustomerId || '',
+      projectFound: res.projectFound
+    };
+    if (G_ir.linkGate.qbVendorId && G_ir.linkGate.qbCustomerId) {
+      irShowUploadView_();
+      return;
+    }
+    irRenderLinkGate();
+  }, function(err) {
+    document.getElementById('ir-link-gate-header').textContent = '';
+    document.getElementById('ir-link-gate-body').innerHTML =
+      '<div style="font-size:13px;color:var(--c-danger)">' + esc(abortAwareError(err, 'Could not check QuickBooks links.')) + '</div>';
+  });
+}
+
+function irShowUploadView_() {
+  document.getElementById('ir-link-gate-view').style.display = 'none';
+  document.getElementById('ir-upload-view').style.display = '';
+}
+
+function irRenderLinkGate() {
+  var ctx = G_ir.poContext;
+  var gate = G_ir.linkGate;
+  document.getElementById('ir-link-gate-header').innerHTML =
+    '<div style="font-weight:700;color:var(--c-navy);font-size:14px;margin-bottom:4px">Link to QuickBooks before uploading</div>' +
+    'This vendor and/or job isn\'t linked to QuickBooks yet -- add the Ids below so the invoice can be posted once reviewed.';
+
+  var sections = '';
+
+  if (gate.qbVendorId) {
+    sections += '<div style="background:var(--sh-green-bg);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--c-navy)">✓ Vendor <b>' + esc(ctx.vendor) + '</b> is linked (QB Vendor Id ' + esc(gate.qbVendorId) + ')</div>';
+  } else {
+    sections +=
+      '<div style="background:var(--c-surface);border-radius:8px;padding:12px;margin-bottom:12px">' +
+        '<div style="font-size:13px;font-weight:700;color:var(--c-navy);margin-bottom:6px">Vendor: ' + esc(ctx.vendor) + '</div>' +
+        '<label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">QuickBooks Vendor Id</label>' +
+        '<input type="text" id="irlg-vendor-id" placeholder="e.g. 42" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">' +
+        '<button onclick="irSaveVendorLink()" id="irlg-vendor-save-btn" style="width:100%;background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:10px;font-size:13px;font-weight:700;cursor:pointer">Save Vendor Link</button>' +
+        '<div id="irlg-vendor-status" style="font-size:12px;color:var(--c-danger);margin-top:6px"></div>' +
+      '</div>';
+  }
+
+  if (gate.qbCustomerId) {
+    sections += '<div style="background:var(--sh-green-bg);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--c-navy)">✓ Job <b>' + esc(ctx.builder) + ' / ' + esc(ctx.jobRef) + '</b> is linked (QB Customer Id ' + esc(gate.qbCustomerId) + ')</div>';
+  } else if (!gate.projectFound) {
+    sections += '<div style="background:var(--sh-red-bg,#fde8e8);border-radius:8px;padding:12px;margin-bottom:12px;font-size:12px;color:var(--c-navy)">No Projects sheet row found for <b>' + esc(ctx.builder) + ' / ' + esc(ctx.jobRef) + '</b> -- add the project first (New Project), then come back and add the invoice.</div>';
+  } else {
+    sections +=
+      '<div style="background:var(--c-surface);border-radius:8px;padding:12px;margin-bottom:12px">' +
+        '<div style="font-size:13px;font-weight:700;color:var(--c-navy);margin-bottom:6px">Job: ' + esc(ctx.builder) + ' / ' + esc(ctx.jobRef) + '</div>' +
+        '<label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">QuickBooks Customer/Sub-customer Id</label>' +
+        '<input type="text" id="irlg-job-id" placeholder="e.g. 87" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">' +
+        '<button onclick="irSaveJobLink()" id="irlg-job-save-btn" style="width:100%;background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:10px;font-size:13px;font-weight:700;cursor:pointer">Save Job Link</button>' +
+        '<div id="irlg-job-status" style="font-size:12px;color:var(--c-danger);margin-top:6px"></div>' +
+      '</div>';
+  }
+
+  document.getElementById('ir-link-gate-body').innerHTML = sections;
+}
+
+function irSaveVendorLink() {
+  var ctx = G_ir.poContext;
+  var qbVendorId = trim('irlg-vendor-id');
+  var status = document.getElementById('irlg-vendor-status');
+  if (!qbVendorId) { if (status) status.textContent = 'QuickBooks Vendor Id is required.'; return; }
+
+  var btn = document.getElementById('irlg-vendor-save-btn');
+  if (btn) { btn.textContent = 'Saving…'; btn.disabled = true; }
+
+  gasCall('saveQuickBooksVendorMapping', { vendorName: ctx.vendor, qbVendorId: qbVendorId }, function(res) {
+    if (!res.success) {
+      if (status) status.textContent = res.error || 'Could not save vendor link.';
+      if (btn) { btn.textContent = 'Save Vendor Link'; btn.disabled = false; }
+      return;
+    }
+    G_ir.linkGate.qbVendorId = qbVendorId;
+    if (G_ir.linkGate.qbVendorId && G_ir.linkGate.qbCustomerId) { irShowUploadView_(); return; }
+    irRenderLinkGate();
+  }, function(err) {
+    if (status) status.textContent = abortAwareError(err, 'Could not save vendor link.');
+    if (btn) { btn.textContent = 'Save Vendor Link'; btn.disabled = false; }
+  });
+}
+
+function irSaveJobLink() {
+  var ctx = G_ir.poContext;
+  var qbCustomerId = trim('irlg-job-id');
+  var status = document.getElementById('irlg-job-status');
+  if (!qbCustomerId) { if (status) status.textContent = 'QuickBooks Customer/Sub-customer Id is required.'; return; }
+
+  var btn = document.getElementById('irlg-job-save-btn');
+  if (btn) { btn.textContent = 'Saving…'; btn.disabled = true; }
+
+  gasCall('saveProjectQuickBooksCustomerId', { builder: ctx.builder, jobRef: ctx.jobRef, qbCustomerId: qbCustomerId }, function(res) {
+    if (!res.success) {
+      if (status) status.textContent = res.error || 'Could not save job link.';
+      if (btn) { btn.textContent = 'Save Job Link'; btn.disabled = false; }
+      return;
+    }
+    G_ir.linkGate.qbCustomerId = qbCustomerId;
+    if (G_ir.linkGate.qbVendorId && G_ir.linkGate.qbCustomerId) { irShowUploadView_(); return; }
+    irRenderLinkGate();
+  }, function(err) {
+    if (status) status.textContent = abortAwareError(err, 'Could not save job link.');
+    if (btn) { btn.textContent = 'Save Job Link'; btn.disabled = false; }
+  });
 }
 
 function irBackToPO() {
@@ -7672,7 +7813,8 @@ function irRenderLineRows() {
 function irItemCellHtml_(li, i) {
   if (!G_ir.catalog) return '<span style="font-size:11px;color:var(--c-ink-soft)">loading…</span>';
   var unmatched = !li.qboItemId;
-  var opts = '<option value="">— Unmatched —</option>' + G_ir.catalog.map(function(cat) {
+  var opts = '<option value="">— Unmatched —</option>' +
+    '<option value="__new__">+ Add new item…</option>' + G_ir.catalog.map(function(cat) {
     var itemOpts = cat.items.map(function(it) {
       return '<option value="' + esc(it.id) + '"' + (li.qboItemId === it.id ? ' selected' : '') + '>' + esc(it.name) + '</option>';
     }).join('');
@@ -7687,6 +7829,11 @@ function irItemCellHtml_(li, i) {
 // table; free-text/number edits only patch the one cell so typing doesn't
 // lose focus on every keystroke.
 function irUpdateLine(i, field, value) {
+  if (field === 'qboItemId' && value === '__new__') {
+    irOpenNewItemModal(i);
+    irRenderLineRows(); // reset the select back to this line's actual value while the modal is open
+    return;
+  }
   if (field === 'qty' || field === 'rate' || field === 'amount') value = value === '' ? '' : parseFloat(value);
   G_ir.lineItems[i][field] = value;
   if (field === 'qboItemId') {
@@ -7720,6 +7867,114 @@ function irAddLine() {
 function irRemoveLine(i) {
   G_ir.lineItems.splice(i, 1);
   irRenderLineRows();
+}
+
+// ── Add New QuickBooks Item (from the QB Item dropdown, when nothing in the
+// catalog matches) ──────────────────────────────────────────────────────────
+var G_ir_newItem = { lineIdx: null };
+
+function irOpenNewItemModal(i) {
+  G_ir_newItem.lineIdx = i;
+  var li = G_ir.lineItems[i] || {};
+  var catOpts = '<option value="">— No category —</option>' + (G_ir.catalog || []).map(function(g) {
+    return '<option value="' + esc(g.id || '') + '">' + esc(g.name) + '</option>';
+  }).join('');
+
+  document.getElementById('edit-modal-title').textContent = 'Add New QuickBooks Item';
+  document.getElementById('edit-modal-body').innerHTML =
+    fg('Item Name', '<input type="text" class="form-control" id="qbni-name" value="' + esc(li.description || '') + '" placeholder="e.g. 8in LP Lap Siding">') +
+    fg('Category', '<select class="form-control" id="qbni-parent">' + catOpts + '</select>') +
+    fg('Type', '<select class="form-control" id="qbni-type"><option value="Service">Service</option><option value="NonInventory">Non-inventory</option></select>') +
+    fg('Income Account', '<select class="form-control" id="qbni-income"><option value="">Loading…</option></select>') +
+    fg('Expense Account (optional)', '<select class="form-control" id="qbni-expense"><option value="">Loading…</option></select>') +
+    '<div id="qbni-status" style="font-size:12px;color:var(--c-danger);margin-top:4px"></div>' +
+    '<div class="modal-actions">' +
+      '<button class="btn btn-primary" style="flex:1" id="qbni-save-btn" onclick="irSaveNewItem()">Create Item</button>' +
+      '<button class="btn btn-secondary" style="flex:0 0 auto" onclick="closeEdit()">Cancel</button>' +
+    '</div>';
+
+  document.getElementById('edit-modal').classList.add('open');
+  irLoadAccountsForNewItem_();
+}
+
+function irLoadAccountsForNewItem_() {
+  gasCall('getQuickBooksAccountsForNewItem', {}, function(res) {
+    var incomeSel = document.getElementById('qbni-income');
+    var expenseSel = document.getElementById('qbni-expense');
+    if (!incomeSel || !expenseSel) return; // modal was closed before this returned
+    if (!res.success) {
+      incomeSel.innerHTML = '<option value="">Failed to load</option>';
+      expenseSel.innerHTML = '<option value="">Failed to load</option>';
+      var status = document.getElementById('qbni-status');
+      if (status) status.textContent = res.error || 'Could not load QuickBooks accounts.';
+      return;
+    }
+    incomeSel.innerHTML = '<option value="">— Select —</option>' + (res.incomeAccounts || []).map(function(a) {
+      return '<option value="' + esc(a.id) + '">' + esc(a.name) + '</option>';
+    }).join('');
+    expenseSel.innerHTML = '<option value="">— None —</option>' + (res.expenseAccounts || []).map(function(a) {
+      return '<option value="' + esc(a.id) + '">' + esc(a.name) + '</option>';
+    }).join('');
+  }, function(err) {
+    var status = document.getElementById('qbni-status');
+    if (status) status.textContent = abortAwareError(err, 'Could not load QuickBooks accounts.');
+  });
+}
+
+function irSaveNewItem() {
+  var i = G_ir_newItem.lineIdx;
+  if (i == null || !G_ir.lineItems[i]) { closeEdit(); return; }
+
+  var name = trim('qbni-name');
+  var parentId = val('qbni-parent');
+  var type = val('qbni-type');
+  var incomeAccountId = val('qbni-income');
+  var expenseAccountId = val('qbni-expense');
+  var status = document.getElementById('qbni-status');
+
+  if (!name) { if (status) status.textContent = 'Item name is required.'; return; }
+  if (!incomeAccountId) { if (status) status.textContent = 'Income account is required.'; return; }
+  if (status) status.textContent = '';
+
+  var btn = document.getElementById('qbni-save-btn');
+  if (btn) { btn.textContent = 'Creating…'; btn.disabled = true; }
+
+  gasCall('createQuickBooksItem', {
+    name: name,
+    parentId: parentId || null,
+    type: type,
+    incomeAccountId: incomeAccountId,
+    expenseAccountId: expenseAccountId || null
+  }, function(res) {
+    if (!res.success) {
+      if (status) status.textContent = res.error || 'Could not create item.';
+      if (btn) { btn.textContent = 'Create Item'; btn.disabled = false; }
+      return;
+    }
+    irAddCatalogItem_(res.item);
+    G_ir.lineItems[i].qboItemId = res.item.id;
+    G_ir.lineItems[i].qboItemName = res.item.name;
+    G_ir.lineItems[i].matchConfidence = null;
+    closeEdit();
+    showToast('Item created in QuickBooks');
+    irRenderLineRows();
+  }, function(err) {
+    if (status) status.textContent = abortAwareError(err, 'Could not create item.');
+    if (btn) { btn.textContent = 'Create Item'; btn.disabled = false; }
+  }, { timeoutMs: 45000 });
+}
+
+// Splices a freshly-created item into the already-loaded in-memory catalog
+// (grouped by irGroupCatalog_) so it's selectable immediately, without
+// waiting on a full catalog refetch.
+function irAddCatalogItem_(item) {
+  if (!G_ir.catalog) G_ir.catalog = [];
+  var group = G_ir.catalog.filter(function(g) { return g.id === (item.parentId || null); })[0];
+  if (!group) {
+    group = { id: item.parentId || null, name: item.parentId ? item.name : 'Other', items: [] };
+    G_ir.catalog.push(group);
+  }
+  group.items.push({ id: item.id, name: item.name });
 }
 
 function irUpdateBalanceCheck() {
