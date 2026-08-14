@@ -8069,9 +8069,11 @@ function irCreateBill() {
       }
       return;
     }
-    showToast(res.attachmentWarning ||
-      (res.alreadyPosted ? 'Already posted as Bill ' + res.qbBillId : 'Created QuickBooks Bill ' + res.qbBillId));
-    irOpenDetail(G_ir.stagingId);
+    var invoiceLabel = (G_ir.row && G_ir.row.vendorInvoice) ? ('Invoice #' + G_ir.row.vendorInvoice) : 'Invoice';
+    var poLabel = G_ir.poContext && G_ir.poContext.poNumber;
+    var submittedMsg = invoiceLabel + (poLabel ? ' on PO ' + poLabel : '') + (res.alreadyPosted ? ' already submitted' : ' submitted');
+    showToast(res.attachmentWarning ? (submittedMsg + ' -- ' + res.attachmentWarning) : submittedMsg);
+    irBackToPO();
   }, function(err) {
     btn.disabled = false;
     btn.textContent = 'Create Bill in QuickBooks';
