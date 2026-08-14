@@ -5228,6 +5228,21 @@ function getPeriodBoundsOffset_(refDate, offset) {
   return { start: start, end: end };
 }
 
+/**
+ * True when the CURRENT (still-open) period's last day is a Saturday or
+ * Sunday and `today` falls on/after the last business day (Friday) before
+ * that close -- the window where payroll must run before the period
+ * technically ends, so early self-approval of the still-open period is
+ * allowed. periodEnd must be the bounds.end of getPeriodBounds(today).
+ */
+function isEarlyApprovalWindow_(periodEnd, today) {
+  var dow = periodEnd.getDay(); // 0 = Sun, 6 = Sat
+  if (dow !== 0 && dow !== 6) return false;
+  var lastBizDay = new Date(periodEnd.getFullYear(), periodEnd.getMonth(), periodEnd.getDate() - (dow === 6 ? 1 : 2));
+  var t = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  return t.getTime() >= lastBizDay.getTime() && t.getTime() <= periodEnd.getTime();
+}
+
 var MONTH_ABBRS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 /** Formats a period's bounds as e.g. "Jul 1 - Jul 15". */
@@ -5752,11 +5767,14 @@ var PAYROLL_APPROVALS_SHEET  = 'Payroll Approvals';
 var PAYROLL_APPROVALS_HEADERS = ['Period Label', 'Employee Email', 'Approved By', 'Approved At', 'Employee Approved At', 'Employee Note', 'Employee PDF URL'];
 
 /**
- * True only if an ADMIN/HR has approved this period for this employee (column
- * D populated) -- this gates clock in/out, so it must NOT trigger off of a
- * row that exists purely from the employee's own self-approval (columns E/F
- * via approveMyTimesheet), which is informational-only and must never block
- * clocking in/out.
+ * True if an ADMIN/HR has approved this period for this employee (column D),
+ * OR the employee has self-approved it (column E). Column E is normally
+ * informational-only and must never block clocking in/out -- but this
+ * function is only ever called with the CALLER'S CURRENT (still-open)
+ * period's label (see clockIn/clockOut below), and approveMyTimesheet only
+ * ever writes a row under the current period's label when
+ * isEarlyApprovalWindow_ let it through. So a column-E hit here can only mean
+ * an eligible early self-approval, which is intentionally locking.
  */
 function isPeriodApprovedForEmail_(email, periodLabel) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -5765,9 +5783,9 @@ function isPeriodApprovedForEmail_(email, periodLabel) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return false;
   email = (email || '').toString().toLowerCase().trim();
-  var data = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
+  var data = sheet.getRange(2, 1, lastRow - 1, 5).getValues();
   for (var i = 0; i < data.length; i++) {
-    if ((data[i][0] || '') === periodLabel && (data[i][1] || '').toString().toLowerCase().trim() === email && data[i][3]) return true;
+    if ((data[i][0] || '') === periodLabel && (data[i][1] || '').toString().toLowerCase().trim() === email && (data[i][3] || data[i][4])) return true;
   }
   return false;
 }
@@ -5839,15 +5857,19 @@ function approveTimesheet(payload) {
 }
 
 /**
- * Employee self-approval of their OWN hours for a CLOSED pay period (never
- * the currently-open one -- periodOffset is clamped to always be negative),
- * with an optional note. Unlike approveTimesheet this is never admin/HR-gated
- * -- it's only ever keyed to the caller's own email (never accepts an
- * employeeEmail param), which is what makes it safe to expose to any
- * signed-in user. Purely informational for payroll -- doesn't block or
- * affect approveTimesheet/unapproveTimesheet in any way. Idempotent/
- * re-callable so an employee can update their note later without
- * "unapproving" first.
+ * Employee self-approval of their OWN hours for a CLOSED pay period, with an
+ * optional note. Unlike approveTimesheet this is never admin/HR-gated -- it's
+ * only ever keyed to the caller's own email (never accepts an employeeEmail
+ * param), which is what makes it safe to expose to any signed-in user.
+ * Purely informational for payroll -- doesn't block or affect
+ * approveTimesheet/unapproveTimesheet in any way. Idempotent/re-callable so
+ * an employee can update their note later without "unapproving" first.
+ *
+ * The currently-open period (offset 0) is normally rejected (falls back to
+ * -1, the most recently closed period) -- except when isEarlyApprovalWindow_
+ * says the open period's last day is a Sat/Sun and today is on/after the
+ * Friday before it, e.g. payroll must run before a weekend close. In that
+ * case the resulting row DOES gate clock in/out (see isPeriodApprovedForEmail_).
  */
 function approveMyTimesheet(payload) {
   try {
@@ -5856,17 +5878,18 @@ function approveMyTimesheet(payload) {
     var email = auth.email;
     var note = (payload.note || '').toString().trim();
     var pdfUrl = (payload.pdfUrl || '').toString().trim();
+    var now = new Date();
 
     var offset = parseInt(payload.periodOffset, 10);
-    if (isNaN(offset) || offset >= 0) offset = -1;
-    var bounds = getPeriodBoundsOffset_(new Date(), offset);
+    if (isNaN(offset) || offset > 0) offset = -1;
+    if (offset === 0 && !isEarlyApprovalWindow_(getPeriodBounds(now).end, now)) offset = -1;
+    var bounds = getPeriodBoundsOffset_(now, offset);
     var periodLabel = formatPeriodLabel_(bounds.start, bounds.end);
     var sheet = ensureSheetWithHeaders_(PAYROLL_APPROVALS_SHEET, PAYROLL_APPROVALS_HEADERS);
 
     var lock = LockService.getScriptLock();
     if (!lock.tryLock(10000)) return { error: 'Server is busy - try again in a moment.' };
     try {
-      var now = new Date();
       var lastRow = sheet.getLastRow();
       if (lastRow >= 2) {
         var data = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
@@ -5889,12 +5912,13 @@ function approveMyTimesheet(payload) {
 
 /**
  * Day-by-day detail of the CALLER'S OWN hours for a given pay period --
- * powers both the "Approve Hours" period-review screen (always the most
- * recently-closed period, offset -1) and the read-only "My Timesheets"
- * history browser (any offset <= 0, including the current open period).
- * Every calendar day in the period is included (blank clockIn/clockOut for
- * days with no shift on record), so a missed punch is visible and
- * correctable, not just days that already have a row.
+ * powers both the "Approve Hours" period-review screen (usually the most
+ * recently-closed period, offset -1, but offset 0 when earlyApprovalEligible
+ * lets the still-open period be reviewed/approved early) and the read-only
+ * "My Timesheets" history browser (any offset <= 0, including the current
+ * open period). Every calendar day in the period is included (blank
+ * clockIn/clockOut for days with no shift on record), so a missed punch is
+ * visible and correctable, not just days that already have a row.
  */
 function getMyPeriodDetail(payload) {
   try {
@@ -5951,10 +5975,13 @@ function getMyPeriodDetail(payload) {
 
     var otSplit = splitRegularOvertime_(dayEntries);
     var myApproval = getApprovalMap_(periodLabel)[email] || {};
+    var isCurrentPeriod = offset === 0;
 
     return {
       periodLabel: periodLabel,
       periodOffset: offset,
+      isCurrentPeriod: isCurrentPeriod,
+      earlyApprovalEligible: isCurrentPeriod && isEarlyApprovalWindow_(pEnd, new Date()),
       totalHours: Math.round(totalHours * 100) / 100,
       regularHours: otSplit.regular,
       overtimeHours: otSplit.overtime,

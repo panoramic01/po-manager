@@ -11609,6 +11609,29 @@ function updateThemeToggleUI() {
   darkBtn.style.cssText  += ';' + (mode === 'dark'  ? onStyle : offStyle);
 }
 
+// Renders the "Approve Hours" account-tab card from a getMyPeriodDetail
+// response -- either the most recently closed period, or (when
+// earlyApprovalEligible) the still-open current period.
+function renderPeriodApprovalCard_(d) {
+  _myPeriodDetailCache = d;
+  var card = document.getElementById('acct-period-approval-card');
+  var eyebrow = document.getElementById('acct-period-approval-eyebrow');
+  var label = document.getElementById('acct-period-approval-label');
+  var cta = document.getElementById('acct-period-approval-cta');
+  if (label) label.textContent = d.periodLabel || '';
+  if (d.employeeApproved) {
+    if (card) card.style.background = '#e6f7ec';
+    if (eyebrow) { eyebrow.textContent = 'Approved'; eyebrow.style.color = '#1a7a3c'; }
+    if (label) label.style.color = '#1a7a3c';
+    if (cta) { cta.textContent = '✓ Approved ' + d.employeeApprovedAt + ' — tap to view or update'; cta.style.color = '#1a7a3c'; }
+  } else {
+    if (card) card.style.background = 'var(--sh-amber-bg)';
+    if (eyebrow) { eyebrow.textContent = d.isCurrentPeriod ? 'Approve Hours Early' : 'Approve Hours'; eyebrow.style.color = '#7a4a00'; }
+    if (label) label.style.color = '#7a4a00';
+    if (cta) { cta.textContent = d.isCurrentPeriod ? 'Period ends soon — tap to review and approve early →' : 'Tap to review and approve →'; cta.style.color = '#7a4a00'; }
+  }
+}
+
 function loadAccount() {
   // Populate profile fields from cached config
   var name  = G.config.userName  || '';
@@ -11626,29 +11649,21 @@ function loadAccount() {
   updateThemeToggleUI();
   renderPushUI();
 
-  // Load prior-period detail, for the "Approve Hours" card + review overlay
-  // -- card itself is hidden for everyone but runner/aidan (see applyRole()),
+  // Load period detail, for the "Approve Hours" card + review overlay --
+  // card itself is hidden for everyone but runner/aidan (see applyRole()),
   // skip the fetch too rather than populate a card no one will see.
+  //
+  // Prior (closed) period takes priority if it's still unapproved -- that's
+  // more overdue than anything else. Only once it's approved do we check
+  // whether the still-open current period is in its early-approval window
+  // (its last day is a Sat/Sun and payroll needs to run before it closes).
   if (G.isRunnerHome || G.isAidan) {
-    gasCall('getMyPeriodDetail', { periodOffset: -1 }, function(d) {
-      if (d.error) return;
-      _myPeriodDetailCache = d;
-      var card = document.getElementById('acct-period-approval-card');
-      var eyebrow = document.getElementById('acct-period-approval-eyebrow');
-      var label = document.getElementById('acct-period-approval-label');
-      var cta = document.getElementById('acct-period-approval-cta');
-      if (label) label.textContent = d.periodLabel || '';
-      if (d.employeeApproved) {
-        if (card) card.style.background = '#e6f7ec';
-        if (eyebrow) { eyebrow.textContent = 'Approved'; eyebrow.style.color = '#1a7a3c'; }
-        if (label) label.style.color = '#1a7a3c';
-        if (cta) { cta.textContent = '✓ Approved ' + d.employeeApprovedAt + ' — tap to view or update'; cta.style.color = '#1a7a3c'; }
-      } else {
-        if (card) card.style.background = 'var(--sh-amber-bg)';
-        if (eyebrow) { eyebrow.textContent = 'Approve Hours'; eyebrow.style.color = '#7a4a00'; }
-        if (label) label.style.color = '#7a4a00';
-        if (cta) { cta.textContent = 'Tap to review and approve →'; cta.style.color = '#7a4a00'; }
-      }
+    gasCall('getMyPeriodDetail', { periodOffset: -1 }, function(prevD) {
+      if (prevD.error) return;
+      if (!prevD.employeeApproved) { renderPeriodApprovalCard_(prevD); return; }
+      gasCall('getMyPeriodDetail', { periodOffset: 0 }, function(curD) {
+        renderPeriodApprovalCard_((!curD.error && curD.earlyApprovalEligible) ? curD : prevD);
+      }, function(){ renderPeriodApprovalCard_(prevD); });
     }, function(){});
   }
 
@@ -11857,7 +11872,9 @@ function openPeriodReview() {
   var otText = d.overtimeHours ? ' (' + d.overtimeHours + ' OT)' : '';
   var approvedLine = d.employeeApproved
     ? '<div style="background:#e6f7ec;color:#1a7a3c;border-radius:9px;padding:10px 12px;font-size:12.5px;font-weight:700;margin-bottom:14px">&#10003; Approved ' + esc(d.employeeApprovedAt) + '</div>'
-    : '';
+    : (d.isCurrentPeriod
+      ? '<div style="background:var(--sh-amber-bg);color:#7a4a00;border-radius:9px;padding:10px 12px;font-size:12.5px;font-weight:700;margin-bottom:14px">This period is still open — approving now locks in your hours so far and stops further clock-ins for this period.</div>'
+      : '');
 
   var daysHtml = (d.days || []).map(function(day, i) {
     return '<div style="background:var(--c-surface);border-radius:10px;padding:12px 14px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,0.07)">'
@@ -11926,7 +11943,7 @@ function doSavePeriodReview() {
   btn.disabled = true; btn.textContent = 'Saving...';
 
   var finishApprove = function(correctionMsg) {
-    gasCall('approveMyTimesheet', { note: note, pdfUrl: _periodReviewPdfUrl, periodOffset: -1 }, function(r) {
+    gasCall('approveMyTimesheet', { note: note, pdfUrl: _periodReviewPdfUrl, periodOffset: d.periodOffset }, function(r) {
       btn.disabled = false;
       if (r && r.success) {
         showToast((correctionMsg ? correctionMsg + ' — ' : '') + 'Hours approved');
