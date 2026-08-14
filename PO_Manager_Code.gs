@@ -1726,6 +1726,55 @@ function saveQBItemMapping_(description, qboItemId, qboItemName) {
   sheet.appendRow([key, description, qboItemId, qboItemName || '']);
 }
 
+// ─── Purchase Line Item Log (for PPV / spend analytics) ──────────────────────
+// Flat, append-only, one row per purchased line item -- written the moment a
+// QuickBooks Bill is created (see logPurchaseLineItems_ call in
+// createQuickBooksBill, QuickBooks_OAuth.gs), never at Approve, since that's
+// the point the data becomes immutable and financially real (a real QB Bill
+// Id, and saveInvoiceStagingReview refuses to edit a Posted row). This is
+// deliberately forward-only -- no backfill of Bills posted before this
+// existed. QB Item Id/Name is the intended join key for later analytics
+// (a clean, already-confirmed vocabulary) rather than the free-text
+// Description; no variance/expected-price column is computed here since the
+// Pricing sheet's "Best Price" is only matched by fragile exact-string
+// Description (getMaterialUnitPrice_) -- left for a real analysis pass once
+// the logged data exists to look at.
+var PURCHASE_LOG_SHEET = "Purchase Line Item Log";
+var PURCHASE_LOG_HEADERS = [
+  'Posted At', 'PO Number', 'Vendor', 'Builder', 'Job Ref', 'Vendor Invoice#',
+  'Line Type', 'Description', 'Qty', 'Unit', 'Rate', 'Amount',
+  'QB Item Id', 'QB Item Name', 'QB Bill Id', 'QB Customer Id', 'QB Vendor Id',
+  'Staging Id', 'Extraction Method', 'Match Confidence', 'Posted By'
+];
+
+/**
+ * Appends one row per non-skipped line item from a just-Posted staging row.
+ * Best-effort: returns an error string (never throws) so a logging hiccup
+ * surfaces as a warning on the Bill-creation response rather than undoing or
+ * blocking a Bill that has already posted to QuickBooks. Skipped lines are
+ * excluded since they never made it onto the Bill either.
+ */
+function logPurchaseLineItems_(staging, qbBillId, postedByEmail, postedAt) {
+  try {
+    var sheet = ensureSheetWithHeaders_(PURCHASE_LOG_SHEET, PURCHASE_LOG_HEADERS);
+    var rows = (staging.lineItems || [])
+      .filter(function(li) { return !li.skip; })
+      .map(function(li) {
+        return [
+          postedAt, staging.poNumber, staging.vendor, staging.builder, staging.jobRef, staging.vendorInvoice,
+          li.lineType || 'material', li.description || '', li.qty, li.unit || '', li.rate, li.amount,
+          li.qboItemId || '', li.qboItemName || '', qbBillId, staging.qbCustomerId, staging.qbVendorId,
+          staging.stagingId, staging.extractionMethod || '', li.matchConfidence != null ? li.matchConfidence : '',
+          postedByEmail
+        ];
+      });
+    if (rows.length) sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, PURCHASE_LOG_HEADERS.length).setValues(rows);
+    return null;
+  } catch (e) {
+    return e.toString();
+  }
+}
+
 // ─── QuickBooks invoice staging (review-before-post) ─────────────────────────
 // One row per invoice extraction attempt -- the durable "extracted but not
 // yet posted to QuickBooks" record. A sheet (not Cache/PropertiesService)

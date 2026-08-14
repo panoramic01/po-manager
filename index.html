@@ -1184,6 +1184,7 @@
       <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid var(--c-border-hair);background:var(--c-surface);position:sticky;top:0;z-index:1">
         <button onclick="irBackToPO()" style="background:none;border:none;font-size:14px;font-weight:600;color:var(--c-navy);cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
         <span id="ir-panel-title" style="font-size:15px;font-weight:700;color:var(--c-navy);flex:1;margin-left:2px">Add Invoice</span>
+        <span id="ir-status-badge" class="badge" onclick="irChangeStatus()" style="display:none;cursor:pointer" title="Tap to change this PO's status"></span>
       </div>
 
       <!-- Link-gate view: blocks the upload until this PO's vendor and job both
@@ -6455,6 +6456,7 @@ function submitQuickStatus(newStatus) {
   showToast('Status → ' + newStatus);
   renderDashboard();
   runSearch();
+  irRefreshStatusBadge_();
 
   gasCall('updatePO', { rowIndex: rowIndex, updates: { status: newStatus } }, null, function(err) {
     showToast('Error:' + abortAwareError(err, 'Error saving status — refresh to sync'));
@@ -7506,6 +7508,31 @@ function irStartUploadForPO(poNum) {
   closePODetail();
   showOtherPanel('invoice-review');
   irCheckLinkGate();
+  irRefreshStatusBadge_();
+}
+
+// Shows this PO's current status as a tappable badge in the invoice-review
+// header, next to the panel title -- lets the reviewer flip the PO's status
+// (e.g. to "Needs Review" or "Complete") without leaving the invoice screen
+// to go find it in the PO list. Reuses the same quick-status modal as the
+// PO-list badge (quickStatusChange/submitQuickStatus); irRefreshStatusBadge_
+// is what keeps this badge in sync after that shared code changes the status
+// elsewhere.
+function irChangeStatus() {
+  var ctx = G_ir.poContext;
+  if (!ctx) return;
+  quickStatusChange(ctx.poNumber, ctx.rowIndex);
+}
+
+function irRefreshStatusBadge_() {
+  var el = document.getElementById('ir-status-badge');
+  if (!el) return;
+  var ctx = G_ir.poContext;
+  var po = ctx && (G.pos || []).find(function(p) { return p.poNum === ctx.poNumber; });
+  if (!po) { el.style.display = 'none'; return; }
+  el.className = 'badge ' + badgeCls(po.status);
+  el.textContent = po.status;
+  el.style.display = '';
 }
 
 // Before the upload dropzone ever shows, confirm this PO's vendor and job
@@ -8159,7 +8186,8 @@ function irCreateBill() {
     var invoiceLabel = (G_ir.row && G_ir.row.vendorInvoice) ? ('Invoice #' + G_ir.row.vendorInvoice) : 'Invoice';
     var poLabel = G_ir.poContext && G_ir.poContext.poNumber;
     var submittedMsg = invoiceLabel + (poLabel ? ' on PO ' + poLabel : '') + (res.alreadyPosted ? ' already submitted' : ' submitted');
-    showToast(res.attachmentWarning ? (submittedMsg + ' -- ' + res.attachmentWarning) : submittedMsg);
+    var warnings = [res.attachmentWarning, res.logWarning].filter(Boolean).join(' -- ');
+    showToast(warnings ? (submittedMsg + ' -- ' + warnings) : submittedMsg);
     irBackToPO();
   }, function(err) {
     btn.disabled = false;

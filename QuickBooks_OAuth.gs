@@ -670,9 +670,10 @@ function createQuickBooksBill(payload) {
     }
 
     var qbBillId = postRes.data && postRes.data.Bill && postRes.data.Bill.Id;
+    var postedAt = new Date();
     sheet.getRange(rowIdx, QB_STAGING_COL['Status'] + 1).setValue('Posted');
     sheet.getRange(rowIdx, QB_STAGING_COL['QB Bill Id'] + 1).setValue(qbBillId || '');
-    sheet.getRange(rowIdx, QB_STAGING_COL['Posted At'] + 1).setValue(new Date());
+    sheet.getRange(rowIdx, QB_STAGING_COL['Posted At'] + 1).setValue(postedAt);
 
     // Best-effort: attach the same invoice PDF the reviewer uploaded (already
     // sitting in Drive at staging.invoiceFileUrl) to the Bill we just created,
@@ -696,7 +697,14 @@ function createQuickBooksBill(payload) {
       }
     }
 
-    return { success: true, qbBillId: qbBillId, attachmentWarning: attachmentWarning };
+    // Best-effort: flatten this Bill's line items into the Purchase Line Item
+    // Log for later analytics (PPV, per-vendor price trends, per-material job
+    // cost) -- see logPurchaseLineItems_ in PO_Manager_Code.gs. Non-fatal,
+    // same reasoning as the attachment step above: the Bill has already
+    // posted, so a logging hiccup surfaces as a warning, not a failure.
+    var logWarning = logPurchaseLineItems_(staging, qbBillId, auth.email, postedAt);
+
+    return { success: true, qbBillId: qbBillId, attachmentWarning: attachmentWarning, logWarning: logWarning || undefined };
   } catch (e) {
     return { success: false, error: e.toString() };
   } finally {
