@@ -3068,7 +3068,10 @@ function applyRole(role, skipNav) {
     canAccount:     true
   };
   G.perms = p;
-  G.isAidan = roleTokens(role).indexOf('aidan') !== -1;
+  // admin gets the identical app experience as aidan (the owner-only role
+  // label) -- effRoles already normalizes 'aidan' to 'admin', so checking
+  // for 'admin' here covers both.
+  G.isAidan = effRoles.indexOf('admin') !== -1;
   // Pure runner/site_manager only -- a combined role (e.g.
   // 'runner,site_manager') keeps the fuller nav the other role grants
   // instead of either of these role-specific rollouts.
