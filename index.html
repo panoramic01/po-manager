@@ -469,6 +469,7 @@
        this app's first responsive breakpoint; side-by-side above 900px,
        stacked (preview above editor, via source order) below it. ── */
     .ir-split { display: flex; flex-direction: column; gap: 12px; }
+    .ir-preview-col { display: flex; flex-direction: column; gap: 8px; }
     .ir-preview-pane {
       background: var(--c-surface); border-radius: 12px; overflow: hidden;
       box-shadow: 0 1px 4px rgba(0,0,0,0.08);
@@ -476,10 +477,19 @@
     }
     .ir-preview-pane iframe { width: 100%; height: 100%; border: none; }
     .ir-preview-pane.ir-preview-empty { display: none; }
+    /* Bottom nav for clicking between this PO's Invoice / Issued PO / Received
+       Photos while reviewing an invoice -- hidden entirely when there's only
+       one document to show (nothing to click through to). */
+    .ir-preview-nav { display: none; align-items: center; justify-content: space-between; gap: 10px; background: var(--c-surface); border-radius: 10px; padding: 6px 6px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+    .ir-preview-nav.ir-preview-nav-visible { display: flex; }
+    .ir-preview-nav button { background: none; border: none; font-size: 20px; font-weight: 700; color: var(--c-navy); cursor: pointer; padding: 4px 12px; line-height: 1; border-radius: 8px; }
+    .ir-preview-nav button:hover { background: var(--c-bg); }
+    .ir-preview-nav button:disabled { color: var(--c-ink-faint); cursor: default; background: none; }
     .ir-editor-pane { min-width: 0; }
     @media (min-width: 900px) {
       .ir-split { flex-direction: row; align-items: flex-start; gap: 16px; }
-      .ir-preview-pane { flex: 1 1 42%; height: calc(100vh - 140px); position: sticky; top: 76px; }
+      .ir-preview-col { flex: 1 1 42%; position: sticky; top: 76px; }
+      .ir-preview-pane { height: calc(100vh - 188px); }
       .ir-editor-pane { flex: 1 1 58%; min-width: 0; }
     }
 
@@ -1202,8 +1212,19 @@
       <!-- Detail view: extracted line items for the invoice just uploaded -->
       <div id="ir-detail-view" style="display:none;padding:16px">
         <div class="ir-split">
-          <div id="ir-preview-pane" class="ir-preview-pane ir-preview-empty">
-            <iframe id="ir-preview-frame" src="about:blank" title="Invoice file preview"></iframe>
+          <div class="ir-preview-col">
+            <div id="ir-preview-pane" class="ir-preview-pane ir-preview-empty">
+              <iframe id="ir-preview-frame" src="about:blank" title="Document preview"></iframe>
+              <div id="ir-preview-photos" style="display:none;height:100%;overflow:auto;padding:12px;box-sizing:border-box"></div>
+            </div>
+            <!-- Click-through nav between this PO's Invoice / Issued PO / Received
+                 Photos -- built in irBuildDocList_/irRenderDocSlide_, only shown
+                 when there's more than one document to page between. -->
+            <div id="ir-preview-nav" class="ir-preview-nav">
+              <button onclick="irDocPrev()" id="ir-preview-prev-btn" aria-label="Previous document">‹</button>
+              <div id="ir-preview-label" style="flex:1;text-align:center;font-size:12px;font-weight:700;color:var(--c-navy)"></div>
+              <button onclick="irDocNext()" id="ir-preview-next-btn" aria-label="Next document">›</button>
+            </div>
           </div>
 
           <div class="ir-editor-pane">
@@ -7463,13 +7484,13 @@ function disconnectQuickBooksUI() {
 // Entered ONLY via the "Add Invoice" button on a specific PO's detail view
 // (irStartUploadForPO) -- there is no nav tile and no global list. Owner-only
 // end to end, matching the rest of the QuickBooks-facing pipeline.
-var G_ir = { stagingId: null, lineItems: [], row: null, poContext: null, catalog: null };
+var G_ir = { stagingId: null, lineItems: [], row: null, poContext: null, catalog: null, docs: [], docIndex: 0 };
 
 function irStartUploadForPO(poNum) {
   var po = G.pos.find(function(p) { return p.poNum === poNum; });
   if (!po) return;
   G_ir = {
-    stagingId: null, lineItems: [], row: null, catalog: null,
+    stagingId: null, lineItems: [], row: null, catalog: null, docs: [], docIndex: 0,
     poContext: { poNumber: po.poNum, rowIndex: po.rowIndex, builder: po.builder, jobRef: po.jobRef, vendor: po.vendor },
     linkGate: null
   };
@@ -7687,15 +7708,9 @@ function irOpenDetail(stagingId) {
     document.getElementById('ir-panel-title').textContent = row.poNumber + ' Invoice';
     document.getElementById('ir-upload-view').style.display = 'none';
     document.getElementById('ir-detail-view').style.display = '';
-    var previewPane = document.getElementById('ir-preview-pane');
-    var previewFrame = document.getElementById('ir-preview-frame');
-    if (row.invoiceFileUrl) {
-      previewFrame.src = docViewerSrc(row.invoiceFileUrl);
-      previewPane.classList.remove('ir-preview-empty');
-    } else {
-      previewFrame.src = 'about:blank';
-      previewPane.classList.add('ir-preview-empty');
-    }
+    G_ir.docs = irBuildDocList_(row);
+    G_ir.docIndex = 0;
+    irRenderDocSlide_();
     document.getElementById('ir-detail-header').innerHTML =
       '<div><b>PO:</b> ' + esc(row.poNumber) + '</div>' +
       '<div><b>Vendor:</b> ' + esc(row.vendor) + '</div>' +
@@ -7724,6 +7739,78 @@ function irOpenDetail(stagingId) {
     }
     irLoadCatalogAndMatch();
   }, function(err) { showToast(friendlyUploadError(err)); });
+}
+
+// ── Preview carousel: Invoice → Issued PO → Received Photos ────────────────
+// The staging row only knows about the invoice file itself; Issued PO link
+// and Received Photos live on the PO row (G.pos, already loaded to have
+// gotten here via irStartUploadForPO). Skips any doc that doesn't exist for
+// this PO yet, rather than showing an empty/broken slide for it.
+function irBuildDocList_(row) {
+  var po = (G.pos || []).find(function(p) { return p.poNum === row.poNumber; });
+  var docs = [];
+  if (row.invoiceFileUrl) docs.push({ type: 'iframe', label: 'Invoice', url: row.invoiceFileUrl });
+  if (po && po.issuedPOLink) docs.push({ type: 'iframe', label: 'Issued PO', url: po.issuedPOLink });
+  var photoUrls = po ? splitPhotoUrls(po.receivedNote) : [];
+  if (photoUrls.length) docs.push({ type: 'photos', label: 'Received Photos', urls: photoUrls });
+  return docs;
+}
+
+function irRenderDocSlide_() {
+  var docs = G_ir.docs || [];
+  var previewPane = document.getElementById('ir-preview-pane');
+  var previewFrame = document.getElementById('ir-preview-frame');
+  var photosEl = document.getElementById('ir-preview-photos');
+  var nav = document.getElementById('ir-preview-nav');
+
+  if (!docs.length) {
+    previewFrame.style.display = '';
+    previewFrame.src = 'about:blank';
+    photosEl.style.display = 'none';
+    photosEl.innerHTML = '';
+    previewPane.classList.add('ir-preview-empty');
+    nav.classList.remove('ir-preview-nav-visible');
+    return;
+  }
+  previewPane.classList.remove('ir-preview-empty');
+
+  var doc = docs[G_ir.docIndex];
+  if (doc.type === 'photos') {
+    previewFrame.style.display = 'none';
+    previewFrame.src = 'about:blank';
+    G.lastPhotoUrls = doc.urls;
+    photosEl.style.display = 'grid';
+    photosEl.style.gridTemplateColumns = 'repeat(auto-fill, minmax(110px, 1fr))';
+    photosEl.style.gap = '8px';
+    photosEl.style.alignContent = 'start';
+    photosEl.innerHTML = doc.urls.map(function(url, i) {
+      var d = driveThumb(url);
+      var inner = d
+        ? '<img src="' + d.thumb + '" style="width:100%;display:block;object-fit:cover;height:110px" onerror="this.style.display=\'none\'">'
+        : '<div style="padding:10px;font-size:12px;color:var(--c-navy)">Open photo</div>';
+      return '<div onclick="openPhotoLightbox(G.lastPhotoUrls,' + i + ')" style="border-radius:8px;overflow:hidden;border:1px solid var(--c-border);cursor:pointer;background:var(--c-surface-2)">' + inner + '</div>';
+    }).join('');
+  } else {
+    photosEl.style.display = 'none';
+    photosEl.innerHTML = '';
+    previewFrame.style.display = '';
+    previewFrame.src = docViewerSrc(doc.url);
+  }
+
+  document.getElementById('ir-preview-label').textContent = doc.label + ' (' + (G_ir.docIndex + 1) + ' of ' + docs.length + ')';
+  nav.classList.toggle('ir-preview-nav-visible', docs.length > 1);
+}
+
+function irDocPrev() {
+  if (!G_ir.docs || G_ir.docs.length < 2) return;
+  G_ir.docIndex = (G_ir.docIndex - 1 + G_ir.docs.length) % G_ir.docs.length;
+  irRenderDocSlide_();
+}
+
+function irDocNext() {
+  if (!G_ir.docs || G_ir.docs.length < 2) return;
+  G_ir.docIndex = (G_ir.docIndex + 1) % G_ir.docs.length;
+  irRenderDocSlide_();
 }
 
 // Groups the flat catalog (Categories + Items, each Item carrying its
