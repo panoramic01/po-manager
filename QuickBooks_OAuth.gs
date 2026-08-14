@@ -496,10 +496,17 @@ function getQBItemMap_() {
  * Client-facing: matches a batch of line-item descriptions against the
  * learned item-mapping sheet first, falling back to the cached QBO catalog
  * fuzzy matcher on a miss (used when the review screen opens a staging
- * row). payload: {descriptions: string[]}. Returns one match (or null) per
- * input description, same order. Skips matching for descriptions belonging
- * to tax/freight lines -- callers should only pass material-line
- * descriptions, since those map to fixed dedicated Items instead.
+ * row). payload: {descriptions: string[], learnedOnly?: boolean}. Returns
+ * one match (or null) per input description, same order.
+ *
+ * learnedOnly (used for tax/freight lines) skips the fuzzy-matcher fallback
+ * entirely -- scoring "Sales Tax" by token overlap against a materials
+ * catalog is just noise, per the locked "never guess" requirement. The
+ * learned-map lookup itself is a safe exact normalized-description match
+ * either way, so tax/freight lines still benefit from it: pick "Sales Tax"
+ * once, approve, and it's remembered for next time instead of needing to be
+ * repicked (or relying solely on the QBO_TAX_ITEM_NAME/QBO_FREIGHT_ITEM_NAME
+ * Script Properties, which this now sits alongside as a fallback for).
  */
 function matchInvoiceLineItems(payload) {
   var auth = authorizeQuickBooksOwner_(payload);
@@ -510,11 +517,12 @@ function matchInvoiceLineItems(payload) {
 
   var learnedMap = getQBItemMap_();
   var descriptions = payload.descriptions || [];
+  var learnedOnly = !!payload.learnedOnly;
   var matches = descriptions.map(function(d) {
     var key = qboNormalizeItemText_(d);
     var learned = key && learnedMap[key];
     if (learned) return { qboItemId: learned.qboItemId, qboItemName: learned.qboItemName, matchConfidence: 1 };
-    return matchLineItemToQBOItem_(d, catalogRes.items);
+    return learnedOnly ? null : matchLineItemToQBOItem_(d, catalogRes.items);
   });
   return { success: true, matches: matches };
 }

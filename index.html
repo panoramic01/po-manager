@@ -7881,14 +7881,25 @@ function irLoadCatalogAndMatch() {
       if (li.lineType === 'freight' && res.freightItemId) li.qboItemId = res.freightItemId;
     });
 
-    var toMatch = G_ir.lineItems
+    var toMatchMaterial = G_ir.lineItems
       .map(function(li, i) { return { li: li, i: i }; })
       .filter(function(x) { return x.li.lineType === 'material' && !x.li.qboItemId && x.li.description; });
-    if (!toMatch.length) { irRenderLineRows(); return; }
 
-    gasCall('matchInvoiceLineItems', { descriptions: toMatch.map(function(x) { return x.li.description; }) }, function(mRes) {
+    // Tax/freight lines not already filled by the fixed-Item Script
+    // Property above still check the learned QB Item Map -- a manual pick
+    // (e.g. "Sales Tax") sticks here exactly like it does for materials --
+    // but never falls through to fuzzy matching against the materials
+    // catalog (matchInvoiceLineItems's learnedOnly flag).
+    var toMatchLearnedOnly = G_ir.lineItems
+      .map(function(li, i) { return { li: li, i: i }; })
+      .filter(function(x) { return (x.li.lineType === 'tax' || x.li.lineType === 'freight') && !x.li.qboItemId && x.li.description; });
+
+    if (!toMatchMaterial.length && !toMatchLearnedOnly.length) { irRenderLineRows(); return; }
+
+    var pending = 0;
+    function irApplyMatches_(list, mRes) {
       if (mRes.success) {
-        toMatch.forEach(function(x, idx) {
+        list.forEach(function(x, idx) {
           var m = mRes.matches[idx];
           if (m) {
             G_ir.lineItems[x.i].qboItemId = m.qboItemId;
@@ -7897,8 +7908,21 @@ function irLoadCatalogAndMatch() {
           }
         });
       }
-      irRenderLineRows();
-    }, function() { irRenderLineRows(); });
+    }
+    function irMatchDone_() { if (--pending <= 0) irRenderLineRows(); }
+
+    if (toMatchMaterial.length) {
+      pending++;
+      gasCall('matchInvoiceLineItems', { descriptions: toMatchMaterial.map(function(x) { return x.li.description; }) }, function(mRes) {
+        irApplyMatches_(toMatchMaterial, mRes); irMatchDone_();
+      }, function() { irMatchDone_(); });
+    }
+    if (toMatchLearnedOnly.length) {
+      pending++;
+      gasCall('matchInvoiceLineItems', { descriptions: toMatchLearnedOnly.map(function(x) { return x.li.description; }), learnedOnly: true }, function(mRes) {
+        irApplyMatches_(toMatchLearnedOnly, mRes); irMatchDone_();
+      }, function() { irMatchDone_(); });
+    }
   }, function() { G_ir.catalog = []; irRenderLineRows(); });
 }
 

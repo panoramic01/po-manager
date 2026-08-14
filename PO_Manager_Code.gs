@@ -1932,10 +1932,14 @@ function saveInvoiceStagingReview(payload) {
     // Only learn from a real Approve, never a Save Draft -- an unreviewed
     // draft's item pairing hasn't been confirmed yet. Upsert is idempotent,
     // so already-correct auto-matches just get reinforced alongside fresh
-    // manual overrides -- no need to detect which case this is.
+    // manual overrides -- no need to detect which case this is. Learns from
+    // every line type, not just material -- tax/freight lines are read back
+    // via matchInvoiceLineItems's learnedOnly mode (never the fuzzy
+    // matcher), so this is what makes a manual "Sales Tax" pick stick for
+    // next time instead of needing to be repicked on every invoice.
     if (payload.approve === true && payload.lineItems) {
       payload.lineItems.forEach(function(li) {
-        if (li.lineType === 'material' && li.qboItemId && li.description) {
+        if (li.qboItemId && li.description) {
           saveQBItemMapping_(li.description, li.qboItemId, li.qboItemName);
         }
       });
