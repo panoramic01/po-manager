@@ -1262,8 +1262,8 @@
             <div id="ir-balance-check" style="font-size:12px;padding:10px 12px;border-radius:8px;margin-bottom:12px"></div>
 
             <div style="display:flex;gap:8px">
-              <button onclick="irSaveDraft()" style="flex:1;background:var(--c-bg);color:var(--c-navy);border:1px solid var(--c-border);border-radius:8px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">Save Draft</button>
-              <button onclick="irApprove()" style="flex:1;background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">Approve</button>
+              <button onclick="irSaveDraft(this)" style="flex:1;background:var(--c-bg);color:var(--c-navy);border:1px solid var(--c-border);border-radius:8px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">Save Draft</button>
+              <button onclick="irApprove(this)" style="flex:1;background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">Approve</button>
             </div>
             <button id="ir-create-bill-btn" onclick="irCreateBill()" style="display:none;width:100%;margin-top:8px;background:var(--bd-green-fg);color:#fff;border:none;border-radius:8px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">Create Bill in QuickBooks</button>
             <div id="ir-detail-status" style="font-size:12px;color:var(--c-ink-soft);margin-top:8px"></div>
@@ -3140,6 +3140,10 @@ function applyRole(role, skipNav) {
   // label) -- effRoles already normalizes 'aidan' to 'admin', so checking
   // for 'admin' here covers both.
   G.isAidan = effRoles.indexOf('admin') !== -1;
+  // Invoice review pipeline (upload/view/approve/create-bill) is open to
+  // Admin + Office, wider than the rest of the owner-only QuickBooks-facing
+  // surface (settings/connection) which stays G.isAidan-gated.
+  G.canReviewInvoices = G.isAidan || effRoles.indexOf('office') !== -1;
   // Pure runner/site_manager only -- a combined role (e.g.
   // 'runner,site_manager') keeps the fuller nav the other role grants
   // instead of either of these role-specific rollouts.
@@ -4767,6 +4771,7 @@ function submitReceive() {
 
   gasCall('updatePO', {
     rowIndex: G.receivePO.rowIndex,
+    appendReceivedBy: true,
     updates: {
       status:       'Ready to Reconcile',
       receivedNote: G.photoUrls.filter(Boolean).join('\n') || trim('r-note'),
@@ -5001,6 +5006,12 @@ function poDetailRow(label, value, alwaysShow) {
   '</div>';
 }
 
+// Formats po.receivedBy (array of {name, email, at}) as "Name (date), Name (date)".
+function fmtReceivedBy(list) {
+  if (!list || !list.length) return '';
+  return list.map(function(p) { return p.name + (p.at ? ' (' + p.at + ')' : ''); }).join(', ');
+}
+
 function showPODetail(poNum) {
   var po = G.pos.find(function(p){ return p.poNum === poNum; });
   if (!po) return;
@@ -5012,10 +5023,10 @@ function showPODetail(poNum) {
   if (editBtn) editBtn.style.display = G.perms.canEdit ? '' : 'none';
   var subpoBtn = document.getElementById('po-detail-subpo-btn');
   if (subpoBtn) subpoBtn.style.display = G.perms.canEdit ? '' : 'none';
-  // Owner-only, matching the rest of the QuickBooks-facing pipeline (review/approve/
-  // create-bill are all owner-gated server-side too -- see saveInvoiceStagingReview).
+  // Admin + Office, matching the rest of the invoice-review pipeline (review/approve/
+  // create-bill are all gated the same way server-side too -- see authorizeInvoiceReviewer_).
   var addInvoiceBtn = document.getElementById('po-detail-addinvoice-btn');
-  if (addInvoiceBtn) addInvoiceBtn.style.display = G.isAidan ? '' : 'none';
+  if (addInvoiceBtn) addInvoiceBtn.style.display = G.canReviewInvoices ? '' : 'none';
 
   var amtRow = (G.perms.canViewInvoice && po.invoiceTotal && parseFloat(po.invoiceTotal) > 0)
     ? poDetailRow('Invoice Total', '$' + fmtCurrency(po.invoiceTotal)) : '';
@@ -5032,6 +5043,9 @@ function showPODetail(poNum) {
       poDetailRow('Vendor Invoice #', po.vendorInvoice) +
       amtRow +
       poDetailRow('Delivery / Pickup Date', po.deliveryDate) +
+      poDetailRow('Received By', fmtReceivedBy(po.receivedBy)) +
+      poDetailRow('Invoice Uploaded By', po.invoiceUploadedBy ? (po.invoiceUploadedBy + (po.invoiceUploadedAt ? ' (' + po.invoiceUploadedAt + ')' : '')) : '') +
+      poDetailRow('Invoice Approved By', po.invoiceApprovedBy ? (po.invoiceApprovedBy + (po.invoiceApprovedAt ? ' (' + po.invoiceApprovedAt + ')' : '')) : '') +
       poDetailRow('Notes', po.notes, true) +
       poDetailRow('Additional Notes', po.additionalNotes, true) +
     '</div>' +
@@ -7911,20 +7925,31 @@ function irDocNext() {
   irRenderDocSlide_();
 }
 
+// Categories hidden from the QB Item dropdown entirely (not relevant to
+// material-invoice line matching) -- name match is case-insensitive/trimmed
+// since QBO category names are free text.
+var IR_HIDDEN_CATALOG_CATEGORIES = ['exteriors', 'accomdations', 'accommodations'];
+
 // Groups the flat catalog (Categories + Items, each Item carrying its
 // parent Category's id) into [{id, name, items:[...]}] for the QB Item
 // dropdown's <optgroup> structure.
 function irGroupCatalog_(flatItems) {
   var categories = {}; // id -> {id, name, items:[]}
+  var hiddenIds = {};
   var uncategorized = { id: null, name: 'Other', items: [] };
   flatItems.forEach(function(it) {
     if (it.type === 'Category') {
+      if (IR_HIDDEN_CATALOG_CATEGORIES.indexOf((it.name || '').trim().toLowerCase()) !== -1) {
+        hiddenIds[it.id] = true;
+        return;
+      }
       categories[it.id] = categories[it.id] || { id: it.id, name: it.name, items: [] };
       categories[it.id].name = it.name;
     }
   });
   flatItems.forEach(function(it) {
     if (it.type === 'Category') return;
+    if (it.parentId && hiddenIds[it.parentId]) return;
     var group = it.parentId && categories[it.parentId] ? categories[it.parentId] : uncategorized;
     group.items.push({ id: it.id, name: it.name });
   });
@@ -8227,36 +8252,47 @@ function irUpdateBalanceCheck() {
   }
 }
 
-function irSaveDraft() {
+function irSaveDraft(btn) {
   if (!G_ir.stagingId) return;
+  var orig = btn && btn.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
   gasCall('saveInvoiceStagingReview', { stagingId: G_ir.stagingId, lineItems: G_ir.lineItems, vendorInvoice: trim('ir-vendor-invoice') }, function(res) {
+    if (btn) { btn.disabled = false; btn.textContent = orig; }
     if (!res.success) { showToast(res.error || 'Save failed'); return; }
     showToast('Draft saved');
-  }, function(err) { showToast(friendlyUploadError(err)); });
+  }, function(err) { if (btn) { btn.disabled = false; btn.textContent = orig; } showToast(friendlyUploadError(err)); });
 }
 
-function irApprove() {
+function irApprove(btn) {
   if (!G_ir.stagingId) return;
   if (!G_ir.lineItems.length) { showToast('Add at least one line item before approving'); return; }
   var vendorInvoice = trim('ir-vendor-invoice');
+  var orig = btn && btn.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Approving…'; }
   gasCall('saveInvoiceStagingReview', { stagingId: G_ir.stagingId, lineItems: G_ir.lineItems, vendorInvoice: vendorInvoice, approve: true }, function(res) {
-    if (!res.success) { showToast(res.error || 'Approve failed'); return; }
+    if (!res.success) { if (btn) { btn.disabled = false; btn.textContent = orig; } showToast(res.error || 'Approve failed'); return; }
     showToast('Approved — PO updated');
-    irPatchPOFromStaging(vendorInvoice);
+    irPatchPOFromStaging(vendorInvoice, res);
     irOpenDetail(G_ir.stagingId);
-  }, function(err) { showToast(friendlyUploadError(err)); });
+  }, function(err) { if (btn) { btn.disabled = false; btn.textContent = orig; } showToast(friendlyUploadError(err)); });
 }
 
 // Fills in the "blanks the app needs" once the reviewer confirms the parsed
 // invoice is correct: Vendor Invoice # and Invoice Total (sum of the
 // approved line items) land directly on the PO row, same fields the Edit
-// form would otherwise require typing by hand.
-function irPatchPOFromStaging(vendorInvoice) {
+// form would otherwise require typing by hand. approveRes (the response from
+// saveInvoiceStagingReview) carries who approved it and when; who uploaded it
+// and when comes from G_ir.row, loaded when the review panel was opened.
+function irPatchPOFromStaging(vendorInvoice, approveRes) {
   var ctx = G_ir.poContext;
   if (!ctx || !ctx.rowIndex) return;
   var invoiceTotal = G_ir.lineItems.reduce(function(s, li) { return s + (parseFloat(li.amount) || 0); }, 0);
   var updates = { vendorInvoice: vendorInvoice, invoiceTotal: Math.round(invoiceTotal * 100) / 100 };
   if (G_ir.row && G_ir.row.invoiceFileUrl) updates.invoiceFile = G_ir.row.invoiceFileUrl;
+  if (approveRes && approveRes.reviewedBy) updates.invoiceApprovedBy = approveRes.reviewedBy;
+  if (approveRes && approveRes.approvedAt) updates.invoiceApprovedAt = approveRes.approvedAt;
+  if (G_ir.row && G_ir.row.uploadedBy) updates.invoiceUploadedBy = G_ir.row.uploadedBy;
+  if (G_ir.row && G_ir.row.extractedAt) updates.invoiceUploadedAt = G_ir.row.extractedAt;
   gasCall('updatePO', { rowIndex: ctx.rowIndex, updates: updates }, function(res) {
     if (res.success) loadData();
   }, function(err) { console.error('Failed to patch PO from invoice review:', err); });

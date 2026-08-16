@@ -33,6 +33,11 @@ function authorizeQuickBooksOwner_(payload) {
   return auth;
 }
 
+/** Invoice-review pipeline gate: Admin or Office role (no owner-email restriction) -- upload/view/approve/create-bill. */
+function authorizeInvoiceReviewer_(payload) {
+  return authorizeCaller(payload, ['admin', 'office']);
+}
+
 function getQuickBooksService_() {
   var props = PropertiesService.getScriptProperties();
   var clientId = props.getProperty('QBO_CLIENT_ID');
@@ -306,7 +311,7 @@ function getQuickBooksItemCatalog_() {
 
 /** Thin wrapper exposing a manual "refresh catalog" action to the reviewer (invalidate + refetch). */
 function refreshQuickBooksItemCatalog(payload) {
-  var auth = authorizeQuickBooksOwner_(payload);
+  var auth = authorizeInvoiceReviewer_(payload);
   if (!auth.ok) return { error: auth.error, code: auth.code };
   try { CacheService.getScriptCache().remove(QBO_ITEM_CATALOG_CACHE_KEY); } catch (e) {}
   return getQuickBooksItemCatalog_();
@@ -324,7 +329,7 @@ function refreshQuickBooksItemCatalog(payload) {
  * these properties are never set.
  */
 function getQuickBooksItemCatalogForReview(payload) {
-  var auth = authorizeQuickBooksOwner_(payload);
+  var auth = authorizeInvoiceReviewer_(payload);
   if (!auth.ok) return { error: auth.error, code: auth.code };
   var catalog = getQuickBooksItemCatalog_();
   if (!catalog.success) return catalog;
@@ -346,7 +351,7 @@ function getQuickBooksItemCatalogForReview(payload) {
  * used on instead of falling back to QBO's default expense account.
  */
 function getQuickBooksAccountsForNewItem(payload) {
-  var auth = authorizeQuickBooksOwner_(payload);
+  var auth = authorizeInvoiceReviewer_(payload);
   if (!auth.ok) return { error: auth.error, code: auth.code };
   var query = 'select Id, Name, AccountType from Account where Active = true maxresults 1000';
   var res = quickbooksApiGet_('/query?query=' + encodeURIComponent(query));
@@ -373,7 +378,7 @@ function getQuickBooksAccountsForNewItem(payload) {
  * without waiting on a refetch.
  */
 function createQuickBooksItem(payload) {
-  var auth = authorizeQuickBooksOwner_(payload);
+  var auth = authorizeInvoiceReviewer_(payload);
   if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
 
   var name = (payload.name || '').toString().trim();
@@ -509,7 +514,7 @@ function getQBItemMap_() {
  * Script Properties, which this now sits alongside as a fallback for).
  */
 function matchInvoiceLineItems(payload) {
-  var auth = authorizeQuickBooksOwner_(payload);
+  var auth = authorizeInvoiceReviewer_(payload);
   if (!auth.ok) return { error: auth.error, code: auth.code };
 
   var catalogRes = getQuickBooksItemCatalog_();
@@ -601,7 +606,7 @@ function quickbooksUploadAttachment_(fileBlob, entityType, entityId) {
  * attachmentWarning on the response rather than failing the whole call.
  */
 function createQuickBooksBill(payload) {
-  var auth = authorizeQuickBooksOwner_(payload);
+  var auth = authorizeInvoiceReviewer_(payload);
   if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
 
   var stagingId = payload.stagingId;

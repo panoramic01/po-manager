@@ -305,7 +305,7 @@ function getSheetData(payload) {
   if (lastRow < 2) return [];
 
   var numRows = lastRow - 1;
-  var data     = sheet.getRange(2, 1, numRows, 15).getValues();
+  var data     = sheet.getRange(2, 1, numRows, 20).getValues();
   var tz       = Session.getScriptTimeZone();
   var pos      = [];
 
@@ -334,6 +334,12 @@ function getSheetData(payload) {
 
     var invoiceFile = canViewInvoice ? str(row[14]) : "";
 
+    var receivedBy = [];
+    try { receivedBy = JSON.parse(row[15] || '[]'); } catch (e) { receivedBy = []; }
+    receivedBy = receivedBy.map(function(p) {
+      return { name: p.name || p.email || '', email: p.email || '', at: formatIsoTimestamp_(p.at, tz) };
+    });
+
     pos.push({
       rowIndex:     i + 2,
       poNum:        poNum,
@@ -352,7 +358,12 @@ function getSheetData(payload) {
       receivedNote: str(row[10]),
       notes:        str(row[11]),
       additionalNotes: str(row[12]),
-      orderedBy:    str(row[13])
+      orderedBy:    str(row[13]),
+      receivedBy:   receivedBy,
+      invoiceApprovedBy: canViewInvoice ? str(row[16]) : "",
+      invoiceApprovedAt: canViewInvoice ? formatIsoTimestamp_(row[17], tz) : "",
+      invoiceUploadedBy: canViewInvoice ? str(row[18]) : "",
+      invoiceUploadedAt: canViewInvoice ? formatIsoTimestamp_(row[19], tz) : ""
     });
   });
 
@@ -596,6 +607,29 @@ function updatePO(payload) {
     if (updates.additionalNotes  !== undefined) sheet.getRange(rowIndex, 13).setValue(updates.additionalNotes);
     if (updates.orderedBy        !== undefined) sheet.getRange(rowIndex, 14).setValue(updates.orderedBy);
     if (updates.invoiceFile      !== undefined) sheet.getRange(rowIndex, 15).setValue(updates.invoiceFile);
+    if (updates.invoiceApprovedBy !== undefined) sheet.getRange(rowIndex, 17).setValue(updates.invoiceApprovedBy);
+    if (updates.invoiceApprovedAt !== undefined) sheet.getRange(rowIndex, 18).setValue(updates.invoiceApprovedAt);
+    if (updates.invoiceUploadedBy !== undefined) sheet.getRange(rowIndex, 19).setValue(updates.invoiceUploadedBy);
+    if (updates.invoiceUploadedAt !== undefined) sheet.getRange(rowIndex, 20).setValue(updates.invoiceUploadedAt);
+
+    // Received By (col 16): an accumulating, deduped-by-email list of
+    // {name, email, at} -- who received this PO is never client-typed, only
+    // ever the verified session identity, same trust model as Reviewed By on
+    // the QB Invoice Staging sheet.
+    if (payload.appendReceivedBy) {
+      var receivedByCell = sheet.getRange(rowIndex, 16);
+      var receivedBy = [];
+      try { receivedBy = JSON.parse(receivedByCell.getValue() || '[]'); } catch (e) { receivedBy = []; }
+      var displayName = (getRoleByEmail(auth.email).name || auth.email || '').toString();
+      var existing = receivedBy.filter(function(p) { return p.email === auth.email; })[0];
+      if (existing) {
+        existing.at = new Date().toISOString();
+        existing.name = displayName;
+      } else {
+        receivedBy.push({ name: displayName, email: auth.email, at: new Date().toISOString() });
+      }
+      receivedByCell.setValue(JSON.stringify(receivedBy));
+    }
 
     return { success: true };
   } catch (e) {
@@ -624,12 +658,17 @@ function findPOByNumber(payload) {
       // Found - load just this single row
       var rowIndex = i + 2;
       var tz  = Session.getScriptTimeZone();
-      var row = sheet.getRange(rowIndex, 1, 1, 15).getValues()[0];
+      var row = sheet.getRange(rowIndex, 1, 1, 20).getValues()[0];
       var legacyInvoiceLink = '', issuedPOLink = '';
       try { legacyInvoiceLink = sheet.getRange(rowIndex, 1,  1, 1).getRichTextValues()[0][0].getLinkUrl() || ''; } catch(e2) {}
       try { issuedPOLink      = sheet.getRange(rowIndex, 10, 1, 1).getRichTextValues()[0][0].getLinkUrl() || ''; } catch(e2) {}
       if (!issuedPOLink) issuedPOLink = str(row[9]);
       var invoiceFile = canViewInvoice ? str(row[14]) : "";
+      var receivedBy = [];
+      try { receivedBy = JSON.parse(row[15] || '[]'); } catch (e2) { receivedBy = []; }
+      receivedBy = receivedBy.map(function(p) {
+        return { name: p.name || p.email || '', email: p.email || '', at: formatIsoTimestamp_(p.at, tz) };
+      });
       return {
         rowIndex:      rowIndex,
         poNum:         (row[0] || '').toString().trim(),
@@ -648,7 +687,12 @@ function findPOByNumber(payload) {
         receivedNote:  str(row[10]),
         notes:         str(row[11]),
         additionalNotes: str(row[12]),
-        orderedBy:     str(row[13])
+        orderedBy:     str(row[13]),
+        receivedBy:    receivedBy,
+        invoiceApprovedBy: canViewInvoice ? str(row[16]) : "",
+        invoiceApprovedAt: canViewInvoice ? formatIsoTimestamp_(row[17], tz) : "",
+        invoiceUploadedBy: canViewInvoice ? str(row[18]) : "",
+        invoiceUploadedAt: canViewInvoice ? formatIsoTimestamp_(row[19], tz) : ""
       };
     }
     return null;
@@ -1383,6 +1427,14 @@ function formatDateCell(cell, tz) {
   return cell.toString();
 }
 
+/** Formats an ISO-8601 timestamp string (as sent over gasCall's JSON bridge, e.g. Invoice Approved/Uploaded At) to MM/dd/yyyy. Not a Sheets Date cell -- see formatDateCell for that. */
+function formatIsoTimestamp_(isoStr, tz) {
+  if (!isoStr) return "";
+  var d = new Date(isoStr);
+  if (isNaN(d)) return isoStr.toString();
+  return Utilities.formatDate(d, tz, "MM/dd/yyyy");
+}
+
 function str(val) {
   return val !== null && val !== undefined ? val.toString() : "";
 }
@@ -1563,7 +1615,7 @@ function getProjectQuickBooksId_(builder, jobRef) {
  * project itself was never set up, not that this Id is wrong.
  */
 function saveProjectQuickBooksCustomerId(payload) {
-  var auth = authorizeQuickBooksOwner_(payload);
+  var auth = authorizeInvoiceReviewer_(payload);
   if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
 
   var builder = (payload.builder || '').toString().trim();
@@ -1685,7 +1737,7 @@ function saveQuickBooksVendorMapping(payload) {
  * Owner-gated, same as the rest of the QuickBooks-facing pipeline.
  */
 function getQuickBooksLinkStatusForInvoice(payload) {
-  var auth = authorizeQuickBooksOwner_(payload);
+  var auth = authorizeInvoiceReviewer_(payload);
   if (!auth.ok) return { error: auth.error, code: auth.code };
   var vendorLookup = getQuickBooksVendorId_(payload.vendor);
   var customerLookup = getProjectQuickBooksId_(payload.builder, payload.jobRef);
@@ -1790,7 +1842,7 @@ var QB_STAGING_HEADERS = [
   'Staging Id', 'PO Number', 'Row Index', 'Status', 'Vendor', 'Vendor Invoice#',
   'Invoice File URL', 'Builder', 'Job Ref', 'QB Customer Id', 'QB Vendor Id',
   'Line Items JSON', 'Invoice Total', 'Extracted At', 'Reviewed By', 'Approved At', 'QB Bill Id', 'Posted At',
-  'Extraction Method'
+  'Extraction Method', 'Uploaded By'
 ];
 var QB_STAGING_COL = {}; // 0-based index by header name, built once below
 QB_STAGING_HEADERS.forEach(function(h, i) { QB_STAGING_COL[h] = i; });
@@ -1824,7 +1876,8 @@ function stagingRowToObject_(row) {
     approvedAt:     row[QB_STAGING_COL['Approved At']] || '',
     qbBillId:       (row[QB_STAGING_COL['QB Bill Id']] || '').toString(),
     postedAt:       row[QB_STAGING_COL['Posted At']] || '',
-    extractionMethod: row[QB_STAGING_COL['Extraction Method']] || ''
+    extractionMethod: row[QB_STAGING_COL['Extraction Method']] || '',
+    uploadedBy:     row[QB_STAGING_COL['Uploaded By']] || ''
   };
 }
 
@@ -1833,7 +1886,7 @@ function stagingRowToObject_(row) {
  * extractInvoiceLineItems (automatic, on upload) -- not exposed directly to
  * the client. fields: {poNumber, rowIndex, vendor, vendorInvoice,
  * invoiceFileUrl, builder, jobRef, qbCustomerId, qbVendorId, lineItems[],
- * extractionMethod: 'gemini'|'code-parser'|'manual'}.
+ * extractionMethod: 'gemini'|'code-parser'|'manual', uploadedBy}.
  */
 function createStagingRow_(fields) {
   var sheet = ensureSheetWithHeaders_(QB_STAGING_SHEET, QB_STAGING_HEADERS);
@@ -1858,7 +1911,8 @@ function createStagingRow_(fields) {
     '',
     '',
     '',
-    fields.extractionMethod || ''
+    fields.extractionMethod || '',
+    fields.uploadedBy || ''
   ]);
   return stagingId;
 }
@@ -1879,7 +1933,7 @@ function findStagingRowIndex_(sheet, stagingId) {
  * Owner-gated, same as the rest of the QuickBooks-facing workflow.
  */
 function getInvoiceStaging(payload) {
-  var auth = authorizeQuickBooksOwner_(payload);
+  var auth = authorizeInvoiceReviewer_(payload);
   if (!auth.ok) return { error: auth.error, code: auth.code };
   try {
     var sheet = ensureSheetWithHeaders_(QB_STAGING_SHEET, QB_STAGING_HEADERS);
@@ -1908,7 +1962,7 @@ function getInvoiceStaging(payload) {
  * only happens in createQuickBooksBill once Status is 'Approved'.
  */
 function saveInvoiceStagingReview(payload) {
-  var auth = authorizeQuickBooksOwner_(payload);
+  var auth = authorizeInvoiceReviewer_(payload);
   if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
   try {
     var stagingId = payload.stagingId;
@@ -1955,13 +2009,15 @@ function saveInvoiceStagingReview(payload) {
     }
 
     var nextStatus = payload.approve ? 'Approved' : (payload.reject ? 'Rejected' : currentStatus);
+    var approvedAt = null;
     sheet.getRange(rowIdx, QB_STAGING_COL['Status'] + 1).setValue(nextStatus);
     sheet.getRange(rowIdx, QB_STAGING_COL['Reviewed By'] + 1).setValue(auth.email || '');
     if (payload.approve) {
-      sheet.getRange(rowIdx, QB_STAGING_COL['Approved At'] + 1).setValue(new Date());
+      approvedAt = new Date();
+      sheet.getRange(rowIdx, QB_STAGING_COL['Approved At'] + 1).setValue(approvedAt);
     }
 
-    return { success: true, status: nextStatus };
+    return { success: true, status: nextStatus, reviewedBy: auth.email || '', approvedAt: approvedAt ? approvedAt.toISOString() : '' };
   } catch (e) {
     return { success: false, error: e.toString() };
   }
@@ -2524,7 +2580,8 @@ function extractInvoiceLineItems(payload) {
       qbVendorId: vendorLookup.qbVendorId || '',
       lineItems: lineItems,
       invoiceTotal: invoiceTotal,
-      extractionMethod: extractionMethod
+      extractionMethod: extractionMethod,
+      uploadedBy: auth.email || ''
     });
 
     return {
