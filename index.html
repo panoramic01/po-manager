@@ -782,7 +782,11 @@
     <div class="card" id="create-form-card">
       <div class="card-title" style="display:none">New Purchase Order</div>
 
-      <div class="form-group" style="position:relative">
+      <div class="form-group" style="display:flex;align-items:center;gap:8px;background:var(--c-surface);border-radius:8px;padding:10px 12px">
+        <input type="checkbox" id="c-warehouse-toggle" onchange="toggleWarehousePO(this.checked)" style="width:16px;height:16px;flex:0 0 auto">
+        <label for="c-warehouse-toggle" style="font-size:12px;color:var(--c-navy);font-weight:600;margin:0">Stock/warehouse order (no job yet -- material is going into inventory)</label>
+      </div>
+      <div class="form-group" style="position:relative" id="c-job-combo-group">
         <label class="form-label">Builder &amp; Job *</label>
         <input type="text" class="form-control" id="c-job-combo" autocomplete="off"
                placeholder="e.g. CRESCENT_RIDGE-WEGNER"
@@ -1259,6 +1263,7 @@
               </div>
             </div>
 
+            <div id="ir-warehouse-freight-note" style="display:none;font-size:12px;padding:10px 12px;border-radius:8px;margin-bottom:12px;background:var(--sh-blue-bg,#e8f0fe);color:var(--c-navy)"></div>
             <div id="ir-balance-check" style="font-size:12px;padding:10px 12px;border-radius:8px;margin-bottom:12px"></div>
 
             <div style="display:flex;gap:8px">
@@ -1349,8 +1354,8 @@
       <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid var(--c-border-hair);background:var(--c-surface);position:sticky;top:0;z-index:1">
       <button onclick="showOtherHome()" style="background:none;border:none;font-size:14px;font-weight:600;color:var(--c-navy);cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
     </div>
-      <div style="padding:16px;max-width:680px;margin:0 auto">
-        <div style="background:var(--c-surface);border-radius:12px;padding:20px;box-shadow:var(--c-shadow-sm);margin-bottom:12px">
+      <div style="padding:16px 24px;max-width:1200px;margin:0 auto">
+        <div style="background:var(--c-surface);border-radius:12px;padding:20px;box-shadow:var(--c-shadow-sm);margin-bottom:12px;max-width:640px">
           <p style="font-size:13px;color:var(--c-ink-soft);margin:0 0 14px">Select a job (from Asana) to see its status, quality walks, and cost summary.</p>
           <div style="display:flex;gap:8px;margin-bottom:4px;align-items:flex-start">
             <div style="position:relative;flex:1">
@@ -1370,8 +1375,10 @@
         </div>
         <div id="jc-results" style="display:none">
           <div id="jc-info-card"></div>
-          <div id="jc-quality-card"></div>
-          <div id="jc-cost-card"></div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(360px,100%),1fr));gap:12px;align-items:start">
+            <div id="jc-quality-card"></div>
+            <div id="jc-cost-card"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -4201,25 +4208,49 @@ function badge(status) {
 }
 
 // ── Create PO ─────────────────────────────────────────────────────────────────
-function submitCreate() {
-  var combo  = trim('c-job-combo');
-  var vendor = getVendorValue('c-vendor', 'c-vendor-other');
-  if (!combo || !vendor) { showToast('Builder & Job and Vendor are required'); return; }
-
-  var match = G.jobComboMap && G.jobComboMap[combo];
-  var builder, job;
-  if (match) {
-    builder = match.builder;
-    job     = match.job;
+// Stock/warehouse toggle: pre-fills and locks the Builder & Job combo to the
+// fixed WAREHOUSE placeholder (see WAREHOUSE_JOB_REF in QuickBooks_OAuth.gs)
+// used app-wide to distinguish material bought into general stock from
+// material bought direct for a job -- purely an app-side grouping label,
+// never looked up as or sent to QuickBooks as a real Customer/Job.
+function toggleWarehousePO(checked) {
+  var combo = document.getElementById('c-job-combo');
+  if (checked) {
+    combo.value = 'WAREHOUSE-WAREHOUSE';
+    combo.disabled = true;
   } else {
-    // New combo, not in the list -- best-effort split on the first hyphen.
-    var dashIdx = combo.indexOf('-');
-    if (dashIdx === -1) {
-      showToast('Enter as BUILDER_NAME-JOB_NAME, or pick one from the list');
-      return;
+    combo.value = '';
+    combo.disabled = false;
+  }
+}
+
+function submitCreate() {
+  var isWarehouse = !!document.getElementById('c-warehouse-toggle').checked;
+  var vendor = getVendorValue('c-vendor', 'c-vendor-other');
+  var builder, job;
+
+  if (isWarehouse) {
+    if (!vendor) { showToast('Vendor is required'); return; }
+    builder = 'WAREHOUSE';
+    job = 'WAREHOUSE';
+  } else {
+    var combo = trim('c-job-combo');
+    if (!combo || !vendor) { showToast('Builder & Job and Vendor are required'); return; }
+
+    var match = G.jobComboMap && G.jobComboMap[combo];
+    if (match) {
+      builder = match.builder;
+      job     = match.job;
+    } else {
+      // New combo, not in the list -- best-effort split on the first hyphen.
+      var dashIdx = combo.indexOf('-');
+      if (dashIdx === -1) {
+        showToast('Enter as BUILDER_NAME-JOB_NAME, or pick one from the list');
+        return;
+      }
+      builder = combo.slice(0, dashIdx);
+      job     = combo.slice(dashIdx + 1);
     }
-    builder = combo.slice(0, dashIdx);
-    job     = combo.slice(dashIdx + 1);
   }
 
   setBtnState('create-btn', 'Creating…', true);
@@ -4280,6 +4311,8 @@ function clearCreate() {
   document.getElementById('c-status').value = 'Pending Pickup';
   document.getElementById('c-status-other').value = '';
   document.getElementById('c-status-other').style.display = 'none';
+  document.getElementById('c-warehouse-toggle').checked = false;
+  document.getElementById('c-job-combo').disabled = false;
 }
 
 function showCreateForm() {
@@ -7930,9 +7963,21 @@ function irDocNext() {
 // since QBO category names are free text.
 var IR_HIDDEN_CATALOG_CATEGORIES = ['exteriors', 'accomdations', 'accommodations'];
 
+// True when the invoice being reviewed is a stock/warehouse PO (the fixed
+// WAREHOUSE placeholder job -- see WAREHOUSE_JOB_REF in
+// QuickBooks_OAuth.gs), as opposed to a normal direct-to-job PO. Drives the
+// Inventory-item guardrails below: Inventory-type QBO Items are only ever
+// selectable/creatable in this context, never on a real job's invoice.
+function irIsWarehousePO_() {
+  var ctx = G_ir.poContext;
+  return !!(ctx && (ctx.jobRef || '').toString().trim().toUpperCase() === 'WAREHOUSE');
+}
+
 // Groups the flat catalog (Categories + Items, each Item carrying its
-// parent Category's id) into [{id, name, items:[...]}] for the QB Item
-// dropdown's <optgroup> structure.
+// parent Category's id) into [{id, name, items:[{id,name,type}]}] for the QB
+// Item dropdown's <optgroup> structure. `type` is kept on each item (not
+// just id/name) so the dropdown can exclude Inventory-type items outside a
+// stock PO -- see irItemCellHtml_.
 function irGroupCatalog_(flatItems) {
   var categories = {}; // id -> {id, name, items:[]}
   var hiddenIds = {};
@@ -7951,7 +7996,7 @@ function irGroupCatalog_(flatItems) {
     if (it.type === 'Category') return;
     if (it.parentId && hiddenIds[it.parentId]) return;
     var group = it.parentId && categories[it.parentId] ? categories[it.parentId] : uncategorized;
-    group.items.push({ id: it.id, name: it.name });
+    group.items.push({ id: it.id, name: it.name, type: it.type });
   });
   var groups = Object.keys(categories).map(function(k) { return categories[k]; }).filter(function(g) { return g.items.length; });
   if (uncategorized.items.length) groups.push(uncategorized);
@@ -8007,15 +8052,16 @@ function irLoadCatalogAndMatch() {
     }
     function irMatchDone_() { if (--pending <= 0) irRenderLineRows(); }
 
+    var ctx = G_ir.poContext;
     if (toMatchMaterial.length) {
       pending++;
-      gasCall('matchInvoiceLineItems', { descriptions: toMatchMaterial.map(function(x) { return x.li.description; }) }, function(mRes) {
+      gasCall('matchInvoiceLineItems', { descriptions: toMatchMaterial.map(function(x) { return x.li.description; }), jobRef: ctx && ctx.jobRef }, function(mRes) {
         irApplyMatches_(toMatchMaterial, mRes); irMatchDone_();
       }, function() { irMatchDone_(); });
     }
     if (toMatchLearnedOnly.length) {
       pending++;
-      gasCall('matchInvoiceLineItems', { descriptions: toMatchLearnedOnly.map(function(x) { return x.li.description; }), learnedOnly: true }, function(mRes) {
+      gasCall('matchInvoiceLineItems', { descriptions: toMatchLearnedOnly.map(function(x) { return x.li.description; }), jobRef: ctx && ctx.jobRef, learnedOnly: true }, function(mRes) {
         irApplyMatches_(toMatchLearnedOnly, mRes); irMatchDone_();
       }, function() { irMatchDone_(); });
     }
@@ -8067,15 +8113,24 @@ function irRenderLineRows() {
 // loaded, a plain "loading…" placeholder before it has, and a color cue
 // (unmatched rows render with a light red background) so a reviewer can spot
 // what still needs manual pairing at a glance without reading every row.
+// Inventory-type QBO Items are excluded from the options entirely outside a
+// stock/warehouse PO -- an Inventory item on a real job's Bill would
+// silently misbook that cost into Inventory Asset instead of the job's
+// COGS, so this is a hard exclusion, not just a sort order. (The real
+// backstop is server-side, in createQuickBooksBill -- this is the
+// convenience layer that keeps a reviewer from ever seeing the wrong option.)
 function irItemCellHtml_(li, i) {
   if (!G_ir.catalog) return '<span style="font-size:11px;color:var(--c-ink-soft)">loading…</span>';
   var unmatched = !li.qboItemId;
+  var allowInventory = irIsWarehousePO_();
   var opts = '<option value="">— Unmatched —</option>' +
     '<option value="__new__">+ Add new item…</option>' + G_ir.catalog.map(function(cat) {
-    var itemOpts = cat.items.map(function(it) {
-      return '<option value="' + esc(it.id) + '"' + (li.qboItemId === it.id ? ' selected' : '') + '>' + esc(it.name) + '</option>';
-    }).join('');
-    return '<optgroup label="' + esc(cat.name) + '">' + itemOpts + '</optgroup>';
+    var itemOpts = cat.items
+      .filter(function(it) { return allowInventory || it.type !== 'Inventory'; })
+      .map(function(it) {
+        return '<option value="' + esc(it.id) + '"' + (li.qboItemId === it.id ? ' selected' : '') + '>' + esc(it.name) + '</option>';
+      }).join('');
+    return itemOpts ? '<optgroup label="' + esc(cat.name) + '">' + itemOpts + '</optgroup>' : '';
   }).join('');
   return '<select onchange="irUpdateLine(' + i + ",'qboItemId',this.value)\" style=\"width:100%;font-size:11px;padding:4px" +
     (unmatched ? ';background:var(--sh-red-bg,#fde8e8)' : '') + '">' + opts + '</select>' +
@@ -8137,13 +8192,24 @@ function irOpenNewItemModal(i) {
     return '<option value="' + esc(g.id || '') + '">' + esc(g.name) + '</option>';
   }).join('');
 
+  // Inventory-type items (real QBO stock tracking) are only offered when
+  // reviewing a WAREHOUSE PO, and only to admin -- creating one means
+  // picking real GL accounts (Inventory Asset, COGS), a bigger financial
+  // decision than matching an existing item, per the locked "dummy proof"
+  // requirement. createQuickBooksItem re-enforces the admin gate
+  // server-side regardless of what this dropdown shows.
+  var canCreateInventoryItem = irIsWarehousePO_() && !!G.isAidan;
+  var typeOpts = '<option value="Service">Service</option><option value="NonInventory">Non-inventory</option>' +
+    (canCreateInventoryItem ? '<option value="Inventory">Inventory (stocked item)</option>' : '');
+
   document.getElementById('edit-modal-title').textContent = 'Add New QuickBooks Item';
   document.getElementById('edit-modal-body').innerHTML =
     fg('Item Name', '<input type="text" class="form-control" id="qbni-name" value="' + esc(li.description || '') + '" placeholder="e.g. 8in LP Lap Siding">') +
     fg('Category', '<select class="form-control" id="qbni-parent">' + catOpts + '</select>') +
-    fg('Type', '<select class="form-control" id="qbni-type"><option value="Service">Service</option><option value="NonInventory">Non-inventory</option></select>') +
+    fg('Type', '<select class="form-control" id="qbni-type" onchange="irToggleNewItemAssetField_()">' + typeOpts + '</select>') +
     fg('Income Account', '<select class="form-control" id="qbni-income"><option value="">Loading…</option></select>') +
-    fg('Expense Account (optional)', '<select class="form-control" id="qbni-expense"><option value="">Loading…</option></select>') +
+    fg('Expense/COGS Account' + (canCreateInventoryItem ? '' : ' (optional)'), '<select class="form-control" id="qbni-expense"><option value="">Loading…</option></select>') +
+    '<div id="qbni-asset-group" style="display:none">' + fg('Inventory Asset Account', '<select class="form-control" id="qbni-asset"><option value="">Loading…</option></select>') + '</div>' +
     '<div id="qbni-status" style="font-size:12px;color:var(--c-danger);margin-top:4px"></div>' +
     '<div class="modal-actions">' +
       '<button class="btn btn-primary" style="flex:1" id="qbni-save-btn" onclick="irSaveNewItem()">Create Item</button>' +
@@ -8154,14 +8220,24 @@ function irOpenNewItemModal(i) {
   irLoadAccountsForNewItem_();
 }
 
+// Shows/hides the Inventory Asset Account picker based on the selected Type
+// -- only Inventory items need one (Service/NonInventory don't have an
+// asset account at all).
+function irToggleNewItemAssetField_() {
+  var group = document.getElementById('qbni-asset-group');
+  if (group) group.style.display = val('qbni-type') === 'Inventory' ? '' : 'none';
+}
+
 function irLoadAccountsForNewItem_() {
   gasCall('getQuickBooksAccountsForNewItem', {}, function(res) {
     var incomeSel = document.getElementById('qbni-income');
     var expenseSel = document.getElementById('qbni-expense');
+    var assetSel = document.getElementById('qbni-asset');
     if (!incomeSel || !expenseSel) return; // modal was closed before this returned
     if (!res.success) {
       incomeSel.innerHTML = '<option value="">Failed to load</option>';
       expenseSel.innerHTML = '<option value="">Failed to load</option>';
+      if (assetSel) assetSel.innerHTML = '<option value="">Failed to load</option>';
       var status = document.getElementById('qbni-status');
       if (status) status.textContent = res.error || 'Could not load QuickBooks accounts.';
       return;
@@ -8172,6 +8248,11 @@ function irLoadAccountsForNewItem_() {
     expenseSel.innerHTML = '<option value="">— None —</option>' + (res.expenseAccounts || []).map(function(a) {
       return '<option value="' + esc(a.id) + '">' + esc(a.name) + '</option>';
     }).join('');
+    if (assetSel) {
+      assetSel.innerHTML = '<option value="">— Select —</option>' + (res.assetAccounts || []).map(function(a) {
+        return '<option value="' + esc(a.id) + '">' + esc(a.name) + '</option>';
+      }).join('');
+    }
   }, function(err) {
     var status = document.getElementById('qbni-status');
     if (status) status.textContent = abortAwareError(err, 'Could not load QuickBooks accounts.');
@@ -8187,10 +8268,15 @@ function irSaveNewItem() {
   var type = val('qbni-type');
   var incomeAccountId = val('qbni-income');
   var expenseAccountId = val('qbni-expense');
+  var assetAccountId = val('qbni-asset');
   var status = document.getElementById('qbni-status');
 
   if (!name) { if (status) status.textContent = 'Item name is required.'; return; }
   if (!incomeAccountId) { if (status) status.textContent = 'Income account is required.'; return; }
+  if (type === 'Inventory') {
+    if (!assetAccountId) { if (status) status.textContent = 'Inventory Asset account is required.'; return; }
+    if (!expenseAccountId) { if (status) status.textContent = 'Expense/COGS account is required for an Inventory item.'; return; }
+  }
   if (status) status.textContent = '';
 
   var btn = document.getElementById('qbni-save-btn');
@@ -8201,7 +8287,8 @@ function irSaveNewItem() {
     parentId: parentId || null,
     type: type,
     incomeAccountId: incomeAccountId,
-    expenseAccountId: expenseAccountId || null
+    expenseAccountId: expenseAccountId || null,
+    assetAccountId: type === 'Inventory' ? assetAccountId : null
   }, function(res) {
     if (!res.success) {
       if (status) status.textContent = res.error || 'Could not create item.';
@@ -8231,10 +8318,35 @@ function irAddCatalogItem_(item) {
     group = { id: item.parentId || null, name: item.parentId ? item.name : 'Other', items: [] };
     G_ir.catalog.push(group);
   }
-  group.items.push({ id: item.id, name: item.name });
+  group.items.push({ id: item.id, name: item.name, type: item.type });
+}
+
+// Preview-only mirror of applyWarehouseNonMaterialAllocation_ (server side,
+// QuickBooks_OAuth.gs) -- shows the reviewer what folding freight/tax into
+// material cost will do before they post, rather than a surprise once the
+// Bill is already in QuickBooks. Purely informational: the actual posted
+// amounts are always (re)computed server-side at Bill-creation time.
+function irRenderWarehouseFreightNote_() {
+  var note = document.getElementById('ir-warehouse-freight-note');
+  if (!note) return;
+  if (!irIsWarehousePO_()) { note.style.display = 'none'; return; }
+
+  var materialLines = G_ir.lineItems.filter(function(li) { return !li.skip && li.lineType === 'material'; });
+  var extraTotal = G_ir.lineItems
+    .filter(function(li) { return !li.skip && (li.lineType === 'freight' || li.lineType === 'tax'); })
+    .reduce(function(s, li) { return s + (parseFloat(li.amount) || 0); }, 0);
+  var materialTotal = materialLines.reduce(function(s, li) { return s + (parseFloat(li.amount) || 0); }, 0);
+
+  if (!extraTotal || !materialLines.length || !materialTotal) { note.style.display = 'none'; return; }
+
+  note.style.display = '';
+  note.textContent = 'Stock PO: $' + extraTotal.toFixed(2) + ' of freight/tax will be folded into the ' +
+    materialLines.length + ' material line' + (materialLines.length === 1 ? '' : 's') +
+    "' cost when this Bill posts (+" + Math.round((extraTotal / materialTotal) * 10000) / 100 + '% per line), not billed as its own line.';
 }
 
 function irUpdateBalanceCheck() {
+  irRenderWarehouseFreightNote_();
   var el = document.getElementById('ir-balance-check');
   var sum = G_ir.lineItems.reduce(function(s, li) { return s + (parseFloat(li.amount) || 0); }, 0);
   var invoiceTotal = parseFloat(G_ir.row && G_ir.row.invoiceTotal);
@@ -8606,7 +8718,7 @@ function loadJobDashboard() {
     if (r.error) { showToast('Error: ' + r.error); return; }
     renderJobInfoCard(r.meta);
     renderQualityWalksCard(r.quality, daysLiveFrom(r.meta.startDate));
-    renderJobCostCard(r.cost, r.missingCount);
+    renderJobCostCard(r.cost, r.missingCount, r.qb);
     document.getElementById('jc-results').style.display = 'block';
   }, function(err) {
     document.getElementById('jc-loading').style.display = 'none';
@@ -8731,7 +8843,7 @@ function closeQualityWalkDetail() {
   document.getElementById('quality-walk-detail-overlay').style.display = 'none';
 }
 
-function renderJobCostCard(cost, missingCount) {
+function renderJobCostCard(cost, missingCount, qb) {
   if (cost.error) {
     document.getElementById('jc-cost-card').innerHTML = '<div class="empty">Could not load cost summary: ' + esc(cost.error) + '</div>';
     return;
@@ -8743,7 +8855,7 @@ function renderJobCostCard(cost, missingCount) {
     if (s !== 'Reconcile' && s !== 'Closed') open++;
   });
   var statusHtml = Object.keys(statuses).map(function(s) {
-    return '<span style="display:inline-block;background:var(--sh-blue-bg);color:var(--sh-blue-fg);border-radius:6px;padding:2px 8px;font-size:12px;margin:2px">' + esc(s) + ' (' + statuses[s] + ')</span>';
+    return '<span class="badge ' + badgeCls(s) + '" style="margin:2px">' + esc(s) + ' (' + statuses[s] + ')</span>';
   }).join(' ');
   var missingBadge = missingCount ? '<span class="badge bd-red" style="margin-left:4px">' + missingCount + ' missing invoice' + (missingCount === 1 ? '' : 's') + '</span>' : '';
   var rowsHtml = renderJobCostRows(cost.rows);
@@ -8752,8 +8864,38 @@ function renderJobCostCard(cost, missingCount) {
     + '<div style="font-size:13px;opacity:.8;margin-bottom:2px">Job Cost — ' + cost.rows.length + ' PO' + (cost.rows.length !== 1 ? 's' : '') + (open ? ' · ' + open + ' open' : '') + '</div>'
     + '<div style="font-size:24px;font-weight:700">$' + cost.totalSpend.toFixed(2) + '</div>'
     + '<div style="margin-top:8px">' + statusHtml + missingBadge + '</div>'
+    + renderQbReconcileRow(cost, qb)
     + '</div>'
     + '<div style="background:var(--c-surface);border-radius:12px;padding:4px 16px;box-shadow:0 1px 4px rgba(0,0,0,0.08)">' + (rowsHtml || '<div class="empty">No POs found for this job.</div>') + '</div>';
+}
+
+// Compares the PO Database's total (cost.totalSpend, every PO regardless of
+// invoice/QuickBooks status) against what's actually posted in QuickBooks
+// for this job (qb.total, live-queried by getQuickBooksJobTotal_ -- only
+// POs that made it all the way through invoice review to a posted Bill).
+// A gap is often just POs not yet invoiced/posted rather than an error, so
+// this explains it via poCount instead of only flagging a bare mismatch.
+function renderQbReconcileRow(cost, qb) {
+  if (!qb || !qb.connected) return '';
+  if (qb.error) {
+    return '<div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.15);font-size:12px;opacity:.85">Could not verify against QuickBooks: ' + esc(qb.error) + '</div>';
+  }
+  var diff = cost.totalSpend - qb.total;
+  var closeEnough = Math.abs(diff) < 0.01;
+  var unpostedPOs = cost.rows.length - qb.poCount;
+  var matchLine = closeEnough
+    ? '<span style="color:#8FEFC3;font-weight:600">&#10003; Matches database</span>'
+    : '<span style="color:#FFCB8A;font-weight:600">Δ $' + Math.abs(diff).toFixed(2) + (diff > 0 ? ' more in database' : ' more in QuickBooks') + '</span>';
+  var staleBillNote = (qb.billCount < qb.expectedBillCount)
+    ? '<div style="margin-top:2px;opacity:.85">' + (qb.expectedBillCount - qb.billCount) + ' posted Bill' + (qb.expectedBillCount - qb.billCount === 1 ? '' : 's') + ' no longer found in QuickBooks</div>'
+    : '';
+  var unpostedNote = (!closeEnough && unpostedPOs > 0)
+    ? '<div style="margin-top:2px;opacity:.85">' + unpostedPOs + ' PO' + (unpostedPOs === 1 ? '' : 's') + ' not yet posted to QuickBooks</div>'
+    : '';
+  return '<div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.15);font-size:12px">'
+    + '<div>QuickBooks: <b>$' + qb.total.toFixed(2) + '</b> (' + qb.billCount + ' bill' + (qb.billCount === 1 ? '' : 's') + ') &middot; ' + matchLine + '</div>'
+    + staleBillNote + unpostedNote
+    + '</div>';
 }
 
 function renderJobCostRows(rows) {

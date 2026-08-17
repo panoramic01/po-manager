@@ -3729,6 +3729,65 @@ function getJobCostSummary_(jobRef) {
   } catch(e) { return { error: e.toString() }; }
 }
 
+/**
+ * Sums this job's actual QuickBooks Bill totals so the Job Dashboard can be
+ * checked against the PO Database's own total (cost.totalSpend) for drift --
+ * a Bill edited or voided directly in QuickBooks after posting would go
+ * unnoticed otherwise. Re-queries QBO live for each Bill's *current*
+ * TotalAmt rather than trusting the Purchase Line Item Log, which is only a
+ * point-in-time copy taken at post time.
+ *
+ * Bill Ids come from the QB Invoice Staging sheet's per-PO record (one row
+ * per invoice review; 'QB Bill Id' is set once createQuickBooksBill posts
+ * it) filtered to this job's Job Ref. One batched query covers every Bill
+ * Id at once via QBO's query language IN-list rather than N separate calls.
+ *
+ * Unauthenticated helper -- only called from getJobDashboard, which has
+ * already authorized the caller. Returns { connected:false } if QuickBooks
+ * was never connected, so the dashboard can just hide the comparison.
+ */
+function getQuickBooksJobTotal_(jobRef) {
+  try {
+    if (!getQuickBooksService_().hasAccess()) return { connected: false };
+
+    var target = (jobRef || '').toString().trim().toLowerCase();
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(QB_STAGING_SHEET);
+    if (!sheet) return { connected: true, total: 0, billCount: 0, poCount: 0 };
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { connected: true, total: 0, billCount: 0, poCount: 0 };
+
+    var data = sheet.getRange(2, 1, lastRow - 1, QB_STAGING_HEADERS.length).getValues();
+    var billIds = {}, poCount = 0;
+    for (var i = 0; i < data.length; i++) {
+      var row = data[i];
+      var rowJob = (row[QB_STAGING_COL['Job Ref']] || '').toString().trim().toLowerCase();
+      if (rowJob !== target) continue;
+      var billId = (row[QB_STAGING_COL['QB Bill Id']] || '').toString().trim();
+      if (!billId) continue;
+      billIds[billId] = true;
+      poCount++;
+    }
+    var ids = Object.keys(billIds);
+    if (!ids.length) return { connected: true, total: 0, billCount: 0, poCount: 0 };
+
+    var query = "SELECT Id, TotalAmt FROM Bill WHERE Id IN (" +
+      ids.map(function(id) { return "'" + id.replace(/'/g, "") + "'"; }).join(',') + ")";
+    var res = quickbooksApiGet_('/query?query=' + encodeURIComponent(query));
+    if (!res.success) return { connected: true, error: res.error };
+
+    var bills = (res.data && res.data.QueryResponse && res.data.QueryResponse.Bill) || [];
+    var total = 0;
+    bills.forEach(function(b) { total += parseFloat(b.TotalAmt) || 0; });
+
+    // billCount < expectedBillCount means a Bill this app posted no longer
+    // exists in QuickBooks (voided/deleted there directly) -- surfaced to
+    // the caller rather than silently under-totaling.
+    return { connected: true, total: total, billCount: bills.length, expectedBillCount: ids.length, poCount: poCount };
+  } catch (e) {
+    return { connected: true, error: e.toString() };
+  }
+}
+
 // ── Missing Invoices ──────────────────────────────────────────────────────────
 /** Public, authorized entry point for the client. */
 function getMissingInvoices(payload) {
@@ -3860,6 +3919,7 @@ function getJobDashboard(payload) {
     meta.status = (membership && membership.section && membership.section.name) || '';
 
     var cost = getJobCostSummary_(shortJobName);
+    var qb = getQuickBooksJobTotal_(shortJobName);
 
     var missingAll = getMissingInvoices_();
     var missingRows = [];
@@ -3871,7 +3931,7 @@ function getJobDashboard(payload) {
 
     var quality = getQualityWalkHistory_(jobGid);
 
-    return { success: true, meta: meta, cost: cost, missingCount: missingRows.length, missingRows: missingRows, quality: quality };
+    return { success: true, meta: meta, cost: cost, qb: qb, missingCount: missingRows.length, missingRows: missingRows, quality: quality };
   } catch (e) { return { error: e.toString() }; }
 }
 
