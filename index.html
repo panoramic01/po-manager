@@ -8743,7 +8743,7 @@ function renderJobCostCard(cost, missingCount) {
     if (s !== 'Reconcile' && s !== 'Closed') open++;
   });
   var statusHtml = Object.keys(statuses).map(function(s) {
-    return '<span style="display:inline-block;background:var(--sh-blue-bg);border-radius:6px;padding:2px 8px;font-size:12px;margin:2px">' + esc(s) + ' (' + statuses[s] + ')</span>';
+    return '<span style="display:inline-block;background:var(--sh-blue-bg);color:var(--sh-blue-fg);border-radius:6px;padding:2px 8px;font-size:12px;margin:2px">' + esc(s) + ' (' + statuses[s] + ')</span>';
   }).join(' ');
   var missingBadge = missingCount ? '<span class="badge bd-red" style="margin-left:4px">' + missingCount + ' missing invoice' + (missingCount === 1 ? '' : 's') + '</span>' : '';
   var rowsHtml = renderJobCostRows(cost.rows);
@@ -8758,16 +8758,33 @@ function renderJobCostCard(cost, missingCount) {
 
 function renderJobCostRows(rows) {
   return rows.map(function(row) {
-    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--c-border-soft);gap:8px">'
+    return '<div onclick="jcOpenPO(\'' + esc(row.poNum) + '\')" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--c-border-soft);gap:8px">'
       + '<div style="flex:1;min-width:0">'
       + '<div style="font-size:13px;font-weight:600;color:var(--c-ink)">' + (row.vendor || '—') + '</div>'
       + '<div style="font-size:11px;color:var(--c-ink-soft)">PO #' + row.poNum + (row.invoiceNum ? ' · Inv ' + row.invoiceNum : ' · <span style="color:#e57373">No invoice</span>') + ' · ' + row.dateIssued + '</div>'
       + '</div>'
-      + '<div style="text-align:right;flex-shrink:0">'
+      + '<div style="text-align:right;flex-shrink:0;display:flex;align-items:center;gap:6px">'
+      + '<div>'
       + '<div style="font-size:13px;font-weight:700;color:var(--c-navy)">$' + (row.total ? row.total.toFixed(2) : '—') + '</div>'
       + '<div style="font-size:11px;color:var(--c-ink-soft)">' + (row.status || '') + '</div>'
+      + '</div>'
+      + '<span style="color:var(--c-ink-faint)">&rsaquo;</span>'
       + '</div></div>';
   }).join('');
+}
+
+// Job Dashboard PO rows come from a job-scoped cost query, not the main PO
+// list (G.pos), which may not contain every PO for this job -- fall back to
+// a server lookup by number (same pattern as lookupPO) before opening detail.
+function jcOpenPO(poNum) {
+  var found = G.pos.find(function(p) { return p.poNum === poNum; });
+  if (found) { showPODetail(poNum); return; }
+  gasCall('findPOByNumber', { poNum: poNum }, function(p) {
+    if (!p) { showToast('PO ' + poNum + ' not found'); return; }
+    if (p.error) { showToast('Error: ' + p.error); return; }
+    G.pos.push(p);
+    showPODetail(poNum);
+  }, function(err) { showToast('Error: Lookup failed — check connection'); console.error(err); });
 }
 
 // ── Missing Invoices ──────────────────────────────────────────────────────────
