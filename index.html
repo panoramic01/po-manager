@@ -1090,26 +1090,37 @@
 
       <div style="padding:16px 16px 0">
         <div style="display:flex;gap:8px">
-          <button onclick="showMaterialLogForm('In')" style="flex:1;background:var(--c-navy);color:#fff;border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">Log Material In</button>
-          <button onclick="showMaterialLogForm('Out')" style="flex:1;background:var(--c-danger);color:#fff;border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">Take Material Out</button>
+          <button onclick="showMaterialPullForm()" style="flex:1;background:var(--c-danger);color:#fff;border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">Pull for Job</button>
+          <button onclick="showMaterialReturnForm()" style="flex:1;background:var(--c-navy);color:#fff;border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">Return from Job</button>
         </div>
+        <p style="font-size:12px;color:var(--c-ink-soft);margin:8px 2px 0">Stock arrives by creating a "Stock/warehouse order" PO -- receiving it in QuickBooks is what adds to On Hand below. Pull moves stock out to a job; Return brings leftover material back at a cost you enter (for material with no vendor invoice, e.g. leftover from a job).</p>
       </div>
 
       <div id="mi-form" style="display:none;background:var(--c-surface);border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin:12px 16px 0">
-        <div id="mi-form-title" style="font-size:14px;font-weight:700;color:var(--c-navy);margin-bottom:12px">Log Material In</div>
+        <div id="mp-title" style="font-size:14px;font-weight:700;color:var(--c-navy);margin-bottom:12px">Pull Material for Job</div>
         <label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Material</label>
-        <input type="text" id="mi-material" list="mi-material-list" placeholder="Start typing a material name..." style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px" oninput="onMaterialFieldInput()">
-        <datalist id="mi-material-list"></datalist>
+        <select id="mp-material" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">
+          <option value="">— Select —</option>
+        </select>
         <label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Quantity</label>
-        <input type="number" id="mi-qty" min="0" step="any" placeholder="Qty" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">
-        <label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Unit</label>
-        <input type="text" id="mi-unit" placeholder="e.g. EA, BOX, SQ" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">
-        <label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Job / Reference (optional)</label>
-        <input type="text" id="mi-jobref" placeholder="Job name or PO#" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">
+        <input type="number" id="mp-qty" min="0" step="any" placeholder="Qty" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">
+        <div id="mp-cost-group" style="display:none">
+          <label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Cost Per Unit</label>
+          <input type="number" id="mp-unit-cost" min="0" step="0.01" placeholder="$ per unit" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">
+        </div>
+        <label id="mp-job-label" style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Builder &amp; Job *</label>
+        <div style="position:relative">
+          <input type="text" id="mp-job-combo" autocomplete="off" placeholder="e.g. CRESCENT_RIDGE-WEGNER"
+                 oninput="this.value=this.value.toUpperCase().replace(/\s+/g,'_'); mpJobFilter(this.value)"
+                 onfocus="mpJobFilter(this.value)"
+                 style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">
+          <div id="mp-job-dropdown" style="display:none;position:absolute;left:0;right:0;top:100%;background:var(--c-surface);border:1px solid var(--c-border);border-radius:8px;margin-top:4px;max-height:220px;overflow-y:auto;z-index:20;box-shadow:0 4px 12px rgba(0,0,0,0.12)"></div>
+        </div>
         <label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Notes (optional)</label>
-        <input type="text" id="mi-notes" placeholder="Notes" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">
+        <input type="text" id="mp-notes" placeholder="Notes" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">
+        <div id="mp-status" style="font-size:12px;color:var(--c-danger);margin-bottom:4px"></div>
         <div style="display:flex;gap:8px;margin-top:4px">
-          <button onclick="submitMaterialLog()" style="flex:1;background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:700;cursor:pointer">Save</button>
+          <button id="mp-save-btn" onclick="submitMaterialPullOrReturn()" style="flex:1;background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:700;cursor:pointer">Pull Material</button>
           <button onclick="document.getElementById('mi-form').style.display='none'" style="flex:1;background:var(--c-bg);color:var(--c-ink-soft);border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
         </div>
       </div>
@@ -8444,31 +8455,7 @@ function irCreateBill() {
 // ── Material Inventory ────────────────────────────────────────────────────────
 function openMaterialInventoryPanel() {
   document.getElementById('mi-form').style.display = 'none';
-  loadMaterialCatalog();
   loadMaterialInventory();
-}
-
-function loadMaterialCatalog() {
-  if (G.materialCatalogLoaded) return;
-  gasCall('getMaterialCatalog', {}, function(data) {
-    G.materialCatalog = data.items || [];
-    G.materialCatalogLoaded = true;
-    var dl = document.getElementById('mi-material-list');
-    dl.innerHTML = G.materialCatalog.map(function(it) {
-      return '<option value="' + esc(it.description) + '">';
-    }).join('');
-  }, function(err) {
-    console.error('loadMaterialCatalog failed:', err);
-    showToast('Could not load material list — autocomplete unavailable, you can still type a material name.');
-  });
-}
-
-function onMaterialFieldInput() {
-  var name = document.getElementById('mi-material').value.trim();
-  var match = (G.materialCatalog || []).filter(function(it) { return it.description === name; })[0];
-  if (match && !document.getElementById('mi-unit').value) {
-    document.getElementById('mi-unit').value = match.um;
-  }
 }
 
 function fmtMatQty(n) {
@@ -8479,6 +8466,7 @@ function loadMaterialInventory() {
   document.getElementById('mi-loading').style.display = 'block';
   gasCall('getMaterialInventory', {}, function(data) {
     document.getElementById('mi-loading').style.display = 'none';
+    G.materialInventory = data.materials || [];
     renderMaterialOnHand(data.materials || []);
     renderMaterialLog(data.recentLog || []);
   }, function() {
@@ -8532,48 +8520,120 @@ function renderMaterialLog(log) {
   }).join('');
 }
 
-function showMaterialLogForm(type) {
-  G.miPendingType = type;
-  G.matLogIdemKey = null;
-  document.getElementById('mi-form-title').textContent = type === 'In' ? 'Log Material In' : 'Take Material Out';
-  document.getElementById('mi-material').value = '';
-  document.getElementById('mi-qty').value = '';
-  document.getElementById('mi-unit').value = '';
-  document.getElementById('mi-jobref').value = '';
-  document.getElementById('mi-notes').value = '';
+// Pull and Return share the same form (#mi-form) -- G.matFormMode ('pull' |
+// 'return') drives which fields show and which endpoint submitMaterialPullOrReturn
+// posts to. Both only offer materials already tracked as a real QBO
+// Inventory Item; a material that isn't stocked yet needs to become one via
+// a normal stock PO first.
+function showMaterialFormCommon_(mode) {
+  G.matFormMode = mode;
+  G.matPullIdemKey = null;
+  var sel = document.getElementById('mp-material');
+  var pullable = (G.materialInventory || []).filter(function(m) { return m.qboItemId; });
+  sel.innerHTML = pullable.length
+    ? '<option value="">— Select —</option>' + pullable.map(function(m) {
+        return '<option value="' + esc(m.qboItemId) + '" data-name="' + esc(m.name) + '">' + esc(m.name) + ' (' + fmtMatQty(m.onHand) + ' on hand)</option>';
+      }).join('')
+    : '<option value="">No stocked materials yet</option>';
+  document.getElementById('mp-qty').value = '';
+  document.getElementById('mp-unit-cost').value = '';
+  document.getElementById('mp-job-combo').value = '';
+  document.getElementById('mp-notes').value = '';
+  document.getElementById('mp-status').textContent = '';
   document.getElementById('mi-form').style.display = '';
-  document.getElementById('mi-material').focus();
 }
 
-function submitMaterialLog() {
-  var material = document.getElementById('mi-material').value.trim();
-  var qty = parseFloat(document.getElementById('mi-qty').value);
-  var unit = document.getElementById('mi-unit').value.trim();
-  var jobRef = document.getElementById('mi-jobref').value.trim();
-  var notes = document.getElementById('mi-notes').value.trim();
-  var type = G.miPendingType;
+function showMaterialPullForm() {
+  showMaterialFormCommon_('pull');
+  document.getElementById('mp-title').textContent = 'Pull Material for Job';
+  document.getElementById('mp-cost-group').style.display = 'none';
+  document.getElementById('mp-job-label').textContent = 'Builder & Job *';
+  document.getElementById('mp-save-btn').textContent = 'Pull Material';
+}
 
-  if (!material) { showToast('Enter a material name'); return; }
-  if (!qty || qty <= 0) { showToast('Enter a quantity greater than 0'); return; }
+function showMaterialReturnForm() {
+  showMaterialFormCommon_('return');
+  document.getElementById('mp-title').textContent = 'Return Material from Job';
+  document.getElementById('mp-cost-group').style.display = '';
+  document.getElementById('mp-job-label').textContent = 'Returning From (Builder & Job) *';
+  document.getElementById('mp-save-btn').textContent = 'Return Material';
+}
 
-  if (!G.matLogIdemKey) G.matLogIdemKey = newIdemKey();
+// Same fuzzy Builder&Job combo picker as New PO (cJobFilter/cSelectJobCombo,
+// G.jobComboMap) -- separate ids/functions so this form's dropdown state
+// stays independent of the New PO form's.
+function mpJobFilter(q) {
+  var drop = document.getElementById('mp-job-dropdown');
+  if (!drop || !G.jobComboMap) return;
+  q = (q || '').trim();
+  var combos = Object.keys(G.jobComboMap);
+  var filtered = fuzzySearch(combos, function(c){ return [{ text: c.toLowerCase(), weight: 1 }]; }, q, { limit: 60 });
+  drop.innerHTML = '';
+  if (!filtered.length) { drop.style.display = 'none'; return; }
+  filtered.forEach(function(c) {
+    var d = document.createElement('div');
+    d.textContent = c;
+    d.style.cssText = 'padding:11px 14px;font-size:14px;color:var(--c-ink);cursor:pointer;border-bottom:1px solid var(--c-border-soft)';
+    d.addEventListener('mousedown', function(e) { e.preventDefault(); mpSelectJobCombo(c); });
+    d.addEventListener('touchend',  function(e) { e.preventDefault(); mpSelectJobCombo(c); });
+    drop.appendChild(d);
+  });
+  drop.style.display = '';
+}
 
-  gasCall('logMaterialTransaction', { material: material, unit: unit, type: type, qty: qty, jobRef: jobRef, notes: notes, idempotencyKey: G.matLogIdemKey }, function(res) {
+function mpSelectJobCombo(combo) {
+  var inp  = document.getElementById('mp-job-combo');
+  var drop = document.getElementById('mp-job-dropdown');
+  if (inp)  inp.value = combo;
+  if (drop) drop.style.display = 'none';
+}
+
+function submitMaterialPullOrReturn() {
+  var isReturn = G.matFormMode === 'return';
+  var matSel = document.getElementById('mp-material');
+  var qboItemId = matSel.value;
+  var materialName = matSel.selectedOptions[0] ? matSel.selectedOptions[0].getAttribute('data-name') : '';
+  var qty = parseFloat(document.getElementById('mp-qty').value);
+  var unitCost = parseFloat(document.getElementById('mp-unit-cost').value);
+  var combo = document.getElementById('mp-job-combo').value.trim();
+  var notes = document.getElementById('mp-notes').value.trim();
+  var status = document.getElementById('mp-status');
+  var busyLabel = isReturn ? 'Returning…' : 'Pulling…';
+  var idleLabel = isReturn ? 'Return Material' : 'Pull Material';
+
+  if (!qboItemId) { status.textContent = 'Select a material.'; return; }
+  if (!qty || qty <= 0) { status.textContent = 'Enter a quantity greater than 0.'; return; }
+  if (isReturn && (isNaN(unitCost) || unitCost < 0)) { status.textContent = 'Enter the cost per unit.'; return; }
+  var match = G.jobComboMap && G.jobComboMap[combo];
+  if (!match) { status.textContent = 'Pick a job from the list (Builder & Job).'; return; }
+  status.textContent = '';
+
+  if (!G.matPullIdemKey) G.matPullIdemKey = newIdemKey();
+  var btn = document.getElementById('mp-save-btn');
+  if (btn) { btn.textContent = busyLabel; btn.disabled = true; }
+
+  var fn = isReturn ? 'returnMaterialFromJob' : 'pullMaterialForJob';
+  var reqPayload = isReturn
+    ? { qboItemId: qboItemId, materialName: materialName, qty: qty, unitCost: unitCost, builder: match.builder, jobRef: match.job, notes: notes, idempotencyKey: G.matPullIdemKey }
+    : { qboItemId: qboItemId, qty: qty, builder: match.builder, jobRef: match.job, notes: notes, idempotencyKey: G.matPullIdemKey };
+
+  gasCall(fn, reqPayload, function(res) {
+    if (btn) { btn.textContent = idleLabel; btn.disabled = false; }
     if (res.success) {
-      G.matLogIdemKey = null;
+      G.matPullIdemKey = null;
       document.getElementById('mi-form').style.display = 'none';
-      if (res.invoiceDoc) {
-        downloadBase64Pdf_(res.invoiceDoc.base64, res.invoiceDoc.filename);
-        showToast(res.invoiceDoc.type + ' ' + res.invoiceDoc.docNumber + ' downloaded');
+      if (isReturn) {
+        showToast('Returned from ' + match.builder + ' / ' + match.job + (res.creditWarning ? ' — ' + res.creditWarning : ''));
       } else {
-        showToast(type === 'In' ? 'Material logged in!' : 'Material taken out!');
+        showToast('Pulled for ' + match.builder + ' / ' + match.job + ' — ' + fmtMatQty(res.onHandAfter) + ' left on hand');
       }
       loadMaterialInventory();
     } else {
-      showToast('Error: ' + (res.error || 'Save failed'));
+      status.textContent = res.error || ('Could not ' + (isReturn ? 'return' : 'pull') + ' material.');
     }
   }, function(err) {
-    showToast('Error: ' + abortAwareError(err, 'Could not connect'));
+    if (btn) { btn.textContent = idleLabel; btn.disabled = false; }
+    status.textContent = abortAwareError(err, 'Could not connect');
   }, { timeoutMs: 45000 });
 }
 

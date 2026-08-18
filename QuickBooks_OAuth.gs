@@ -570,6 +570,196 @@ function getWarehouseItemsOnHand_() {
 }
 
 /**
+ * Resolves the QBO account material-consumption InventoryAdjustments post
+ * their COGS side into. Prefers the QBO_MATERIALS_COGS_ACCOUNT_NAME Script
+ * Property (exact name, same convention as QBO_TAX_ITEM_NAME/
+ * QBO_FREIGHT_ITEM_NAME above) when set; otherwise falls back to a fuzzy
+ * search for a Cost-of-Goods-Sold-type account whose name contains
+ * "construction material" (case-insensitive) -- per the "COGS under
+ * construction materials account" direction this was built to. The
+ * resolved account name comes back on the response so it's visible/
+ * auditable rather than silently assumed; a caller with no match at all
+ * gets a clear error instead of a guess.
+ */
+function resolveMaterialsCogsAccountId_() {
+  var exactName = PropertiesService.getScriptProperties().getProperty('QBO_MATERIALS_COGS_ACCOUNT_NAME');
+  if (exactName) {
+    var escaped = exactName.replace(/'/g, "\\'");
+    var res = quickbooksApiGet_('/query?query=' + encodeURIComponent("select Id, Name from Account where Name = '" + escaped + "' and Active = true"));
+    if (!res.success) return { success: false, error: res.error };
+    var acct = res.data && res.data.QueryResponse && res.data.QueryResponse.Account && res.data.QueryResponse.Account[0];
+    if (!acct) return { success: false, error: 'No QuickBooks account named "' + exactName + '" found (QBO_MATERIALS_COGS_ACCOUNT_NAME Script Property).' };
+    return { success: true, accountId: acct.Id, accountName: acct.Name };
+  }
+
+  var listRes = quickbooksApiGet_('/query?query=' + encodeURIComponent("select Id, Name, AccountType from Account where AccountType = 'Cost of Goods Sold' and Active = true maxresults 1000"));
+  if (!listRes.success) return { success: false, error: listRes.error };
+  var accounts = (listRes.data && listRes.data.QueryResponse && listRes.data.QueryResponse.Account) || [];
+  var match = accounts.find(function(a) { return (a.Name || '').toLowerCase().indexOf('construction material') !== -1; });
+  if (!match) {
+    return { success: false, error: 'Could not find a Cost of Goods Sold account matching "construction material" in QuickBooks -- set the QBO_MATERIALS_COGS_ACCOUNT_NAME Script Property to the exact account name to use.' };
+  }
+  return { success: true, accountId: match.Id, accountName: match.Name };
+}
+
+/**
+ * Resolves the vendor Bills/Vendor Credits for material returns post
+ * against -- a permanent, reusable "dummy" vendor with no real payment
+ * activity (see resolveMaterialsCogsAccountId_ for the paired COGS
+ * account this pairs with). Defaults to "Internal Material Transfer";
+ * overridable via the QBO_INTERNAL_TRANSFER_VENDOR_NAME Script Property if
+ * renamed later. Errors clearly if the vendor doesn't exist in QBO yet
+ * rather than guessing -- it needs to be created once, manually, in
+ * QuickBooks first.
+ */
+function resolveInternalTransferVendorId_() {
+  var name = PropertiesService.getScriptProperties().getProperty('QBO_INTERNAL_TRANSFER_VENDOR_NAME') || 'Internal Material Transfer';
+  var escaped = name.replace(/'/g, "\\'");
+  var res = quickbooksApiGet_('/query?query=' + encodeURIComponent("select Id, DisplayName from Vendor where DisplayName = '" + escaped + "' and Active = true"));
+  if (!res.success) return { success: false, error: res.error };
+  var vendor = res.data && res.data.QueryResponse && res.data.QueryResponse.Vendor && res.data.QueryResponse.Vendor[0];
+  if (!vendor) return { success: false, error: 'No QuickBooks vendor named "' + name + '" found -- create it in QuickBooks first (or set QBO_INTERNAL_TRANSFER_VENDOR_NAME to match whatever it\'s actually named).' };
+  return { success: true, vendorId: vendor.Id, vendorName: vendor.DisplayName };
+}
+
+/**
+ * Posts material returning to stock from a job at a known cost (no vendor
+ * invoice involved) -- see returnMaterialFromJob (PO_Manager_Code.gs) for
+ * the caller/validation side. Deliberately does NOT use InventoryAdjustment
+ * (unlike pushMaterialPullToQuickBooks_ below): QBO Online's inventory
+ * adjustment can change quantity but can't attach a custom dollar value to
+ * quantity being added, per Intuit Community guidance -- it's built for
+ * correcting counts, not for bringing in new value. Instead this posts two
+ * transactions against the internal-transfer vendor, using shapes already
+ * verified elsewhere in this app:
+ *   1. A Bill against the Inventory item (qty x unitCost) -- adds to
+ *      Inventory Asset and establishes a real FIFO cost layer, exactly
+ *      like receiving a normal stock PO, just from the internal vendor
+ *      instead of a real one. No CustomerRef, same as a normal stock
+ *      receipt -- this is a warehouse-side event, not a job-side one.
+ *   2. A Vendor Credit, same vendor, one AccountBasedExpenseLineDetail line
+ *      against the materials COGS account tagged to the job's CustomerRef
+ *      (NotBillable) -- credits that job back by the same amount,
+ *      mirroring how the original consumption charged it.
+ * The Vendor Credit is best-effort: if it fails after the Bill already
+ * posted, this still returns success (the inventory/FIFO side is real and
+ * correct) with a creditWarning rather than leaving the material stuck
+ * un-received -- the job-side credit would need fixing manually in QBO in
+ * that case.
+ */
+function pushMaterialReturnToQuickBooks_(qboItemId, qty, unitCost, qbCustomerId, builder, jobRef) {
+  var vendorRes = resolveInternalTransferVendorId_();
+  if (!vendorRes.success) return { success: false, error: vendorRes.error };
+
+  var acctRes = resolveMaterialsCogsAccountId_();
+  if (!acctRes.success) return { success: false, error: acctRes.error };
+
+  var amount = Math.round(qty * unitCost * 100) / 100;
+  var note = 'Returned from ' + builder + ' / ' + jobRef;
+
+  var billPayload = {
+    VendorRef: { value: vendorRes.vendorId },
+    PrivateNote: note,
+    Line: [{
+      DetailType: 'ItemBasedExpenseLineDetail',
+      Amount: amount,
+      Description: note,
+      ItemBasedExpenseLineDetail: {
+        ItemRef: { value: qboItemId },
+        Qty: qty,
+        UnitPrice: unitCost
+      }
+    }]
+  };
+  var billRes = quickbooksApiPost_('/bill', billPayload);
+  if (!billRes.success) return { success: false, error: billRes.error, sentPayload: billPayload };
+  var billId = billRes.data && billRes.data.Bill && billRes.data.Bill.Id;
+
+  var creditPayload = {
+    VendorRef: { value: vendorRes.vendorId },
+    PrivateNote: 'Credit for material ' + note,
+    Line: [{
+      DetailType: 'AccountBasedExpenseLineDetail',
+      Amount: amount,
+      Description: 'Credit for material ' + note,
+      AccountBasedExpenseLineDetail: {
+        AccountRef: { value: acctRes.accountId },
+        CustomerRef: { value: qbCustomerId },
+        BillableStatus: 'NotBillable'
+      }
+    }]
+  };
+  var creditRes = quickbooksApiPost_('/vendorcredit', creditPayload);
+  var vendorCreditId = null, creditWarning = null;
+  if (!creditRes.success) {
+    creditWarning = 'Material received into inventory (Bill ' + billId + '), but crediting the job failed: ' + creditRes.error + ' -- fix this manually in QuickBooks.';
+  } else {
+    vendorCreditId = creditRes.data && creditRes.data.VendorCredit && creditRes.data.VendorCredit.Id;
+  }
+
+  return { success: true, amount: amount, billId: billId, vendorCreditId: vendorCreditId, creditWarning: creditWarning };
+}
+
+/**
+ * Posts the QBO InventoryAdjustment that actually pulls stock for a job --
+ * see pullMaterialForJob (PO_Manager_Code.gs) for the caller/validation
+ * side. Re-reads the Item's live QuantityOnHand immediately before posting
+ * (never trusts a client-supplied number for the hard stop) and sends an
+ * absolute NewQty rather than a relative diff, to avoid any ambiguity
+ * between what was read and what gets posted.
+ *
+ * IMPORTANT / unverified: I was not able to confirm QuickBooks Online's
+ * exact InventoryAdjustment request schema against Intuit's own reference
+ * before writing this -- the docs page is a JS-rendered app that didn't
+ * return usable content to automated fetching, and no verified real-world
+ * example turned up anywhere else I could reach (not even in the popular
+ * node-quickbooks community SDK, which doesn't implement this endpoint at
+ * all). AdjustAccountRef is confirmed correct via multiple independent
+ * sources; the Line/InventoryAdjustmentLineDetail shape follows the same
+ * pattern every other QBO transaction type in this codebase already uses,
+ * but hasn't been independently confirmed for this specific entity.
+ * CustomerRef at the line level (for job attribution) is similarly
+ * unconfirmed -- if QBO doesn't support it here, it may get silently
+ * ignored, meaning quantity/cost would move correctly but the job tag
+ * wouldn't stick. Verify the very first real pull directly in QuickBooks
+ * (Inventory Asset movement + which job it landed on) before trusting this.
+ */
+function pushMaterialPullToQuickBooks_(qboItemId, qty, qbCustomerId, builder, jobRef) {
+  var itemRes = quickbooksApiGet_('/query?query=' + encodeURIComponent("select Id, Name, QtyOnHand from Item where Id = '" + qboItemId.replace(/'/g, "\\'") + "'"));
+  if (!itemRes.success) return { success: false, error: itemRes.error };
+  var item = itemRes.data && itemRes.data.QueryResponse && itemRes.data.QueryResponse.Item && itemRes.data.QueryResponse.Item[0];
+  if (!item) return { success: false, error: 'Could not find that item in QuickBooks.' };
+
+  var onHand = parseFloat(item.QtyOnHand) || 0;
+  if (qty > onHand) {
+    return { success: false, error: 'Only ' + onHand + ' on hand, can\'t pull ' + qty + '.' };
+  }
+  var newQty = onHand - qty;
+
+  var acctRes = resolveMaterialsCogsAccountId_();
+  if (!acctRes.success) return { success: false, error: acctRes.error };
+
+  var adjPayload = {
+    TxnDate: Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd'),
+    PrivateNote: 'Pulled for ' + builder + ' / ' + jobRef,
+    AdjustAccountRef: { value: acctRes.accountId },
+    Line: [{
+      DetailType: 'InventoryAdjustmentLineDetail',
+      InventoryAdjustmentLineDetail: {
+        ItemRef: { value: qboItemId },
+        NewQty: newQty,
+        CustomerRef: { value: qbCustomerId }
+      }
+    }]
+  };
+
+  var postRes = quickbooksApiPost_('/inventoryadjustment', adjPayload);
+  if (!postRes.success) return { success: false, error: postRes.error, sentPayload: adjPayload };
+
+  return { success: true, materialName: item.Name, onHandAfter: newQty, cogsAccountName: acctRes.accountName };
+}
+
+/**
  * Client-facing: matches a batch of line-item descriptions against the
  * learned item-mapping sheet first, falling back to the cached QBO catalog
  * fuzzy matcher on a miss (used when the review screen opens a staging
