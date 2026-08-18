@@ -3206,7 +3206,6 @@ function getMaterialInventory(payload) {
 
     var sheet = ensureSheetWithHeaders_('Material Inventory Log', MATERIAL_LOG_HEADERS);
     var data = sheet.getDataRange().getValues();
-    if (data.length < 2) return { materials: [], recentLog: [] };
 
     var totals = {}; // material name -> { name, unit, qtyIn, qtyOut }
     var log = [];
@@ -3238,8 +3237,28 @@ function getMaterialInventory(payload) {
 
     var materials = Object.keys(totals).sort().map(function(name) {
       var t = totals[name];
-      return { name: t.name, unit: t.unit, qtyIn: t.qtyIn, qtyOut: t.qtyOut, onHand: t.qtyIn - t.qtyOut };
+      return { name: t.name, unit: t.unit, qtyIn: t.qtyIn, qtyOut: t.qtyOut, onHand: t.qtyIn - t.qtyOut, source: 'log' };
     });
+
+    // QBO is authoritative for on-hand quantity on any material mapped to a
+    // real Inventory Item, per the locked design -- overrides the Sheets-log
+    // aggregate for that material rather than trusting the local In/Out sum,
+    // which never sees quantity that moved via a QBO Bill (receiving a stock
+    // PO) directly. Best-effort: a QuickBooks hiccup just falls back to
+    // whatever the Sheets log already showed, same as before this existed.
+    var qboItems = getWarehouseItemsOnHand_();
+    qboItems.forEach(function(qi) {
+      var key = (qi.name || '').toString().trim().toLowerCase();
+      var existing = key && materials.find(function(m) { return m.name.toString().trim().toLowerCase() === key; });
+      if (existing) {
+        existing.onHand = qi.onHand;
+        existing.source = 'quickbooks';
+        existing.qboItemName = qi.qboItemName;
+      } else {
+        materials.push({ name: qi.qboItemName, unit: '', qtyIn: null, qtyOut: null, onHand: qi.onHand, source: 'quickbooks', qboItemName: qi.qboItemName });
+      }
+    });
+    materials.sort(function(a, b) { return a.name.localeCompare(b.name); });
 
     log.sort(function(a, b) { return b._rowIndex - a._rowIndex; });
 

@@ -8495,9 +8495,15 @@ function renderMaterialOnHand(materials) {
   }
   el.innerHTML = materials.map(function(m) {
     var color = m.onHand <= 0 ? 'var(--c-danger)' : 'var(--c-navy)';
+    // Stocked materials mapped to a real QBO Inventory Item show a small
+    // source tag -- their on-hand number comes live from QuickBooks, not
+    // this sheet's own In/Out sum, which is worth being visible about.
+    var sourceTag = m.source === 'quickbooks'
+      ? '<span style="font-size:10px;font-weight:600;color:var(--c-navy);background:var(--sh-blue-bg,#e8f0fe);border-radius:4px;padding:1px 6px;margin-left:6px">QuickBooks</span>'
+      : '';
     return '<div class="po-item">' +
       '<div class="row-between">' +
-        '<span class="po-num">' + esc(m.name) + '</span>' +
+        '<span class="po-num">' + esc(m.name) + sourceTag + '</span>' +
         '<span style="font-weight:700;color:' + color + '">' + fmtMatQty(m.onHand) + (m.unit ? ' ' + esc(m.unit) : '') + '</span>' +
       '</div>' +
     '</div>';

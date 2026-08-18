@@ -533,6 +533,54 @@ function getQBItemMap_() {
 }
 
 /**
+ * For every material mapped to a real QBO Inventory Item (QB Item Map,
+ * 'stock' lane), returns its live QuantityOnHand straight from QuickBooks --
+ * QBO is the authoritative source for on-hand quantity on those materials
+ * per the locked design (see the inventory-integration plan), not the
+ * Material Inventory Log sheet's own In/Out sum, which never sees quantity
+ * that arrived via a QBO Bill directly. Called from getMaterialInventory
+ * (PO_Manager_Code.gs) to merge QBO's numbers into that screen. Read-only,
+ * one batched query for however many distinct Items are mapped -- not one
+ * round-trip per material. Best-effort: returns [] on any failure (not
+ * connected, network hiccup, etc.) rather than breaking the whole screen.
+ */
+function getWarehouseItemsOnHand_() {
+  try {
+    var sheet = ensureSheetWithHeaders_(QB_ITEM_MAP_SHEET, QB_ITEM_MAP_HEADERS);
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return [];
+    var data = sheet.getRange(2, 1, lastRow - 1, QB_ITEM_MAP_HEADERS.length).getValues();
+
+    var descById = {}; // qboItemId -> the learned description sample, for display
+    data.forEach(function(row) {
+      var lane = (row[4] || 'direct').toString().trim() || 'direct';
+      var qboItemId = (row[2] || '').toString().trim();
+      if (lane !== 'stock' || !qboItemId) return;
+      if (!descById[qboItemId]) descById[qboItemId] = (row[1] || row[3] || '').toString().trim();
+    });
+    var ids = Object.keys(descById);
+    if (!ids.length) return [];
+
+    var idFilter = ids.map(function(id) { return "'" + id.replace(/'/g, "\\'") + "'"; }).join(',');
+    var query = 'select Id, Name, QtyOnHand from Item where Id in (' + idFilter + ')';
+    var res = quickbooksApiGet_('/query?query=' + encodeURIComponent(query));
+    if (!res.success) return [];
+
+    var items = (res.data && res.data.QueryResponse && res.data.QueryResponse.Item) || [];
+    return items.map(function(it) {
+      return {
+        name: descById[it.Id] || it.Name,
+        qboItemId: it.Id,
+        qboItemName: it.Name,
+        onHand: parseFloat(it.QtyOnHand) || 0
+      };
+    });
+  } catch (e) {
+    return [];
+  }
+}
+
+/**
  * Client-facing: matches a batch of line-item descriptions against the
  * learned item-mapping sheet first, falling back to the cached QBO catalog
  * fuzzy matcher on a miss (used when the review screen opens a staging
