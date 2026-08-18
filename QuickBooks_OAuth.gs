@@ -17,6 +17,17 @@
 var QBO_SANDBOX_BASE_URL = 'https://sandbox-quickbooks.api.intuit.com';
 var QBO_PRODUCTION_BASE_URL = 'https://quickbooks.api.intuit.com';
 
+// ─── Warehouse/stock lane ────────────────────────────────────────────────────
+// Stock POs use this fixed placeholder as their Job Ref (createPO requires a
+// jobRef, so there's no such thing as "no job" in the app's own schema) --
+// purely an app-side label, never looked up as or sent to QBO as a real
+// Customer/Job. Every guardrail that distinguishes "warehouse stock" from
+// "direct-to-job" keys off this same check.
+var WAREHOUSE_JOB_REF = 'WAREHOUSE';
+function isWarehouseJob_(jobRef) {
+  return (jobRef || '').toString().trim().toUpperCase() === WAREHOUSE_JOB_REF;
+}
+
 /** Reads the QBO_ENVIRONMENT script property ('production' | anything else = sandbox, the safe default). */
 function getQuickBooksBaseUrl_() {
   var env = (PropertiesService.getScriptProperties().getProperty('QBO_ENVIRONMENT') || '').toLowerCase();
@@ -343,49 +354,55 @@ function getQuickBooksItemCatalogForReview(payload) {
 }
 
 /**
- * Client-facing: active Income + Expense/COGS accounts for the "Add New
- * QuickBooks Item" form's account pickers. IncomeAccountRef is a required
- * field on every Service/NonInventory Item per QBO's schema, even for an
- * item that will only ever appear on Bills -- ExpenseAccountRef is optional
- * but lets the new item categorize correctly on the Bill it's about to be
- * used on instead of falling back to QBO's default expense account.
+ * Client-facing: active Income + Expense/COGS + Inventory Asset accounts for
+ * the "Add New QuickBooks Item" form's account pickers. IncomeAccountRef is a
+ * required field on every Service/NonInventory/Inventory Item per QBO's
+ * schema, even for an item that will only ever appear on Bills --
+ * ExpenseAccountRef is optional but lets the new item categorize correctly on
+ * the Bill it's about to be used on instead of falling back to QBO's default
+ * expense account. assetAccounts (AccountSubType 'Inventory') is only used
+ * when creating a stocked Inventory-type item -- see createQuickBooksItem.
  */
 function getQuickBooksAccountsForNewItem(payload) {
   var auth = authorizeInvoiceReviewer_(payload);
   if (!auth.ok) return { error: auth.error, code: auth.code };
-  var query = 'select Id, Name, AccountType from Account where Active = true maxresults 1000';
+  var query = 'select Id, Name, AccountType, AccountSubType from Account where Active = true maxresults 1000';
   var res = quickbooksApiGet_('/query?query=' + encodeURIComponent(query));
   if (!res.success) return res;
   var accounts = ((res.data && res.data.QueryResponse && res.data.QueryResponse.Account) || []).map(function(a) {
-    return { id: a.Id, name: a.Name, accountType: a.AccountType };
+    return { id: a.Id, name: a.Name, accountType: a.AccountType, accountSubType: a.AccountSubType };
   });
   var incomeTypes = { 'Income': true, 'Other Income': true };
   var expenseTypes = { 'Expense': true, 'Cost of Goods Sold': true, 'Other Expense': true };
   return {
     success: true,
     incomeAccounts: accounts.filter(function(a) { return incomeTypes[a.accountType]; }),
-    expenseAccounts: accounts.filter(function(a) { return expenseTypes[a.accountType]; })
+    expenseAccounts: accounts.filter(function(a) { return expenseTypes[a.accountType]; }),
+    assetAccounts: accounts.filter(function(a) { return a.accountSubType === 'Inventory'; })
   };
 }
 
 /**
- * Creates a new Product/Service Item directly in QuickBooks so an invoice
- * line that doesn't match anything in the catalog can be paired without
- * leaving the review screen. Owner-gated, same as the rest of the QBO write
- * path (createQuickBooksBill). Invalidates the cached catalog on success so
- * the next full catalog load picks the new item up too; also returns the
- * item directly so the caller can splice it into an already-loaded catalog
- * without waiting on a refetch.
+ * Creates a new Product/Service/Inventory Item directly in QuickBooks so an
+ * invoice line that doesn't match anything in the catalog can be paired
+ * without leaving the review screen. Service/NonInventory stay gated to the
+ * regular admin+office reviewer group; Type: 'Inventory' is admin-only --
+ * creating a stocked item means picking real GL accounts (Inventory Asset,
+ * COGS), a bigger financial decision than matching an existing item, per the
+ * locked "dummy proof" requirement. Invalidates the cached catalog on
+ * success so the next full catalog load picks the new item up too; also
+ * returns the item directly so the caller can splice it into an
+ * already-loaded catalog without waiting on a refetch.
  */
 function createQuickBooksItem(payload) {
-  var auth = authorizeInvoiceReviewer_(payload);
+  var type = payload.type === 'NonInventory' ? 'NonInventory' : (payload.type === 'Inventory' ? 'Inventory' : 'Service');
+  var auth = type === 'Inventory' ? authorizeCaller(payload, ['admin']) : authorizeInvoiceReviewer_(payload);
   if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
 
   var name = (payload.name || '').toString().trim();
   if (!name) return { success: false, error: 'Item name is required.' };
   var incomeAccountId = (payload.incomeAccountId || '').toString().trim();
   if (!incomeAccountId) return { success: false, error: 'Income account is required.' };
-  var type = payload.type === 'NonInventory' ? 'NonInventory' : 'Service';
 
   var body = {
     Name: name,
@@ -396,6 +413,20 @@ function createQuickBooksItem(payload) {
   if (payload.parentId) {
     body.SubItem = true;
     body.ParentRef = { value: payload.parentId.toString() };
+  }
+
+  if (type === 'Inventory') {
+    var assetAccountId = (payload.assetAccountId || '').toString().trim();
+    if (!assetAccountId) return { success: false, error: 'Inventory Asset account is required.' };
+    if (!payload.expenseAccountId) return { success: false, error: 'COGS/Expense account is required for an Inventory item.' };
+    // Bootstrapped at 0 on-hand, per the locked design -- the receiving Bill
+    // that follows right after is what establishes the real FIFO layer at
+    // the vendor's actual cost, so starting at the invoice quantity here
+    // would double-count it.
+    body.TrackQtyOnHand = true;
+    body.QtyOnHand = 0;
+    body.InvStartDate = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    body.AssetAccountRef = { value: assetAccountId };
   }
 
   var postRes = quickbooksApiPost_('/item', body);
@@ -475,10 +506,13 @@ function matchLineItemToQBOItem_(description, catalogItems) {
 
 /**
  * Loads the full learned item-mapping sheet (QB_ITEM_MAP_SHEET, written by
- * saveQBItemMapping_ in PO_Manager_Code.gs on Approve) in one read: normalized
- * description -> {qboItemId, qboItemName}. Returns {} (never throws) if the
- * sheet is empty or doesn't exist yet -- matchInvoiceLineItems then falls
- * through to the fuzzy matcher exactly as it did before this existed.
+ * saveQBItemMapping_ in PO_Manager_Code.gs on Approve) in one read: keyed by
+ * normalized description + "|" + lane ('stock' | 'direct') -> {qboItemId,
+ * qboItemName}. Lane-keyed rather than description-only so a material that's
+ * sometimes bought direct-for-a-job and sometimes into stock can hold both
+ * mappings without one overwriting the other. Returns {} (never throws) if
+ * the sheet is empty or doesn't exist yet -- matchInvoiceLineItems then
+ * falls through to the fuzzy matcher exactly as it did before this existed.
  */
 function getQBItemMap_() {
   var map = {};
@@ -486,12 +520,13 @@ function getQBItemMap_() {
     var sheet = ensureSheetWithHeaders_(QB_ITEM_MAP_SHEET, QB_ITEM_MAP_HEADERS);
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) return map;
-    var data = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
+    var data = sheet.getRange(2, 1, lastRow - 1, QB_ITEM_MAP_HEADERS.length).getValues();
     data.forEach(function(row) {
       var key = (row[0] || '').toString().trim();
       var qboItemId = (row[2] || '').toString().trim();
+      var lane = (row[4] || 'direct').toString().trim() || 'direct';
       if (!key || !qboItemId) return;
-      map[key] = { qboItemId: qboItemId, qboItemName: (row[3] || '').toString().trim() };
+      map[key + '|' + lane] = { qboItemId: qboItemId, qboItemName: (row[3] || '').toString().trim() };
     });
   } catch (e) { /* best-effort, same fail-open convention as getQuickBooksVendorId_ */ }
   return map;
@@ -501,8 +536,18 @@ function getQBItemMap_() {
  * Client-facing: matches a batch of line-item descriptions against the
  * learned item-mapping sheet first, falling back to the cached QBO catalog
  * fuzzy matcher on a miss (used when the review screen opens a staging
- * row). payload: {descriptions: string[], learnedOnly?: boolean}. Returns
- * one match (or null) per input description, same order.
+ * row). payload: {descriptions: string[], jobRef?: string, learnedOnly?:
+ * bool}. Returns one match (or null) per input description, same order.
+ *
+ * jobRef determines the lane ('stock' when it's the WAREHOUSE placeholder,
+ * 'direct' otherwise) -- both the learned-map lookup and the fuzzy-match
+ * fallback are lane-scoped. Inventory-type QBO Items are never offered
+ * outside the 'stock' lane: an Inventory item accidentally attached to a
+ * real job's Bill would silently misbook that cost into Inventory Asset
+ * instead of the job's COGS (QBO doesn't move inventory cost to a job just
+ * from a CustomerRef tag), so this is a hard exclusion, not a preference --
+ * see the matching hard-stop in createQuickBooksBill for the
+ * can't-be-bypassed-by-the-client backstop.
  *
  * learnedOnly (used for tax/freight lines) skips the fuzzy-matcher fallback
  * entirely -- scoring "Sales Tax" by token overlap against a materials
@@ -520,14 +565,17 @@ function matchInvoiceLineItems(payload) {
   var catalogRes = getQuickBooksItemCatalog_();
   if (!catalogRes.success) return { error: catalogRes.error || 'Could not load QuickBooks Item catalog' };
 
+  var lane = isWarehouseJob_(payload.jobRef) ? 'stock' : 'direct';
+  var matchableItems = lane === 'stock' ? catalogRes.items : catalogRes.items.filter(function(it) { return it.type !== 'Inventory'; });
+
   var learnedMap = getQBItemMap_();
   var descriptions = payload.descriptions || [];
   var learnedOnly = !!payload.learnedOnly;
   var matches = descriptions.map(function(d) {
     var key = qboNormalizeItemText_(d);
-    var learned = key && learnedMap[key];
+    var learned = key && learnedMap[key + '|' + lane];
     if (learned) return { qboItemId: learned.qboItemId, qboItemName: learned.qboItemName, matchConfidence: 1 };
-    return learnedOnly ? null : matchLineItemToQBOItem_(d, catalogRes.items);
+    return learnedOnly ? null : matchLineItemToQBOItem_(d, matchableItems);
   });
   return { success: true, matches: matches };
 }
@@ -592,6 +640,48 @@ function quickbooksUploadAttachment_(fileBlob, entityType, entityId) {
   return { success: true, attachableId: entry.Attachable && entry.Attachable.Id };
 }
 
+/**
+ * For a WAREHOUSE-lane (stock) invoice, folds freight/delivery-fee AND tax
+ * line amounts into the material lines' Amount pro-rata by dollar share,
+ * instead of posting them as their own Bill lines -- standard freight-in
+ * capitalization: a QBO inventory line's FIFO cost is just Amount/Qty, and
+ * there's no separate "freight" field on an inventory line, so getting an
+ * accurate landed cost per unit means folding it in before posting rather
+ * than expensing it separately. Sales-tax treatment on stock receipts is
+ * still an open question with whoever does the books (freight is the
+ * confirmed case) -- tax is folded the same way as freight here as the
+ * simplest consistent Phase-1 default, not because it's confirmed correct;
+ * revisit if the bookkeeper wants tax kept separate.
+ *
+ * Returns a NEW array of material lines only (shallow-copied, originals
+ * untouched) -- freight/tax lines never make it into the returned list, so
+ * callers building Bill lines from this never see them. Direct-to-job
+ * invoices never call this; their freight/tax lines keep posting as their
+ * own Bill line exactly as before.
+ */
+function applyWarehouseNonMaterialAllocation_(lineItems) {
+  var materialLines = (lineItems || [])
+    .filter(function(li) { return !li.skip && li.lineType !== 'freight' && li.lineType !== 'tax'; })
+    .map(function(li) { return Object.assign({}, li); });
+
+  var extraTotal = (lineItems || [])
+    .filter(function(li) { return !li.skip && (li.lineType === 'freight' || li.lineType === 'tax'); })
+    .reduce(function(s, li) { return s + (parseFloat(li.amount) || 0); }, 0);
+  if (!extraTotal || !materialLines.length) return materialLines;
+
+  var materialTotal = materialLines.reduce(function(s, li) { return s + (parseFloat(li.amount) || 0); }, 0);
+  if (!materialTotal) return materialLines; // nothing sensible to allocate a $ share against
+
+  materialLines.forEach(function(li) {
+    var share = (parseFloat(li.amount) || 0) / materialTotal;
+    var added = Math.round(extraTotal * share * 100) / 100;
+    li.amount = Math.round(((parseFloat(li.amount) || 0) + added) * 100) / 100;
+    var qty = parseFloat(li.qty);
+    if (qty) li.rate = Math.round((li.amount / qty) * 10000) / 10000;
+  });
+  return materialLines;
+}
+
 // ─── QuickBooks Bill creation (write path) ───────────────────────────────────
 /**
  * Creates a Bill in QuickBooks from an Approved staging row. Owner-gated,
@@ -634,30 +724,67 @@ function createQuickBooksBill(payload) {
     if (!staging.qbVendorId) {
       return { success: false, error: 'No QuickBooks Vendor Id linked for "' + staging.vendor + '" -- add it in the QB Vendor Map before creating this Bill.' };
     }
-    if (!staging.qbCustomerId) {
+    // Stock (WAREHOUSE) POs receive with no job attached -- the whole point
+    // is that the material isn't attributed to a job yet -- so the usual
+    // Customer/Job requirement is skipped for them. Any other job still
+    // requires one exactly as before.
+    var isWarehouse = isWarehouseJob_(staging.jobRef);
+    if (!isWarehouse && !staging.qbCustomerId) {
       return { success: false, error: 'No QuickBooks Customer/Job Id linked for "' + staging.builder + ' / ' + staging.jobRef + '" -- add it to the Projects sheet before creating this Bill.' };
+    }
+
+    // Server-side re-validation of every line's QBO Item Type, right before
+    // posting -- never trusts whatever the client submitted, since this
+    // posts real financial data. This is the hard backstop for the
+    // "Inventory items can never attach to a non-warehouse job" guardrail:
+    // QBO doesn't move inventory cost to a job's COGS just from a
+    // CustomerRef tag, so an Inventory item slipping onto a real job's Bill
+    // would silently misbook that cost into Inventory Asset instead.
+    var catalogRes = getQuickBooksItemCatalog_();
+    if (!catalogRes.success) return { success: false, error: catalogRes.error || 'Could not load QuickBooks Item catalog to validate this Bill.' };
+    var itemTypeById = {};
+    catalogRes.items.forEach(function(it) { itemTypeById[it.id] = it.type; });
+
+    var billableLines = isWarehouse ? applyWarehouseNonMaterialAllocation_(staging.lineItems) : (staging.lineItems || []).filter(function(li) { return !li.skip; });
+
+    var badLine = null;
+    billableLines.forEach(function(li) {
+      if (badLine || !li.qboItemId) return;
+      var isInventoryItem = itemTypeById[li.qboItemId] === 'Inventory';
+      if (isWarehouse && !isInventoryItem) badLine = li;
+      if (!isWarehouse && isInventoryItem) badLine = li;
+    });
+    if (badLine) {
+      return {
+        success: false,
+        error: isWarehouse
+          ? 'Line "' + (badLine.description || '(no description)') + '" is not a stocked Inventory item -- a stock PO can only bill Inventory-type items.'
+          : 'Line "' + (badLine.description || '(no description)') + '" is a stocked Inventory item, which can\'t be billed to a real job -- fix the item pairing before creating this Bill.'
+      };
     }
 
     var billLines = [];
     var missingItem = null;
-    (staging.lineItems || []).forEach(function(li) {
-      if (li.skip) return;
+    billableLines.forEach(function(li) {
       if (!li.qboItemId) { missingItem = li; return; }
+      var lineDetail = {
+        ItemRef: { value: li.qboItemId },
+        Qty: li.qty !== '' && li.qty != null ? parseFloat(li.qty) : undefined,
+        UnitPrice: li.rate !== '' && li.rate != null ? parseFloat(li.rate) : undefined
+      };
+      if (!isWarehouse) {
+        // CustomerRef alone attributes the cost to the job for job-cost
+        // reporting without exposing it as a pass-through charge to be
+        // re-invoiced to the customer later -- NotBillable set explicitly
+        // (not omitted) so this stays deliberate, not QBO's ambient default.
+        lineDetail.CustomerRef = { value: staging.qbCustomerId };
+        lineDetail.BillableStatus = 'NotBillable';
+      }
       billLines.push({
         DetailType: 'ItemBasedExpenseLineDetail',
         Amount: parseFloat(li.amount) || 0,
         Description: li.description || '',
-        ItemBasedExpenseLineDetail: {
-          ItemRef: { value: li.qboItemId },
-          Qty: li.qty !== '' && li.qty != null ? parseFloat(li.qty) : undefined,
-          UnitPrice: li.rate !== '' && li.rate != null ? parseFloat(li.rate) : undefined,
-          CustomerRef: { value: staging.qbCustomerId },
-          // CustomerRef alone attributes the cost to the job for job-cost
-          // reporting without exposing it as a pass-through charge to be
-          // re-invoiced to the customer later -- NotBillable set explicitly
-          // (not omitted) so this stays deliberate, not QBO's ambient default.
-          BillableStatus: 'NotBillable'
-        }
+        ItemBasedExpenseLineDetail: lineDetail
       });
     });
     if (missingItem) {

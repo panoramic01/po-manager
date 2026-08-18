@@ -1758,24 +1758,33 @@ function getQuickBooksLinkStatusForInvoice(payload) {
 // in QuickBooks_OAuth.gs next to matchLineItemToQBOItem_; this is just the
 // write side, called from saveInvoiceStagingReview on Approve.
 var QB_ITEM_MAP_SHEET = "QB Item Map";
-var QB_ITEM_MAP_HEADERS = ['Normalized Description', 'Description Sample', 'QB Item Id', 'QB Item Name'];
+var QB_ITEM_MAP_HEADERS = ['Normalized Description', 'Description Sample', 'QB Item Id', 'QB Item Name', 'Lane'];
 
-/** Upserts one description -> QBO Item mapping by normalized-description key. Idempotent -- safe to call every Approve even when unchanged. */
-function saveQBItemMapping_(description, qboItemId, qboItemName) {
+/**
+ * Upserts one description -> QBO Item mapping, keyed by normalized
+ * description + lane ('stock' | 'direct'). Lane-keyed (not description
+ * alone) so a material that's sometimes bought direct-for-a-job and
+ * sometimes into stock can hold both mappings without one clobbering the
+ * other -- see getQBItemMap_ in QuickBooks_OAuth.gs for the read side.
+ * Idempotent -- safe to call every Approve even when unchanged.
+ */
+function saveQBItemMapping_(description, qboItemId, qboItemName, lane) {
   var key = qboNormalizeItemText_(description);
   if (!key || !qboItemId) return;
+  lane = lane === 'stock' ? 'stock' : 'direct';
   var sheet = ensureSheetWithHeaders_(QB_ITEM_MAP_SHEET, QB_ITEM_MAP_HEADERS);
   var lastRow = sheet.getLastRow();
   if (lastRow >= 2) {
-    var data = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    var data = sheet.getRange(2, 1, lastRow - 1, 5).getValues();
     for (var i = 0; i < data.length; i++) {
-      if ((data[i][0] || '').toString().trim() === key) {
-        sheet.getRange(i + 2, 2, 1, 3).setValues([[description, qboItemId, qboItemName || '']]);
+      var rowLane = (data[i][4] || 'direct').toString().trim() || 'direct';
+      if ((data[i][0] || '').toString().trim() === key && rowLane === lane) {
+        sheet.getRange(i + 2, 2, 1, 4).setValues([[description, qboItemId, qboItemName || '', lane]]);
         return;
       }
     }
   }
-  sheet.appendRow([key, description, qboItemId, qboItemName || '']);
+  sheet.appendRow([key, description, qboItemId, qboItemName || '', lane]);
 }
 
 // ─── Purchase Line Item Log (for PPV / spend analytics) ──────────────────────
@@ -1992,9 +2001,11 @@ function saveInvoiceStagingReview(payload) {
     // matcher), so this is what makes a manual "Sales Tax" pick stick for
     // next time instead of needing to be repicked on every invoice.
     if (payload.approve === true && payload.lineItems) {
+      var jobRefForLane = sheet.getRange(rowIdx, QB_STAGING_COL['Job Ref'] + 1).getValue();
+      var lane = isWarehouseJob_(jobRefForLane) ? 'stock' : 'direct';
       payload.lineItems.forEach(function(li) {
         if (li.qboItemId && li.description) {
-          saveQBItemMapping_(li.description, li.qboItemId, li.qboItemName);
+          saveQBItemMapping_(li.description, li.qboItemId, li.qboItemName, lane);
         }
       });
     }
