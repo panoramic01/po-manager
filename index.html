@@ -1098,26 +1098,34 @@
 
       <div id="mi-form" style="display:none;background:var(--c-surface);border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin:12px 16px 0">
         <div id="mp-title" style="font-size:14px;font-weight:700;color:var(--c-navy);margin-bottom:12px">Pull Material for Job</div>
-        <label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Material</label>
-        <select id="mp-material" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">
-          <option value="">— Select —</option>
-        </select>
-        <label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Quantity</label>
-        <input type="number" id="mp-qty" min="0" step="any" placeholder="Qty" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">
-        <div id="mp-cost-group" style="display:none">
-          <label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Cost Per Unit</label>
-          <input type="number" id="mp-unit-cost" min="0" step="0.01" placeholder="$ per unit" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">
-        </div>
+
         <label id="mp-job-label" style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Builder &amp; Job *</label>
         <div style="position:relative">
           <input type="text" id="mp-job-combo" autocomplete="off" placeholder="e.g. CRESCENT_RIDGE-WEGNER"
                  oninput="this.value=this.value.toUpperCase().replace(/\s+/g,'_'); mpJobFilter(this.value)"
                  onfocus="mpJobFilter(this.value)"
-                 style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">
+                 style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:12px">
           <div id="mp-job-dropdown" style="display:none;position:absolute;left:0;right:0;top:100%;background:var(--c-surface);border:1px solid var(--c-border);border-radius:8px;margin-top:4px;max-height:220px;overflow-y:auto;z-index:20;box-shadow:0 4px 12px rgba(0,0,0,0.12)"></div>
         </div>
+
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;min-width:340px">
+            <thead>
+              <tr style="text-align:left">
+                <th style="font-size:10px;color:var(--c-ink-soft);padding:0 4px 6px">Material</th>
+                <th style="font-size:10px;color:var(--c-ink-soft);padding:0 4px 6px;width:70px">Qty</th>
+                <th id="mp-cost-col-header" style="display:none;font-size:10px;color:var(--c-ink-soft);padding:0 4px 6px;width:90px">Cost/Unit</th>
+                <th style="width:28px"></th>
+              </tr>
+            </thead>
+            <tbody id="mp-line-rows"></tbody>
+          </table>
+        </div>
+        <button onclick="mpAddLine()" style="background:none;border:1.5px dashed var(--c-border);color:var(--c-navy);border-radius:8px;padding:8px;font-size:12px;font-weight:600;cursor:pointer;width:100%;margin:4px 0 12px">+ Add Material</button>
+
         <label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Notes (optional)</label>
         <input type="text" id="mp-notes" placeholder="Notes" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">
+        <div id="mp-total" style="font-size:12px;font-weight:700;color:var(--c-navy);text-align:right;margin-bottom:4px;display:none"></div>
         <div id="mp-status" style="font-size:12px;color:var(--c-danger);margin-bottom:4px"></div>
         <div style="display:flex;gap:8px;margin-top:4px">
           <button id="mp-save-btn" onclick="submitMaterialPullOrReturn()" style="flex:1;background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:700;cursor:pointer">Pull Material</button>
@@ -8521,32 +8529,29 @@ function renderMaterialLog(log) {
 }
 
 // Pull and Return share the same form (#mi-form) -- G.matFormMode ('pull' |
-// 'return') drives which fields show and which endpoint submitMaterialPullOrReturn
-// posts to. Both only offer materials already tracked as a real QBO
-// Inventory Item; a material that isn't stocked yet needs to become one via
-// a normal stock PO first.
+// 'return') drives which columns show and which endpoint
+// submitMaterialPullOrReturn posts to. Both only offer materials already
+// tracked as a real QBO Inventory Item; a material that isn't stocked yet
+// needs to become one via a normal stock PO first. G.matFormLines holds one
+// row per material, same multi-line pattern as the invoice review screen
+// (irRenderLineRows) so multiple materials can go out/come back for one
+// job in a single submission instead of one at a time.
 function showMaterialFormCommon_(mode) {
   G.matFormMode = mode;
   G.matPullIdemKey = null;
-  var sel = document.getElementById('mp-material');
-  var pullable = (G.materialInventory || []).filter(function(m) { return m.qboItemId; });
-  sel.innerHTML = pullable.length
-    ? '<option value="">— Select —</option>' + pullable.map(function(m) {
-        return '<option value="' + esc(m.qboItemId) + '" data-name="' + esc(m.name) + '">' + esc(m.name) + ' (' + fmtMatQty(m.onHand) + ' on hand)</option>';
-      }).join('')
-    : '<option value="">No stocked materials yet</option>';
-  document.getElementById('mp-qty').value = '';
-  document.getElementById('mp-unit-cost').value = '';
+  G.matFormLines = [{ qboItemId: '', qty: '', unitCost: '' }];
   document.getElementById('mp-job-combo').value = '';
   document.getElementById('mp-notes').value = '';
   document.getElementById('mp-status').textContent = '';
+  mpRenderLineRows();
   document.getElementById('mi-form').style.display = '';
 }
 
 function showMaterialPullForm() {
   showMaterialFormCommon_('pull');
   document.getElementById('mp-title').textContent = 'Pull Material for Job';
-  document.getElementById('mp-cost-group').style.display = 'none';
+  document.getElementById('mp-cost-col-header').style.display = 'none';
+  document.getElementById('mp-total').style.display = 'none';
   document.getElementById('mp-job-label').textContent = 'Builder & Job *';
   document.getElementById('mp-save-btn').textContent = 'Pull Material';
 }
@@ -8554,9 +8559,62 @@ function showMaterialPullForm() {
 function showMaterialReturnForm() {
   showMaterialFormCommon_('return');
   document.getElementById('mp-title').textContent = 'Return Material from Job';
-  document.getElementById('mp-cost-group').style.display = '';
+  document.getElementById('mp-cost-col-header').style.display = '';
+  document.getElementById('mp-total').style.display = '';
   document.getElementById('mp-job-label').textContent = 'Returning From (Builder & Job) *';
   document.getElementById('mp-save-btn').textContent = 'Return Material';
+}
+
+// One <option> list, shared by every row's material <select> -- built once
+// per form-open rather than per row.
+function mpMaterialOptions_(selectedId) {
+  var pullable = (G.materialInventory || []).filter(function(m) { return m.qboItemId; });
+  if (!pullable.length) return '<option value="">No stocked materials yet</option>';
+  return '<option value="">— Select —</option>' + pullable.map(function(m) {
+    return '<option value="' + esc(m.qboItemId) + '" data-name="' + esc(m.name) + '"' + (m.qboItemId === selectedId ? ' selected' : '') + '>' +
+      esc(m.name) + ' (' + fmtMatQty(m.onHand) + ' on hand)</option>';
+  }).join('');
+}
+
+function mpRenderLineRows() {
+  var isReturn = G.matFormMode === 'return';
+  var tbody = document.getElementById('mp-line-rows');
+  tbody.innerHTML = G.matFormLines.map(function(l, i) {
+    return '<tr>' +
+      '<td style="padding:4px 4px 4px 0"><select onchange="mpUpdateLine(' + i + ",'qboItemId',this.value)\" style=\"width:100%;font-size:12px;padding:6px 4px\">" + mpMaterialOptions_(l.qboItemId) + '</select></td>' +
+      '<td style="padding:4px"><input type="number" min="0" step="any" value="' + (l.qty !== '' && l.qty != null ? l.qty : '') + '" oninput="mpUpdateLine(' + i + ",'qty',this.value)\" style=\"width:100%;font-size:12px;padding:6px 4px;box-sizing:border-box\"></td>" +
+      (isReturn ? '<td style="padding:4px"><input type="number" min="0" step="0.01" value="' + (l.unitCost !== '' && l.unitCost != null ? l.unitCost : '') + '" oninput="mpUpdateLine(' + i + ",'unitCost',this.value)\" style=\"width:100%;font-size:12px;padding:6px 4px;box-sizing:border-box\"></td>" : '') +
+      '<td style="text-align:center"><button onclick="mpRemoveLine(' + i + ')" style="background:none;border:none;color:var(--c-danger);cursor:pointer;font-size:14px" title="Remove">✕</button></td>' +
+    '</tr>';
+  }).join('');
+  mpUpdateTotal();
+}
+
+function mpAddLine() {
+  G.matFormLines.push({ qboItemId: '', qty: '', unitCost: '' });
+  mpRenderLineRows();
+}
+
+function mpRemoveLine(i) {
+  G.matFormLines.splice(i, 1);
+  if (!G.matFormLines.length) G.matFormLines.push({ qboItemId: '', qty: '', unitCost: '' });
+  mpRenderLineRows();
+}
+
+function mpUpdateLine(i, field, value) {
+  if (field === 'qty' || field === 'unitCost') value = value === '' ? '' : parseFloat(value);
+  G.matFormLines[i][field] = value;
+  if (field === 'qty' || field === 'unitCost') mpUpdateTotal();
+}
+
+function mpUpdateTotal() {
+  var el = document.getElementById('mp-total');
+  if (G.matFormMode !== 'return') return;
+  var total = G.matFormLines.reduce(function(s, l) {
+    var qty = parseFloat(l.qty), cost = parseFloat(l.unitCost);
+    return s + (!isNaN(qty) && !isNaN(cost) ? qty * cost : 0);
+  }, 0);
+  el.textContent = 'Total: $' + total.toFixed(2);
 }
 
 // Same fuzzy Builder&Job combo picker as New PO (cJobFilter/cSelectJobCombo,
@@ -8590,20 +8648,35 @@ function mpSelectJobCombo(combo) {
 
 function submitMaterialPullOrReturn() {
   var isReturn = G.matFormMode === 'return';
-  var matSel = document.getElementById('mp-material');
-  var qboItemId = matSel.value;
-  var materialName = matSel.selectedOptions[0] ? matSel.selectedOptions[0].getAttribute('data-name') : '';
-  var qty = parseFloat(document.getElementById('mp-qty').value);
-  var unitCost = parseFloat(document.getElementById('mp-unit-cost').value);
   var combo = document.getElementById('mp-job-combo').value.trim();
   var notes = document.getElementById('mp-notes').value.trim();
   var status = document.getElementById('mp-status');
   var busyLabel = isReturn ? 'Returning…' : 'Pulling…';
   var idleLabel = isReturn ? 'Return Material' : 'Pull Material';
 
-  if (!qboItemId) { status.textContent = 'Select a material.'; return; }
-  if (!qty || qty <= 0) { status.textContent = 'Enter a quantity greater than 0.'; return; }
-  if (isReturn && (isNaN(unitCost) || unitCost < 0)) { status.textContent = 'Enter the cost per unit.'; return; }
+  // Build the lines payload from G.matFormLines, pulling each row's
+  // material name off its <select>'s data-name (set in mpMaterialOptions_)
+  // rather than re-looking it up server-side.
+  var rows = document.querySelectorAll('#mp-line-rows tr');
+  var lines = [];
+  for (var i = 0; i < G.matFormLines.length; i++) {
+    var l = G.matFormLines[i];
+    if (!l.qboItemId || !l.qty || l.qty <= 0) continue;
+    var sel = rows[i] && rows[i].querySelector('select');
+    var opt = sel && sel.selectedOptions[0];
+    lines.push({
+      qboItemId: l.qboItemId,
+      materialName: opt ? opt.getAttribute('data-name') : '',
+      qty: l.qty,
+      unitCost: isReturn ? (l.unitCost === '' || l.unitCost == null ? NaN : l.unitCost) : undefined
+    });
+  }
+
+  if (!lines.length) { status.textContent = 'Add at least one material with a quantity.'; return; }
+  if (isReturn && lines.some(function(l) { return isNaN(l.unitCost) || l.unitCost < 0; })) {
+    status.textContent = 'Enter the cost per unit for every material.';
+    return;
+  }
   var match = G.jobComboMap && G.jobComboMap[combo];
   if (!match) { status.textContent = 'Pick a job from the list (Builder & Job).'; return; }
   status.textContent = '';
@@ -8613,9 +8686,7 @@ function submitMaterialPullOrReturn() {
   if (btn) { btn.textContent = busyLabel; btn.disabled = true; }
 
   var fn = isReturn ? 'returnMaterialFromJob' : 'pullMaterialForJob';
-  var reqPayload = isReturn
-    ? { qboItemId: qboItemId, materialName: materialName, qty: qty, unitCost: unitCost, builder: match.builder, jobRef: match.job, notes: notes, idempotencyKey: G.matPullIdemKey }
-    : { qboItemId: qboItemId, qty: qty, builder: match.builder, jobRef: match.job, notes: notes, idempotencyKey: G.matPullIdemKey };
+  var reqPayload = { lines: lines, builder: match.builder, jobRef: match.job, notes: notes, idempotencyKey: G.matPullIdemKey };
 
   gasCall(fn, reqPayload, function(res) {
     if (btn) { btn.textContent = idleLabel; btn.disabled = false; }
@@ -8625,7 +8696,8 @@ function submitMaterialPullOrReturn() {
       if (isReturn) {
         showToast('Returned from ' + match.builder + ' / ' + match.job + (res.creditWarning ? ' — ' + res.creditWarning : ''));
       } else {
-        showToast('Pulled for ' + match.builder + ' / ' + match.job + ' — ' + fmtMatQty(res.onHandAfter) + ' left on hand');
+        var summary = (res.lines || []).map(function(l) { return l.materialName + ': ' + fmtMatQty(l.onHandAfter) + ' left'; }).join(', ');
+        showToast('Pulled for ' + match.builder + ' / ' + match.job + (summary ? ' — ' + summary : ''));
       }
       loadMaterialInventory();
     } else {

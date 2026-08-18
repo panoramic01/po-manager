@@ -3249,33 +3249,36 @@ function getMaterialInventory(payload) {
   } catch(e) { return { materials: [], recentLog: [], error: e.toString() }; }
 }
 
-/** Appends one In or Out row to the material log. */
 /**
  * Pulls stocked material for a job -- the QBO-backed replacement for the
- * old manual "Take Material Out" log entry. The actual on-hand check and
- * InventoryAdjustment posting happens in pushMaterialPullToQuickBooks_
+ * old manual "Take Material Out" log entry. Accepts multiple materials in
+ * one call (one job per submission, any number of materials) so they land
+ * as a single InventoryAdjustment rather than one per material. The actual
+ * on-hand check and posting happens in pushMaterialPullToQuickBooks_
  * (QuickBooks_OAuth.gs), which re-reads QBO's live quantity immediately
- * before posting and hard-stops if the requested quantity exceeds it --
- * this function never performs that check itself against a client-supplied
- * number. On success, also appends an audit-trail row to the Material
- * Inventory Log sheet -- that sheet is no longer the source of truth for
- * on-hand quantity (QBO is, per the locked design), just a record of who
- * pulled what, when, for which job. payload: {qboItemId, qty, builder,
- * jobRef, notes?}.
+ * before posting and hard-stops if any line's requested quantity exceeds
+ * it -- this function never performs that check itself against a
+ * client-supplied number. On success, also appends one audit-trail row per
+ * material to the Material Inventory Log sheet -- that sheet is no longer
+ * the source of truth for on-hand quantity (QBO is, per the locked
+ * design), just a record of who pulled what, when, for which job.
+ * payload: {lines: [{qboItemId, qty}], builder, jobRef, notes?}.
  */
 function pullMaterialForJob(payload) {
   try {
     var auth = authorizeCaller(payload, ['admin', 'office', 'runner']);
     if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
 
-    var qboItemId = (payload.qboItemId || '').toString().trim();
-    var qty       = parseFloat(payload.qty);
-    var builder   = (payload.builder || '').toString().trim();
-    var jobRef    = (payload.jobRef || '').toString().trim();
-    var notes     = (payload.notes || '').toString().trim();
+    var lines   = Array.isArray(payload.lines) ? payload.lines : [];
+    var builder = (payload.builder || '').toString().trim();
+    var jobRef  = (payload.jobRef || '').toString().trim();
+    var notes   = (payload.notes || '').toString().trim();
 
-    if (!qboItemId) return { success: false, error: 'Select a material.' };
-    if (!qty || qty <= 0) return { success: false, error: 'Quantity must be greater than 0.' };
+    lines = lines.map(function(l) {
+      return { qboItemId: (l.qboItemId || '').toString().trim(), qty: parseFloat(l.qty) };
+    }).filter(function(l) { return l.qboItemId && l.qty > 0; });
+
+    if (!lines.length) return { success: false, error: 'Add at least one material.' };
     if (!builder || !jobRef) return { success: false, error: 'Job is required.' };
 
     var lock = LockService.getScriptLock();
@@ -3298,15 +3301,19 @@ function pullMaterialForJob(payload) {
         return { success: false, error: 'No QuickBooks Customer/Job Id linked for "' + builder + ' / ' + jobRef + '" -- add it to the Projects sheet before pulling material for this job.' };
       }
 
-      var pullRes = pushMaterialPullToQuickBooks_(qboItemId, qty, customerLookup.qbCustomerId, builder, jobRef);
+      var pullRes = pushMaterialPullToQuickBooks_(lines, customerLookup.qbCustomerId, builder, jobRef);
       if (!pullRes.success) return pullRes;
 
       var callerName = getRoleByEmail(auth.email).name || auth.email;
       var sheet = ensureSheetWithHeaders_('Material Inventory Log', MATERIAL_LOG_HEADERS);
-      sheet.appendRow([new Date(), pullRes.materialName, '', 'Out', qty, builder + ' / ' + jobRef, notes, callerName]);
+      var now = new Date();
+      var rows = pullRes.lines.map(function(l) {
+        return [now, l.materialName, '', 'Out', l.qty, builder + ' / ' + jobRef, notes, callerName];
+      });
+      sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, MATERIAL_LOG_HEADERS.length).setValues(rows);
       SpreadsheetApp.flush();
 
-      var result = { success: true, onHandAfter: pullRes.onHandAfter, cogsAccountName: pullRes.cogsAccountName };
+      var result = { success: true, lines: pullRes.lines, cogsAccountName: pullRes.cogsAccountName };
       if (cacheKey) { try { cache.put(cacheKey, JSON.stringify(result), 300); } catch (e) {} }
       return result;
     } finally {
@@ -3316,32 +3323,37 @@ function pullMaterialForJob(payload) {
 }
 
 /**
- * Returns material to stock from a job at a known cost -- for material
+ * Returns material to stock from a job at known costs -- for material
  * coming back with no vendor invoice attached (e.g. leftover from a job).
- * The actual QuickBooks posting (a Bill to receive it into inventory + a
- * Vendor Credit to credit the job) happens in pushMaterialReturnToQuickBooks_
+ * Accepts multiple materials in one call so they post as a single Bill +
+ * Vendor Credit pair rather than one pair per material. The actual
+ * QuickBooks posting happens in pushMaterialReturnToQuickBooks_
  * (QuickBooks_OAuth.gs). Only offers materials already tracked as a QBO
  * Inventory Item (same list the Pull-for-job form uses) -- a material that
  * isn't stocked yet needs to become one via a normal stock PO first, not
- * through this flow. payload: {qboItemId, materialName, qty, unitCost,
- * builder, jobRef, notes?}.
+ * through this flow. payload: {lines: [{qboItemId, materialName, qty,
+ * unitCost}], builder, jobRef, notes?}.
  */
 function returnMaterialFromJob(payload) {
   try {
     var auth = authorizeCaller(payload, ['admin', 'office', 'runner']);
     if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
 
-    var qboItemId    = (payload.qboItemId || '').toString().trim();
-    var materialName = (payload.materialName || '').toString().trim();
-    var qty           = parseFloat(payload.qty);
-    var unitCost       = parseFloat(payload.unitCost);
-    var builder       = (payload.builder || '').toString().trim();
-    var jobRef        = (payload.jobRef || '').toString().trim();
-    var notes         = (payload.notes || '').toString().trim();
+    var lines   = Array.isArray(payload.lines) ? payload.lines : [];
+    var builder = (payload.builder || '').toString().trim();
+    var jobRef  = (payload.jobRef || '').toString().trim();
+    var notes   = (payload.notes || '').toString().trim();
 
-    if (!qboItemId) return { success: false, error: 'Select a material.' };
-    if (!qty || qty <= 0) return { success: false, error: 'Quantity must be greater than 0.' };
-    if (unitCost == null || isNaN(unitCost) || unitCost < 0) return { success: false, error: 'Enter the cost per unit.' };
+    lines = lines.map(function(l) {
+      return {
+        qboItemId: (l.qboItemId || '').toString().trim(),
+        materialName: (l.materialName || '').toString().trim(),
+        qty: parseFloat(l.qty),
+        unitCost: parseFloat(l.unitCost)
+      };
+    }).filter(function(l) { return l.qboItemId && l.qty > 0 && !isNaN(l.unitCost) && l.unitCost >= 0; });
+
+    if (!lines.length) return { success: false, error: 'Add at least one material with a quantity and cost.' };
     if (!builder || !jobRef) return { success: false, error: 'Job is required.' };
 
     var lock = LockService.getScriptLock();
@@ -3364,12 +3376,16 @@ function returnMaterialFromJob(payload) {
         return { success: false, error: 'No QuickBooks Customer/Job Id linked for "' + builder + ' / ' + jobRef + '" -- add it to the Projects sheet before crediting a return from this job.' };
       }
 
-      var returnRes = pushMaterialReturnToQuickBooks_(qboItemId, qty, unitCost, customerLookup.qbCustomerId, builder, jobRef);
+      var returnRes = pushMaterialReturnToQuickBooks_(lines, customerLookup.qbCustomerId, builder, jobRef);
       if (!returnRes.success) return returnRes;
 
       var callerName = getRoleByEmail(auth.email).name || auth.email;
       var sheet = ensureSheetWithHeaders_('Material Inventory Log', MATERIAL_LOG_HEADERS);
-      sheet.appendRow([new Date(), materialName, '', 'In', qty, builder + ' / ' + jobRef, notes, callerName]);
+      var now = new Date();
+      var rows = lines.map(function(l) {
+        return [now, l.materialName, '', 'In', l.qty, builder + ' / ' + jobRef, notes, callerName];
+      });
+      sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, MATERIAL_LOG_HEADERS.length).setValues(rows);
       SpreadsheetApp.flush();
 
       var result = { success: true, amount: returnRes.amount, billId: returnRes.billId, vendorCreditId: returnRes.vendorCreditId, creditWarning: returnRes.creditWarning };

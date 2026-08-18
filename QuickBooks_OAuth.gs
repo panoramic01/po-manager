@@ -623,72 +623,81 @@ function resolveInternalTransferVendorId_() {
 }
 
 /**
- * Posts material returning to stock from a job at a known cost (no vendor
- * invoice involved) -- see returnMaterialFromJob (PO_Manager_Code.gs) for
- * the caller/validation side. Deliberately does NOT use InventoryAdjustment
- * (unlike pushMaterialPullToQuickBooks_ below): QBO Online's inventory
- * adjustment can change quantity but can't attach a custom dollar value to
- * quantity being added, per Intuit Community guidance -- it's built for
- * correcting counts, not for bringing in new value. Instead this posts two
+ * Posts material returning to stock from a job at known costs (no vendor
+ * invoice involved) -- one Bill + one Vendor Credit covering every material
+ * line, so multiple materials returned for the same job land as one
+ * auditable pair of transactions instead of N pairs. See
+ * returnMaterialFromJob (PO_Manager_Code.gs) for the caller/validation
+ * side. Deliberately does NOT use InventoryAdjustment (unlike
+ * pushMaterialPullToQuickBooks_ above): QBO Online's inventory adjustment
+ * can change quantity but can't attach a custom dollar value to quantity
+ * being added, per Intuit Community guidance -- it's built for correcting
+ * counts, not for bringing in new value. Instead this posts two
  * transactions against the internal-transfer vendor, using shapes already
  * verified elsewhere in this app:
- *   1. A Bill against the Inventory item (qty x unitCost) -- adds to
- *      Inventory Asset and establishes a real FIFO cost layer, exactly
- *      like receiving a normal stock PO, just from the internal vendor
- *      instead of a real one. No CustomerRef, same as a normal stock
- *      receipt -- this is a warehouse-side event, not a job-side one.
- *   2. A Vendor Credit, same vendor, one AccountBasedExpenseLineDetail line
- *      against the materials COGS account tagged to the job's CustomerRef
- *      (NotBillable) -- credits that job back by the same amount,
- *      mirroring how the original consumption charged it.
+ *   1. A Bill, one ItemBasedExpenseLineDetail line per material (qty x
+ *      unitCost) -- adds to Inventory Asset and establishes a real FIFO
+ *      cost layer per item, exactly like receiving a normal stock PO, just
+ *      from the internal vendor instead of a real one. No CustomerRef,
+ *      same as a normal stock receipt -- this is a warehouse-side event,
+ *      not a job-side one.
+ *   2. A Vendor Credit, same vendor, one AccountBasedExpenseLineDetail
+ *      line per material (mirroring the Bill's line count/descriptions,
+ *      even though every line hits the same COGS account) tagged to the
+ *      job's CustomerRef (NotBillable) -- credits that job back by the
+ *      total amount, mirroring how the original consumption charged it.
  * The Vendor Credit is best-effort: if it fails after the Bill already
  * posted, this still returns success (the inventory/FIFO side is real and
  * correct) with a creditWarning rather than leaving the material stuck
  * un-received -- the job-side credit would need fixing manually in QBO in
  * that case.
+ *
+ * lines: [{qboItemId, materialName, qty, unitCost}].
  */
-function pushMaterialReturnToQuickBooks_(qboItemId, qty, unitCost, qbCustomerId, builder, jobRef) {
+function pushMaterialReturnToQuickBooks_(lines, qbCustomerId, builder, jobRef) {
   var vendorRes = resolveInternalTransferVendorId_();
   if (!vendorRes.success) return { success: false, error: vendorRes.error };
 
   var acctRes = resolveMaterialsCogsAccountId_();
   if (!acctRes.success) return { success: false, error: acctRes.error };
 
-  var amount = Math.round(qty * unitCost * 100) / 100;
   var note = 'Returned from ' + builder + ' / ' + jobRef;
-
-  var billPayload = {
-    VendorRef: { value: vendorRes.vendorId },
-    PrivateNote: note,
-    Line: [{
+  var billLines = [];
+  var creditLines = [];
+  var total = 0;
+  lines.forEach(function(l) {
+    var amount = Math.round(l.qty * l.unitCost * 100) / 100;
+    total += amount;
+    var desc = (l.materialName || '') + ' -- ' + note;
+    billLines.push({
       DetailType: 'ItemBasedExpenseLineDetail',
       Amount: amount,
-      Description: note,
+      Description: desc,
       ItemBasedExpenseLineDetail: {
-        ItemRef: { value: qboItemId },
-        Qty: qty,
-        UnitPrice: unitCost
+        ItemRef: { value: l.qboItemId },
+        Qty: l.qty,
+        UnitPrice: l.unitCost
       }
-    }]
-  };
-  var billRes = quickbooksApiPost_('/bill', billPayload);
-  if (!billRes.success) return { success: false, error: billRes.error, sentPayload: billPayload };
-  var billId = billRes.data && billRes.data.Bill && billRes.data.Bill.Id;
-
-  var creditPayload = {
-    VendorRef: { value: vendorRes.vendorId },
-    PrivateNote: 'Credit for material ' + note,
-    Line: [{
+    });
+    creditLines.push({
       DetailType: 'AccountBasedExpenseLineDetail',
       Amount: amount,
-      Description: 'Credit for material ' + note,
+      Description: 'Credit for ' + desc,
       AccountBasedExpenseLineDetail: {
         AccountRef: { value: acctRes.accountId },
         CustomerRef: { value: qbCustomerId },
         BillableStatus: 'NotBillable'
       }
-    }]
-  };
+    });
+  });
+  total = Math.round(total * 100) / 100;
+
+  var billPayload = { VendorRef: { value: vendorRes.vendorId }, PrivateNote: note, Line: billLines };
+  var billRes = quickbooksApiPost_('/bill', billPayload);
+  if (!billRes.success) return { success: false, error: billRes.error, sentPayload: billPayload };
+  var billId = billRes.data && billRes.data.Bill && billRes.data.Bill.Id;
+
+  var creditPayload = { VendorRef: { value: vendorRes.vendorId }, PrivateNote: 'Credit for material ' + note, Line: creditLines };
   var creditRes = quickbooksApiPost_('/vendorcredit', creditPayload);
   var vendorCreditId = null, creditWarning = null;
   if (!creditRes.success) {
@@ -697,16 +706,21 @@ function pushMaterialReturnToQuickBooks_(qboItemId, qty, unitCost, qbCustomerId,
     vendorCreditId = creditRes.data && creditRes.data.VendorCredit && creditRes.data.VendorCredit.Id;
   }
 
-  return { success: true, amount: amount, billId: billId, vendorCreditId: vendorCreditId, creditWarning: creditWarning };
+  return { success: true, amount: total, billId: billId, vendorCreditId: vendorCreditId, creditWarning: creditWarning };
 }
 
 /**
- * Posts the QBO InventoryAdjustment that actually pulls stock for a job --
- * see pullMaterialForJob (PO_Manager_Code.gs) for the caller/validation
- * side. Re-reads the Item's live QuantityOnHand immediately before posting
- * (never trusts a client-supplied number for the hard stop) and sends an
- * absolute NewQty rather than a relative diff, to avoid any ambiguity
- * between what was read and what gets posted.
+ * Posts the QBO InventoryAdjustment that pulls stock for a job -- one
+ * transaction, one Line per material, so multiple materials pulled for the
+ * same job land as a single auditable InventoryAdjustment instead of N
+ * separate ones. See pullMaterialForJob (PO_Manager_Code.gs) for the
+ * caller/validation side. Re-reads every line's live QuantityOnHand
+ * immediately before posting (never trusts a client-supplied number for
+ * the hard stop) and validates ALL lines before posting ANY of them -- one
+ * line failing the on-hand check blocks the whole submission rather than
+ * partially posting. Sends an absolute NewQty per line rather than a
+ * relative diff, to avoid any ambiguity between what was read and what
+ * gets posted.
  *
  * IMPORTANT / unverified: I was not able to confirm QuickBooks Online's
  * exact InventoryAdjustment request schema against Intuit's own reference
@@ -723,18 +737,38 @@ function pushMaterialReturnToQuickBooks_(qboItemId, qty, unitCost, qbCustomerId,
  * ignored, meaning quantity/cost would move correctly but the job tag
  * wouldn't stick. Verify the very first real pull directly in QuickBooks
  * (Inventory Asset movement + which job it landed on) before trusting this.
+ *
+ * lines: [{qboItemId, qty}]. Returns per-line results on success.
  */
-function pushMaterialPullToQuickBooks_(qboItemId, qty, qbCustomerId, builder, jobRef) {
-  var itemRes = quickbooksApiGet_('/query?query=' + encodeURIComponent("select Id, Name, QtyOnHand from Item where Id = '" + qboItemId.replace(/'/g, "\\'") + "'"));
+function pushMaterialPullToQuickBooks_(lines, qbCustomerId, builder, jobRef) {
+  var idFilter = lines.map(function(l) { return "'" + l.qboItemId.replace(/'/g, "\\'") + "'"; }).join(',');
+  var itemRes = quickbooksApiGet_('/query?query=' + encodeURIComponent('select Id, Name, QtyOnHand from Item where Id in (' + idFilter + ')'));
   if (!itemRes.success) return { success: false, error: itemRes.error };
-  var item = itemRes.data && itemRes.data.QueryResponse && itemRes.data.QueryResponse.Item && itemRes.data.QueryResponse.Item[0];
-  if (!item) return { success: false, error: 'Could not find that item in QuickBooks.' };
+  var items = (itemRes.data && itemRes.data.QueryResponse && itemRes.data.QueryResponse.Item) || [];
+  var byId = {};
+  items.forEach(function(it) { byId[it.Id] = it; });
 
-  var onHand = parseFloat(item.QtyOnHand) || 0;
-  if (qty > onHand) {
-    return { success: false, error: 'Only ' + onHand + ' on hand, can\'t pull ' + qty + '.' };
+  var adjLines = [];
+  var results = [];
+  for (var i = 0; i < lines.length; i++) {
+    var l = lines[i];
+    var item = byId[l.qboItemId];
+    if (!item) return { success: false, error: 'Could not find one of the selected materials in QuickBooks.' };
+    var onHand = parseFloat(item.QtyOnHand) || 0;
+    if (l.qty > onHand) {
+      return { success: false, error: 'Only ' + onHand + ' of "' + item.Name + '" on hand, can\'t pull ' + l.qty + '.' };
+    }
+    var newQty = onHand - l.qty;
+    adjLines.push({
+      DetailType: 'InventoryAdjustmentLineDetail',
+      InventoryAdjustmentLineDetail: {
+        ItemRef: { value: l.qboItemId },
+        NewQty: newQty,
+        CustomerRef: { value: qbCustomerId }
+      }
+    });
+    results.push({ qboItemId: l.qboItemId, materialName: item.Name, qty: l.qty, onHandAfter: newQty });
   }
-  var newQty = onHand - qty;
 
   var acctRes = resolveMaterialsCogsAccountId_();
   if (!acctRes.success) return { success: false, error: acctRes.error };
@@ -743,20 +777,13 @@ function pushMaterialPullToQuickBooks_(qboItemId, qty, qbCustomerId, builder, jo
     TxnDate: Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd'),
     PrivateNote: 'Pulled for ' + builder + ' / ' + jobRef,
     AdjustAccountRef: { value: acctRes.accountId },
-    Line: [{
-      DetailType: 'InventoryAdjustmentLineDetail',
-      InventoryAdjustmentLineDetail: {
-        ItemRef: { value: qboItemId },
-        NewQty: newQty,
-        CustomerRef: { value: qbCustomerId }
-      }
-    }]
+    Line: adjLines
   };
 
   var postRes = quickbooksApiPost_('/inventoryadjustment', adjPayload);
   if (!postRes.success) return { success: false, error: postRes.error, sentPayload: adjPayload };
 
-  return { success: true, materialName: item.Name, onHandAfter: newQty, cogsAccountName: acctRes.accountName };
+  return { success: true, lines: results, cogsAccountName: acctRes.accountName };
 }
 
 /**
