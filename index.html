@@ -8382,7 +8382,8 @@ function irApprove(btn) {
   var orig = btn && btn.textContent;
   if (btn) { btn.disabled = true; btn.textContent = 'Approving…'; }
   gasCall('saveInvoiceStagingReview', { stagingId: G_ir.stagingId, lineItems: G_ir.lineItems, vendorInvoice: vendorInvoice, approve: true }, function(res) {
-    if (!res.success) { if (btn) { btn.disabled = false; btn.textContent = orig; } showToast(res.error || 'Approve failed'); return; }
+    if (btn) { btn.disabled = false; btn.textContent = orig; }
+    if (!res.success) { showToast(res.error || 'Approve failed'); return; }
     showToast('Approved — PO updated');
     irPatchPOFromStaging(vendorInvoice, res);
     irOpenDetail(G_ir.stagingId);
