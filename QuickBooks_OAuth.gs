@@ -533,43 +533,32 @@ function getQBItemMap_() {
 }
 
 /**
- * For every material mapped to a real QBO Inventory Item (QB Item Map,
- * 'stock' lane), returns its live QuantityOnHand straight from QuickBooks --
- * QBO is the authoritative source for on-hand quantity on those materials
- * per the locked design (see the inventory-integration plan), not the
- * Material Inventory Log sheet's own In/Out sum, which never sees quantity
- * that arrived via a QBO Bill directly. Called from getMaterialInventory
- * (PO_Manager_Code.gs) to merge QBO's numbers into that screen. Read-only,
- * one batched query for however many distinct Items are mapped -- not one
- * round-trip per material. Best-effort: returns [] on any failure (not
- * connected, network hiccup, etc.) rather than breaking the whole screen.
+ * Every active Inventory-type Item in QuickBooks with its live
+ * QuantityOnHand -- queried directly from QBO's Item table, not filtered
+ * through the QB Item Map. Deliberately not scoped to items this app has
+ * already touched (e.g. via a reviewed stock-PO invoice): an Inventory item
+ * created directly in QuickBooks, or one this app hasn't matched a line
+ * item to yet, should still show up as real on-hand stock. QBO is the
+ * authoritative source for on-hand quantity on stocked materials per the
+ * locked design (see the inventory-integration plan), not the Material
+ * Inventory Log sheet's own In/Out sum, which never sees quantity that
+ * arrived via a QBO Bill directly. Called from getMaterialInventory
+ * (PO_Manager_Code.gs) to merge QBO's numbers into that screen. Read-only.
+ * Best-effort: returns [] on any failure (not connected, network hiccup,
+ * etc.) rather than breaking the whole screen. Single page (QBO's
+ * 1000-per-query cap) -- fine for how many distinct stocked materials a
+ * business like this realistically carries; revisit if that ever changes.
  */
 function getWarehouseItemsOnHand_() {
   try {
-    var sheet = ensureSheetWithHeaders_(QB_ITEM_MAP_SHEET, QB_ITEM_MAP_HEADERS);
-    var lastRow = sheet.getLastRow();
-    if (lastRow < 2) return [];
-    var data = sheet.getRange(2, 1, lastRow - 1, QB_ITEM_MAP_HEADERS.length).getValues();
-
-    var descById = {}; // qboItemId -> the learned description sample, for display
-    data.forEach(function(row) {
-      var lane = (row[4] || 'direct').toString().trim() || 'direct';
-      var qboItemId = (row[2] || '').toString().trim();
-      if (lane !== 'stock' || !qboItemId) return;
-      if (!descById[qboItemId]) descById[qboItemId] = (row[1] || row[3] || '').toString().trim();
-    });
-    var ids = Object.keys(descById);
-    if (!ids.length) return [];
-
-    var idFilter = ids.map(function(id) { return "'" + id.replace(/'/g, "\\'") + "'"; }).join(',');
-    var query = 'select Id, Name, QtyOnHand from Item where Id in (' + idFilter + ')';
+    var query = "select Id, Name, QtyOnHand from Item where Type = 'Inventory' and Active = true maxresults 1000";
     var res = quickbooksApiGet_('/query?query=' + encodeURIComponent(query));
     if (!res.success) return [];
 
     var items = (res.data && res.data.QueryResponse && res.data.QueryResponse.Item) || [];
     return items.map(function(it) {
       return {
-        name: descById[it.Id] || it.Name,
+        name: it.Name,
         qboItemId: it.Id,
         qboItemName: it.Name,
         onHand: parseFloat(it.QtyOnHand) || 0
