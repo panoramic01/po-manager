@@ -3255,7 +3255,7 @@ function getMaterialInventory(payload) {
  * Pulls stocked material for a job -- the QBO-backed replacement for the
  * old manual "Take Material Out" log entry. Accepts multiple materials in
  * one call (one job per submission, any number of materials) so they land
- * as a single InventoryAdjustment rather than one per material. The actual
+ * as a single $0 Invoice rather than one per material. The actual
  * on-hand check and posting happens in pushMaterialPullToQuickBooks_
  * (QuickBooks_OAuth.gs), which re-reads QBO's live quantity immediately
  * before posting and hard-stops if any line's requested quantity exceeds
@@ -3315,7 +3315,7 @@ function pullMaterialForJob(payload) {
       sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, MATERIAL_LOG_HEADERS.length).setValues(rows);
       SpreadsheetApp.flush();
 
-      var result = { success: true, lines: pullRes.lines, cogsAccountName: pullRes.cogsAccountName };
+      var result = { success: true, lines: pullRes.lines };
       if (cacheKey) { try { cache.put(cacheKey, JSON.stringify(result), 300); } catch (e) {} }
       return result;
     } finally {

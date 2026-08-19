@@ -570,16 +570,16 @@ function getWarehouseItemsOnHand_() {
 }
 
 /**
- * Resolves the QBO account material-consumption InventoryAdjustments post
- * their COGS side into. Prefers the QBO_MATERIALS_COGS_ACCOUNT_NAME Script
- * Property (exact name, same convention as QBO_TAX_ITEM_NAME/
- * QBO_FREIGHT_ITEM_NAME above) when set; otherwise falls back to a fuzzy
- * search for a Cost-of-Goods-Sold-type account whose name contains
- * "construction material" (case-insensitive) -- per the "COGS under
- * construction materials account" direction this was built to. The
- * resolved account name comes back on the response so it's visible/
- * auditable rather than silently assumed; a caller with no match at all
- * gets a clear error instead of a guess.
+ * Resolves the QBO account a material Return's Vendor Credit posts its
+ * job-credit side into (see pushMaterialReturnToQuickBooks_). Prefers the
+ * QBO_MATERIALS_COGS_ACCOUNT_NAME Script Property (exact name, same
+ * convention as QBO_TAX_ITEM_NAME/QBO_FREIGHT_ITEM_NAME above) when set;
+ * otherwise falls back to a fuzzy search for a Cost-of-Goods-Sold-type
+ * account whose name contains "construction material" (case-insensitive)
+ * -- per the "COGS under construction materials account" direction this
+ * was built to. The resolved account name comes back on the response so
+ * it's visible/auditable rather than silently assumed; a caller with no
+ * match at all gets a clear error instead of a guess.
  */
 function resolveMaterialsCogsAccountId_() {
   var exactName = PropertiesService.getScriptProperties().getProperty('QBO_MATERIALS_COGS_ACCOUNT_NAME');
@@ -628,11 +628,11 @@ function resolveInternalTransferVendorId_() {
  * line, so multiple materials returned for the same job land as one
  * auditable pair of transactions instead of N pairs. See
  * returnMaterialFromJob (PO_Manager_Code.gs) for the caller/validation
- * side. Deliberately does NOT use InventoryAdjustment (unlike
- * pushMaterialPullToQuickBooks_ above): QBO Online's inventory adjustment
- * can change quantity but can't attach a custom dollar value to quantity
- * being added, per Intuit Community guidance -- it's built for correcting
- * counts, not for bringing in new value. Instead this posts two
+ * side. Deliberately does NOT use InventoryAdjustment: QBO Online's
+ * inventory adjustment can change quantity but can't attach a custom
+ * dollar value to quantity being added, per Intuit Community guidance --
+ * it's built for correcting counts, not for bringing in new value.
+ * Instead this posts two
  * transactions against the internal-transfer vendor, using shapes already
  * verified elsewhere in this app:
  *   1. A Bill, one ItemBasedExpenseLineDetail line per material (qty x
@@ -717,33 +717,30 @@ function pushMaterialReturnToQuickBooks_(lines, qbCustomerId, builder, jobRef) {
 }
 
 /**
- * Posts the QBO InventoryAdjustment that pulls stock for a job -- one
- * transaction, one Line per material, so multiple materials pulled for the
- * same job land as a single auditable InventoryAdjustment instead of N
- * separate ones. See pullMaterialForJob (PO_Manager_Code.gs) for the
- * caller/validation side. Re-reads every line's live QuantityOnHand
- * immediately before posting (never trusts a client-supplied number for
- * the hard stop) and validates ALL lines before posting ANY of them -- one
- * line failing the on-hand check blocks the whole submission rather than
- * partially posting. Sends an absolute NewQty per line rather than a
- * relative diff, to avoid any ambiguity between what was read and what
- * gets posted.
+ * Posts a $0 QBO Invoice that pulls stock for a job -- one transaction, one
+ * Line per material, so multiple materials pulled for the same job land as
+ * a single auditable document instead of N separate ones. See
+ * pullMaterialForJob (PO_Manager_Code.gs) for the caller/validation side.
  *
- * IMPORTANT / unverified: I was not able to confirm QuickBooks Online's
- * exact InventoryAdjustment request schema against Intuit's own reference
- * before writing this -- the docs page is a JS-rendered app that didn't
- * return usable content to automated fetching, and no verified real-world
- * example turned up anywhere else I could reach (not even in the popular
- * node-quickbooks community SDK, which doesn't implement this endpoint at
- * all). AdjustAccountRef is confirmed correct via multiple independent
- * sources; the Line/InventoryAdjustmentLineDetail shape follows the same
- * pattern every other QBO transaction type in this codebase already uses,
- * but hasn't been independently confirmed for this specific entity.
- * CustomerRef at the line level (for job attribution) is similarly
- * unconfirmed -- if QBO doesn't support it here, it may get silently
- * ignored, meaning quantity/cost would move correctly but the job tag
- * wouldn't stick. Verify the very first real pull directly in QuickBooks
- * (Inventory Asset movement + which job it landed on) before trusting this.
+ * Deliberately NOT InventoryAdjustment (what this used to do): that entity
+ * is obscure enough that neither of the two major community QBO SDKs
+ * (node-quickbooks, python-quickbooks) implement it at all, and two rounds
+ * of live testing against production confirmed the schema really was
+ * unreliable (DocNumber, then Line, both rejected). A $0 Invoice uses
+ * SalesItemLineDetail + top-level CustomerRef -- completely standard,
+ * heavily-documented QBO API surface (it's the literal mechanism every
+ * real sale uses to relieve inventory and post COGS via FIFO), just with
+ * every line's price/amount forced to 0 so no revenue or AR balance is
+ * created. QBO still relieves Inventory Asset and recognizes real COGS
+ * from that item's actual FIFO cost layers, tagged to the job via
+ * CustomerRef -- the $0 only zeroes what would've been billed, not the
+ * cost. Trade-off: this $0 Invoice is visible in that job's QuickBooks
+ * Invoice/Sales history even though nothing was actually billed.
+ *
+ * Re-reads every line's live QuantityOnHand immediately before posting
+ * (never trusts a client-supplied number for the hard stop) and validates
+ * ALL lines before posting ANY of them -- one line failing the on-hand
+ * check blocks the whole submission rather than partially posting.
  *
  * lines: [{qboItemId, qty}]. Returns per-line results on success.
  */
@@ -755,7 +752,7 @@ function pushMaterialPullToQuickBooks_(lines, qbCustomerId, builder, jobRef) {
   var byId = {};
   items.forEach(function(it) { byId[it.Id] = it; });
 
-  var adjLines = [];
+  var invoiceLines = [];
   var results = [];
   for (var i = 0; i < lines.length; i++) {
     var l = lines[i];
@@ -765,39 +762,31 @@ function pushMaterialPullToQuickBooks_(lines, qbCustomerId, builder, jobRef) {
     if (l.qty > onHand) {
       return { success: false, error: 'Only ' + onHand + ' of "' + item.Name + '" on hand, can\'t pull ' + l.qty + '.' };
     }
-    var newQty = onHand - l.qty;
-    adjLines.push({
-      DetailType: 'InventoryAdjustmentLineDetail',
-      InventoryAdjustmentLineDetail: {
+    invoiceLines.push({
+      DetailType: 'SalesItemLineDetail',
+      Amount: 0,
+      Description: item.Name + ' -- pulled for ' + builder + ' / ' + jobRef,
+      SalesItemLineDetail: {
         ItemRef: { value: l.qboItemId },
-        NewQty: newQty,
-        CustomerRef: { value: qbCustomerId }
+        Qty: l.qty,
+        UnitPrice: 0
       }
     });
-    results.push({ qboItemId: l.qboItemId, materialName: item.Name, qty: l.qty, onHandAfter: newQty });
+    results.push({ qboItemId: l.qboItemId, materialName: item.Name, qty: l.qty, onHandAfter: onHand - l.qty });
   }
 
-  var acctRes = resolveMaterialsCogsAccountId_();
-  if (!acctRes.success) return { success: false, error: acctRes.error };
-
-  // Same "custom transaction numbers" requirement as Bills/Vendor Credits
-  // (see pushMaterialReturnToQuickBooks_) turns out to apply to
-  // InventoryAdjustment too -- confirmed by this failing with the identical
-  // "value must not be null : DocNumber" error QBO gives when a numbered
-  // transaction type is posted without one on an account that requires it.
   var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyMMdd-HHmmss');
-  var adjPayload = {
-    TxnDate: Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd'),
+  var invoicePayload = {
+    CustomerRef: { value: qbCustomerId },
     DocNumber: 'PULL-' + stamp,
     PrivateNote: 'Pulled for ' + builder + ' / ' + jobRef,
-    AdjustAccountRef: { value: acctRes.accountId },
-    Line: adjLines
+    Line: invoiceLines
   };
 
-  var postRes = quickbooksApiPost_('/inventoryadjustment', adjPayload);
-  if (!postRes.success) return { success: false, error: postRes.error, sentPayload: adjPayload };
+  var postRes = quickbooksApiPost_('/invoice', invoicePayload);
+  if (!postRes.success) return { success: false, error: postRes.error, sentPayload: invoicePayload };
 
-  return { success: true, lines: results, cogsAccountName: acctRes.accountName };
+  return { success: true, lines: results };
 }
 
 /**
