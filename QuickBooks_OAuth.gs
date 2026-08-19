@@ -780,8 +780,15 @@ function pushMaterialPullToQuickBooks_(lines, qbCustomerId, builder, jobRef) {
   var acctRes = resolveMaterialsCogsAccountId_();
   if (!acctRes.success) return { success: false, error: acctRes.error };
 
+  // Same "custom transaction numbers" requirement as Bills/Vendor Credits
+  // (see pushMaterialReturnToQuickBooks_) turns out to apply to
+  // InventoryAdjustment too -- confirmed by this failing with the identical
+  // "value must not be null : DocNumber" error QBO gives when a numbered
+  // transaction type is posted without one on an account that requires it.
+  var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyMMdd-HHmmss');
   var adjPayload = {
     TxnDate: Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd'),
+    DocNumber: 'PULL-' + stamp,
     PrivateNote: 'Pulled for ' + builder + ' / ' + jobRef,
     AdjustAccountRef: { value: acctRes.accountId },
     Line: adjLines
@@ -1057,7 +1064,13 @@ function createQuickBooksBill(payload) {
 
     var billPayload = {
       VendorRef: { value: staging.qbVendorId },
-      DocNumber: staging.vendorInvoice || undefined,
+      // A blank vendorInvoice used to leave this key entirely absent,
+      // which fails with "value must not be null : DocNumber" on a QBO
+      // company that has custom transaction numbers enabled (confirmed --
+      // see the same fix in pushMaterialPullToQuickBooks_/
+      // pushMaterialReturnToQuickBooks_). Falls back to a timestamp-based
+      // number rather than leaving it unset.
+      DocNumber: staging.vendorInvoice || ('BILL-' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyMMdd-HHmmss')),
       Line: billLines
     };
 
