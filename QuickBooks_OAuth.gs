@@ -661,6 +661,13 @@ function pushMaterialReturnToQuickBooks_(lines, qbCustomerId, builder, jobRef) {
   var acctRes = resolveMaterialsCogsAccountId_();
   if (!acctRes.success) return { success: false, error: acctRes.error };
 
+  // A QBO company with "custom transaction numbers" enabled requires
+  // DocNumber on Bills/Vendor Credits -- omitting it (as this originally
+  // did) fails with "value must not be null : DocNumber". createQuickBooksBill
+  // already works around this for the invoice-review Bill (DocNumber:
+  // staging.vendorInvoice); there's no real invoice number here, so a
+  // timestamp-based one is generated instead, distinct per transaction.
+  var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyMMdd-HHmmss');
   var note = 'Returned from ' + builder + ' / ' + jobRef;
   var billLines = [];
   var creditLines = [];
@@ -692,12 +699,12 @@ function pushMaterialReturnToQuickBooks_(lines, qbCustomerId, builder, jobRef) {
   });
   total = Math.round(total * 100) / 100;
 
-  var billPayload = { VendorRef: { value: vendorRes.vendorId }, PrivateNote: note, Line: billLines };
+  var billPayload = { VendorRef: { value: vendorRes.vendorId }, DocNumber: 'RTN-' + stamp, PrivateNote: note, Line: billLines };
   var billRes = quickbooksApiPost_('/bill', billPayload);
   if (!billRes.success) return { success: false, error: billRes.error, sentPayload: billPayload };
   var billId = billRes.data && billRes.data.Bill && billRes.data.Bill.Id;
 
-  var creditPayload = { VendorRef: { value: vendorRes.vendorId }, PrivateNote: 'Credit for material ' + note, Line: creditLines };
+  var creditPayload = { VendorRef: { value: vendorRes.vendorId }, DocNumber: 'RTNC-' + stamp, PrivateNote: 'Credit for material ' + note, Line: creditLines };
   var creditRes = quickbooksApiPost_('/vendorcredit', creditPayload);
   var vendorCreditId = null, creditWarning = null;
   if (!creditRes.success) {
