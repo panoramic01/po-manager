@@ -236,9 +236,9 @@ function doPost(e) {
     else if (action === 'addMaintenanceLog')           result = addMaintenanceLog(payload);
     else if (action === 'registerPushToken')           result = registerPushToken(payload);
     else if (action === 'unregisterPushToken')         result = unregisterPushToken(payload);
-    else if (action === 'getMaterialCatalog')          result = getMaterialCatalog(payload);
     else if (action === 'getMaterialInventory')        result = getMaterialInventory(payload);
-    else if (action === 'logMaterialTransaction')      result = logMaterialTransaction(payload);
+    else if (action === 'pullMaterialForJob')          result = pullMaterialForJob(payload);
+    else if (action === 'returnMaterialFromJob')       result = returnMaterialFromJob(payload);
     else if (action === 'deleteMaterialLogEntry')      result = deleteMaterialLogEntry(payload);
     else if (action === 'getInternalInvoices')         result = getInternalInvoices(payload);
     else if (action === 'getInternalInvoicePdf')       result = getInternalInvoicePdf(payload);
