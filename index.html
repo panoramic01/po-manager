@@ -743,19 +743,6 @@
       <div id="dash-delpick-content"></div>
     </div>
 
-    <!-- My Asana Tasks summary card -->
-    <div class="card" id="dash-asana-card">
-      <div class="row-between" style="margin-bottom:2px">
-        <div class="card-title" style="margin-bottom:0">My Asana Tasks</div>
-      </div>
-      <div class="dash-filter-row" style="margin:10px 0 0;display:flex">
-        <select class="dash-filter-select" id="dash-asana-project-filter" onchange="renderAsanaTasksInto_('dash-asana-content','dash-asana-project-filter',ASANA_DASH_TASK_LIMIT)">
-          <option value="">All Projects</option>
-        </select>
-      </div>
-      <div id="dash-asana-content"><div class="loading"><div class="spinner"></div><p>Loading tasks…</p></div></div>
-    </div>
-
     <!-- Recent Orders summary card -->
     <div class="card" id="dash-recent-card">
       <div class="row-between" style="margin-bottom:14px">
@@ -3115,12 +3102,6 @@ function loadData() {
   // Independent of PO data -- fetched in parallel so a slow/failed Asana
   // call never blocks the PO dashboard from loading.
   loadMyAsanaTasksData_(function() {
-    populateAsanaProjectFilterInto_('dash-asana-project-filter');
-    // tab-dashboard is the "Purchasing" tool, not most people's main
-    // dashboard, so a task list that only lived there would go unseen by
-    // anyone who isn't admin/HR (the only roles without a dedicated home
-    // tab) -- renderAllAsanaSurfaces_ also paints the compact copy on
-    // whichever tab is each role's actual landing/home screen.
     renderAllAsanaSurfaces_();
   });
 
@@ -4268,11 +4249,14 @@ function asanaTaskRow_(t) {
 }
 
 // Re-renders every surface that shows "My Asana Tasks" from the shared
-// window._myAsanaTasks array -- the Purchasing dashboard card (filterable),
-// the Other-tab full panel (filterable, uncapped), and a compact capped copy
-// on whichever tab is each role's actual home/landing screen.
+// window._myAsanaTasks array -- the Other-tab full panel (filterable,
+// uncapped) and a compact capped copy on whichever tab is each role's
+// actual home/landing screen. Deliberately NOT the Purchasing dashboard
+// (tab-dashboard) -- that's a PO-specific tool, not anyone's personal
+// task list, even though it's the only landing tab admin/HR roles get
+// (no dedicated home tab exists for them); those roles can still see
+// their tasks via Other > My Asana Tasks.
 function renderAllAsanaSurfaces_() {
-  renderAsanaTasksInto_('dash-asana-content', 'dash-asana-project-filter', ASANA_DASH_TASK_LIMIT);
   renderAsanaTasksInto_('other-asana-content', 'other-asana-project-filter');
   renderAsanaTasksInto_('home-asana-content', null, ASANA_DASH_TASK_LIMIT);
   renderAsanaTasksInto_('officehome-asana-content', null, ASANA_DASH_TASK_LIMIT);
