@@ -1148,32 +1148,41 @@
           <input type="text" id="mp-job-combo" autocomplete="off" placeholder="e.g. CRESCENT_RIDGE-WEGNER"
                  oninput="this.value=this.value.toUpperCase().replace(/\s+/g,'_'); mpJobFilter(this.value)"
                  onfocus="mpJobFilter(this.value)"
+                 onblur="mpCheckJobLink()"
                  style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:12px">
           <div id="mp-job-dropdown" style="display:none;position:absolute;left:0;right:0;top:100%;background:var(--c-surface);border:1px solid var(--c-border);border-radius:8px;margin-top:4px;max-height:220px;overflow-y:auto;z-index:20;box-shadow:0 4px 12px rgba(0,0,0,0.12)"></div>
         </div>
 
-        <div style="overflow-x:auto">
-          <table style="width:100%;border-collapse:collapse;min-width:340px">
-            <thead>
-              <tr style="text-align:left">
-                <th style="font-size:10px;color:var(--c-ink-soft);padding:0 4px 6px">Material</th>
-                <th style="font-size:10px;color:var(--c-ink-soft);padding:0 4px 6px;width:70px">Qty</th>
-                <th id="mp-cost-col-header" style="display:none;font-size:10px;color:var(--c-ink-soft);padding:0 4px 6px;width:90px">Cost/Unit</th>
-                <th style="width:28px"></th>
-              </tr>
-            </thead>
-            <tbody id="mp-line-rows"></tbody>
-          </table>
-        </div>
-        <button onclick="mpAddLine()" style="background:none;border:1.5px dashed var(--c-border);color:var(--c-navy);border-radius:8px;padding:8px;font-size:12px;font-weight:600;cursor:pointer;width:100%;margin:4px 0 12px">+ Add Material</button>
+        <!-- QuickBooks link-gate: same idea as the Add Invoice screen's link
+             gate (irCheckLinkGate/irRenderLinkGate), scoped to just the job
+             since Pull/Return has no vendor involved. Nothing below is shown
+             until the selected job resolves to a real QBO Customer Id. -->
+        <div id="mp-link-gate"></div>
 
-        <label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Notes (optional)</label>
-        <input type="text" id="mp-notes" placeholder="Notes" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">
-        <div id="mp-total" style="font-size:12px;font-weight:700;color:var(--c-navy);text-align:right;margin-bottom:4px;display:none"></div>
-        <div id="mp-status" style="font-size:12px;color:var(--c-danger);margin-bottom:4px"></div>
-        <div style="display:flex;gap:8px;margin-top:4px">
-          <button id="mp-save-btn" onclick="submitMaterialPullOrReturn()" style="flex:1;background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:700;cursor:pointer">Pull Material</button>
-          <button onclick="showOtherPanel('material-inventory')" style="flex:1;background:var(--c-bg);color:var(--c-ink-soft);border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+        <div id="mp-form-body" style="display:none">
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;min-width:340px">
+              <thead>
+                <tr style="text-align:left">
+                  <th style="font-size:10px;color:var(--c-ink-soft);padding:0 4px 6px">Material</th>
+                  <th style="font-size:10px;color:var(--c-ink-soft);padding:0 4px 6px;width:70px">Qty</th>
+                  <th id="mp-cost-col-header" style="display:none;font-size:10px;color:var(--c-ink-soft);padding:0 4px 6px;width:90px">Cost/Unit</th>
+                  <th style="width:28px"></th>
+                </tr>
+              </thead>
+              <tbody id="mp-line-rows"></tbody>
+            </table>
+          </div>
+          <button onclick="mpAddLine()" style="background:none;border:1.5px dashed var(--c-border);color:var(--c-navy);border-radius:8px;padding:8px;font-size:12px;font-weight:600;cursor:pointer;width:100%;margin:4px 0 12px">+ Add Material</button>
+
+          <label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Notes (optional)</label>
+          <input type="text" id="mp-notes" placeholder="Notes" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">
+          <div id="mp-total" style="font-size:12px;font-weight:700;color:var(--c-navy);text-align:right;margin-bottom:4px;display:none"></div>
+          <div id="mp-status" style="font-size:12px;color:var(--c-danger);margin-bottom:4px"></div>
+          <div style="display:flex;gap:8px;margin-top:4px">
+            <button id="mp-save-btn" onclick="submitMaterialPullOrReturn()" style="flex:1;background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:700;cursor:pointer">Pull Material</button>
+            <button onclick="showOtherPanel('material-inventory')" style="flex:1;background:var(--c-bg);color:var(--c-ink-soft);border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+          </div>
         </div>
       </div>
     </div>
@@ -8721,9 +8730,12 @@ function showMaterialFormCommon_(mode) {
   G.matFormMode = mode;
   G.matPullIdemKey = null;
   G.matFormLines = [{ qboItemId: '', qty: '', unitCost: '' }];
+  G.mpLinkGate = null;
   document.getElementById('mp-job-combo').value = '';
   document.getElementById('mp-notes').value = '';
   document.getElementById('mp-status').textContent = '';
+  document.getElementById('mp-link-gate').innerHTML = '';
+  document.getElementById('mp-form-body').style.display = 'none';
   mpRenderLineRows();
   showOtherPanel('material-pull');
 }
@@ -8825,6 +8837,95 @@ function mpSelectJobCombo(combo) {
   var drop = document.getElementById('mp-job-dropdown');
   if (inp)  inp.value = combo;
   if (drop) drop.style.display = 'none';
+  mpCheckJobLink();
+}
+
+// Same idea as the Add Invoice screen's link gate (irCheckLinkGate/
+// irRenderLinkGate), scoped to just the job -- Pull/Return has no vendor
+// step, so there's nothing to check there. Nothing in #mp-form-body is
+// shown until the selected job resolves to a real QBO Customer Id; a
+// missing link can be fixed inline instead of only surfacing after
+// picking materials and hitting Pull/Return.
+function mpCheckJobLink() {
+  var combo = document.getElementById('mp-job-combo').value.trim();
+  var match = G.jobComboMap && G.jobComboMap[combo];
+  var gateEl = document.getElementById('mp-link-gate');
+  var bodyEl = document.getElementById('mp-form-body');
+
+  if (!match) {
+    G.mpLinkGate = null;
+    gateEl.innerHTML = '';
+    bodyEl.style.display = 'none';
+    return;
+  }
+
+  G.mpLinkGateJob = match;
+  gateEl.innerHTML = '<div style="font-size:12px;color:var(--c-ink-soft)">Checking QuickBooks link…</div>';
+  bodyEl.style.display = 'none';
+
+  gasCall('getQuickBooksLinkStatusForInvoice', { vendor: '', builder: match.builder, jobRef: match.job }, function(res) {
+    if (!res.success) {
+      gateEl.innerHTML = '<div style="font-size:12px;color:var(--c-danger)">' + esc(res.error || 'Could not check QuickBooks link.') + '</div>';
+      return;
+    }
+    G.mpLinkGate = { qbCustomerId: res.qbCustomerId || '', projectFound: res.projectFound };
+    mpRenderLinkGate_();
+  }, function(err) {
+    gateEl.innerHTML = '<div style="font-size:12px;color:var(--c-danger)">' + esc(abortAwareError(err, 'Could not check QuickBooks link.')) + '</div>';
+  });
+}
+
+function mpRenderLinkGate_() {
+  var match = G.mpLinkGateJob;
+  var gate = G.mpLinkGate;
+  var gateEl = document.getElementById('mp-link-gate');
+  var bodyEl = document.getElementById('mp-form-body');
+  if (!match || !gate) return;
+
+  if (gate.qbCustomerId) {
+    gateEl.innerHTML = '<div style="background:var(--sh-green-bg);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--c-navy);margin-bottom:12px">✓ Job <b>' + esc(match.builder) + ' / ' + esc(match.job) + '</b> is linked (QB Customer Id ' + esc(gate.qbCustomerId) + ')</div>';
+    bodyEl.style.display = '';
+    return;
+  }
+
+  bodyEl.style.display = 'none';
+  if (!gate.projectFound) {
+    gateEl.innerHTML = '<div style="background:var(--sh-red-bg,#fde8e8);border-radius:8px;padding:12px;font-size:12px;color:var(--c-navy);margin-bottom:12px">No Projects sheet row found for <b>' + esc(match.builder) + ' / ' + esc(match.job) + '</b> -- add the project first (New Project), then come back here.</div>';
+    return;
+  }
+
+  gateEl.innerHTML =
+    '<div style="background:var(--c-surface);border-radius:8px;padding:12px;margin-bottom:12px">' +
+      '<div style="font-size:13px;font-weight:700;color:var(--c-navy);margin-bottom:6px">Job: ' + esc(match.builder) + ' / ' + esc(match.job) + '</div>' +
+      '<label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">QuickBooks Customer/Sub-customer Id</label>' +
+      '<input type="text" id="mp-link-job-id" placeholder="e.g. 87" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">' +
+      '<button onclick="mpSaveJobLink()" id="mp-link-save-btn" style="width:100%;background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:10px;font-size:13px;font-weight:700;cursor:pointer">Save Job Link</button>' +
+      '<div id="mp-link-status" style="font-size:12px;color:var(--c-danger);margin-top:6px"></div>' +
+    '</div>';
+}
+
+function mpSaveJobLink() {
+  var match = G.mpLinkGateJob;
+  if (!match) return;
+  var qbCustomerId = document.getElementById('mp-link-job-id').value.trim();
+  var status = document.getElementById('mp-link-status');
+  if (!qbCustomerId) { if (status) status.textContent = 'QuickBooks Customer/Sub-customer Id is required.'; return; }
+
+  var btn = document.getElementById('mp-link-save-btn');
+  if (btn) { btn.textContent = 'Saving…'; btn.disabled = true; }
+
+  gasCall('saveProjectQuickBooksCustomerId', { builder: match.builder, jobRef: match.job, qbCustomerId: qbCustomerId }, function(res) {
+    if (!res.success) {
+      if (status) status.textContent = res.error || 'Could not save job link.';
+      if (btn) { btn.textContent = 'Save Job Link'; btn.disabled = false; }
+      return;
+    }
+    G.mpLinkGate.qbCustomerId = qbCustomerId;
+    mpRenderLinkGate_();
+  }, function(err) {
+    if (status) status.textContent = abortAwareError(err, 'Could not save job link.');
+    if (btn) { btn.textContent = 'Save Job Link'; btn.disabled = false; }
+  });
 }
 
 function submitMaterialPullOrReturn() {
@@ -8834,6 +8935,14 @@ function submitMaterialPullOrReturn() {
   var status = document.getElementById('mp-status');
   var busyLabel = isReturn ? 'Returning…' : 'Pulling…';
   var idleLabel = isReturn ? 'Return Material' : 'Pull Material';
+
+  // Defense in depth -- #mp-form-body is only ever shown once mpCheckJobLink
+  // confirms a real QBO Customer Id, but this is the actual gate: the server
+  // re-checks the same thing regardless, this just avoids a wasted round-trip.
+  if (!G.mpLinkGate || !G.mpLinkGate.qbCustomerId) {
+    status.textContent = 'Pick a linked job first.';
+    return;
+  }
 
   // Build the lines payload from G.matFormLines, pulling each row's
   // material name off its <select>'s data-name (set in mpMaterialOptions_)
