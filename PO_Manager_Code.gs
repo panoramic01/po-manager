@@ -189,6 +189,7 @@ function doPost(e) {
     else if (action === 'getJobsByPhase')               result = getJobsByPhase(payload);
     else if (action === 'getRecentQualityWalks')        result = getRecentQualityWalks(payload);
     else if (action === 'getMyAsanaTasks')              result = getMyAsanaTasks(payload);
+    else if (action === 'completeAsanaTask')            result = completeAsanaTask(payload);
     else if (action === 'submitQualityCheck')           result = submitQualityCheck(payload);
     else if (action === 'getQualityWalkPhotos')         result = getQualityWalkPhotos(payload);
     else if (action === 'submitOfficeNote')             result = submitOfficeNote(payload);
@@ -4785,11 +4786,23 @@ function getRecentQualityWalks(payload) {
   } catch (e) { return { error: e.toString() }; }
 }
 
+// "My Asana Tasks" only pulls from these three lists (confirmed against the
+// live Asana org, not guessed) -- everything else (Sales, CRM, Timesheet
+// Submission, etc.) is a different team's workflow and would just be noise
+// on an ops person's dashboard. ASANA_OFFICE_CRITICAL_SECTION is the
+// "CRITICAL" column of the Office Tasks board; ASANA_CREW_MATERIAL_PROJECT
+// is "Crew Material Purchase".
+var ASANA_OFFICE_CRITICAL_SECTION = '1216114546249132';
+var ASANA_CREW_MATERIAL_PROJECT   = '1208694840801954';
+
 /**
- * All of the caller's own assigned, incomplete Asana tasks across every
- * project/list they're in -- for the "My Asana Tasks" Dashboard card and
- * Other-tab panel. Two things make this different from getAsanaJobs()/
- * getRecentQualityWalks() above:
+ * The caller's own assigned, incomplete tasks from Office Tasks, Crew
+ * Material Purchase, and Exteriors Master Schedule -- for the "My Asana
+ * Tasks" Dashboard card and Other-tab panel. Ordered into four fixed
+ * priority tiers (not just sorted by due date) per how the office actually
+ * triages work: Critical Office Tasks first, then the rest of Office Tasks,
+ * then Crew Material Purchase, then Exteriors subtasks. Within each tier,
+ * soonest-due-first. Two things make the query itself non-obvious:
  *
  * 1. The whole app authenticates to Asana with one shared script PAT
  *    (getAsanaPAT()), which belongs to a single service-account identity --
@@ -4800,15 +4813,15 @@ function getRecentQualityWalks(payload) {
  *    this is a domain-restricted Asana org. That gid is cached for 6 hours
  *    (an Asana identity doesn't change minute to minute) so repeat loads
  *    only pay for it once per workday, not once per dashboard paint.
- * 2. "All of a person's tasks" spans however many projects they're a member
- *    of -- crawling each one (like getAsanaJobs()'s up-to-10-page pagination
- *    per project) would multiply that cost per project per user. Asana's
- *    workspace task search does it in one call instead, same tradeoff
- *    getRecentQualityWalks() already makes above. Results are capped at a
- *    single page of 100 (sorted soonest-due-first) rather than paginated
- *    further -- a person realistically has far fewer open assigned tasks
- *    than that, and paginating would reintroduce the exact per-call latency
- *    this design is trying to avoid.
+ * 2. Scoping to 3 projects instead of the whole workspace via `projects.any`
+ *    keeps the single search call cheap AND is what makes deterministic
+ *    tiering possible -- with no allowlist, "my tasks" could be scattered
+ *    across a dozen unrelated boards with nothing to sort them by.
+ *
+ * Exteriors Master Schedule's *top-level* tasks are jobs, not to-dos (see
+ * getAsanaJobs() above) -- only tasks with a parent (subtasks: quality-check
+ * items, phase to-dos, etc.) belong in a person's task list, so a top-level
+ * EXT_SCHED task (no `parent`) is dropped rather than tiered.
  *
  * The task list itself (unlike the gid) is cached for only 120s -- someone
  * actively working through their tasks expects to see changes reflected
@@ -4821,21 +4834,10 @@ function getMyAsanaTasks(payload) {
     var email = auth.email;
 
     var cache = CacheService.getScriptCache();
-    var gidCacheKey = 'asana_user_gid_v1_' + email;
-    var userGid = null;
-    try { userGid = cache.get(gidCacheKey); } catch (e) { /* fall through and resolve fresh */ }
-
-    if (userGid === null) {
-      // Not cached at all (distinct from a cached '' sentinel, which means
-      // "already confirmed this email has no Asana account").
-      var userResult = asanaRequest('get', '/users/' + encodeURIComponent(email) + '?opt_fields=gid');
-      userGid = (!userResult.errors && userResult.data && userResult.data.gid) ? userResult.data.gid : '';
-      try { cache.put(gidCacheKey, userGid, userGid ? 21600 : 900); } catch (e) { /* over cache size limit -- fine, just skip caching */ }
-    }
-
+    var userGid = getAsanaUserGid_(email, cache);
     if (!userGid) return { tasks: [], noAsanaAccount: true };
 
-    var tasksCacheKey = 'asana_my_tasks_v1_' + userGid;
+    var tasksCacheKey = 'asana_my_tasks_v2_' + userGid;
     try {
       var cachedTasks = cache.get(tasksCacheKey);
       if (cachedTasks) return JSON.parse(cachedTasks);
@@ -4847,28 +4849,90 @@ function getMyAsanaTasks(payload) {
 
     var searchUrl = '/workspaces/' + workspaceGid + '/tasks/search' +
       '?assignee.any=' + userGid + '&completed=false' +
+      '&projects.any=' + ASANA_OFFICE_TASKS + ',' + ASANA_CREW_MATERIAL_PROJECT + ',' + ASANA_EXT_SCHED +
       '&sort_by=due_date&sort_ascending=true&limit=100' +
-      '&opt_fields=name,due_on,permalink_url,memberships.project.gid,memberships.project.name';
+      '&opt_fields=name,due_on,permalink_url,parent,memberships.project.gid,memberships.project.name,memberships.section.gid';
     var searchResult = asanaRequest('get', searchUrl);
     if (searchResult.errors) return { tasks: [], error: searchResult.errors[0].message };
 
-    var tasks = (searchResult.data || []).map(function(t) {
-      var projects = (t.memberships || [])
+    var tiers = { critical: [], office: [], material: [], exteriors: [] };
+    (searchResult.data || []).forEach(function(t) {
+      var memberships = t.memberships || [];
+      var officeMembership = memberships.filter(function(m) { return m.project && m.project.gid === ASANA_OFFICE_TASKS; })[0];
+      var inMaterial = memberships.some(function(m) { return m.project && m.project.gid === ASANA_CREW_MATERIAL_PROJECT; });
+      var inExteriors = memberships.some(function(m) { return m.project && m.project.gid === ASANA_EXT_SCHED; });
+
+      var bucket;
+      if (officeMembership) {
+        bucket = (officeMembership.section && officeMembership.section.gid === ASANA_OFFICE_CRITICAL_SECTION) ? 'critical' : 'office';
+      } else if (inMaterial) {
+        bucket = 'material';
+      } else if (inExteriors && t.parent) {
+        bucket = 'exteriors';
+      } else {
+        return; // top-level Exteriors job task (no parent), or an unrelated membership -- not a to-do
+      }
+
+      var projects = memberships
         .map(function(m) { return m.project; })
         .filter(function(p) { return p && p.gid; })
         .map(function(p) { return { gid: p.gid, name: p.name || '' }; });
-      return {
+
+      tiers[bucket].push({
         gid:          t.gid,
         name:         t.name || '',
         dueOn:        t.due_on || '',
         permalinkUrl: t.permalink_url || '',
+        bucket:       bucket,
         projects:     projects
-      };
+      });
     });
 
+    var tasks = [].concat(tiers.critical, tiers.office, tiers.material, tiers.exteriors);
     var response = { tasks: tasks };
     try { cache.put(tasksCacheKey, JSON.stringify(response), 120); } catch (e) { /* over cache size limit -- fine, just skip caching */ }
     return response;
+  } catch (e) { return { error: e.toString() }; }
+}
+
+/** Resolves + caches (6h) an Asana user gid from email; '' sentinel (cached 900s) means confirmed no Asana account. */
+function getAsanaUserGid_(email, cache) {
+  var gidCacheKey = 'asana_user_gid_v1_' + email;
+  var userGid = null;
+  try { userGid = cache.get(gidCacheKey); } catch (e) { /* fall through and resolve fresh */ }
+
+  if (userGid === null) {
+    var userResult = asanaRequest('get', '/users/' + encodeURIComponent(email) + '?opt_fields=gid');
+    userGid = (!userResult.errors && userResult.data && userResult.data.gid) ? userResult.data.gid : '';
+    try { cache.put(gidCacheKey, userGid, userGid ? 21600 : 900); } catch (e) { /* over cache size limit -- fine, just skip caching */ }
+  }
+  return userGid;
+}
+
+/**
+ * Marks one of the caller's Asana tasks complete -- the checkbox on the "My
+ * Asana Tasks" card/panel. Doesn't verify the task is actually assigned to
+ * the caller (matching this app's existing trust level for any-logged-in-
+ * user actions elsewhere, e.g. submitOfficeNote's assignee picker) since the
+ * gid only ever reaches the client via that same person's own task list.
+ * Proactively evicts the 120s task-list cache so a same-session reload
+ * doesn't briefly show the task as still open.
+ */
+function completeAsanaTask(payload) {
+  try {
+    var auth = requireVerifiedEmail_(payload);
+    if (auth.error) return { error: auth.error, code: auth.code };
+    var taskGid = ((payload && payload.taskGid) || '').toString().trim();
+    if (!taskGid) return { error: 'Missing task.' };
+
+    var result = asanaRequest('put', '/tasks/' + taskGid, { completed: true });
+    if (result.errors) return { error: result.errors[0].message };
+
+    var cache = CacheService.getScriptCache();
+    var userGid = getAsanaUserGid_(auth.email, cache);
+    if (userGid) { try { cache.remove('asana_my_tasks_v2_' + userGid); } catch (e) { /* non-fatal */ } }
+
+    return { success: true };
   } catch (e) { return { error: e.toString() }; }
 }
 

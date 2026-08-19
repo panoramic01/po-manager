@@ -729,7 +729,7 @@
         <div class="card-title" style="margin-bottom:0">My Asana Tasks</div>
       </div>
       <div class="dash-filter-row" style="margin:10px 0 0;display:flex">
-        <select class="dash-filter-select" id="dash-asana-project-filter" onchange="renderAsanaTasksInto_('dash-asana-content','dash-asana-project-filter')">
+        <select class="dash-filter-select" id="dash-asana-project-filter" onchange="renderAsanaTasksInto_('dash-asana-content','dash-asana-project-filter',ASANA_DASH_TASK_LIMIT)">
           <option value="">All Projects</option>
         </select>
       </div>
@@ -3096,7 +3096,7 @@ function loadData() {
   // call never blocks the PO dashboard from loading.
   loadMyAsanaTasksData_(function() {
     populateAsanaProjectFilterInto_('dash-asana-project-filter');
-    renderAsanaTasksInto_('dash-asana-content', 'dash-asana-project-filter');
+    renderAsanaTasksInto_('dash-asana-content', 'dash-asana-project-filter', ASANA_DASH_TASK_LIMIT);
   });
 
   // Always refresh from GAS in background; update UI when fresh data arrives
@@ -4149,9 +4149,15 @@ function recentOrderRow(po) {
 // fetch-once/render-everywhere idiom as the Job Dashboard's job picker
 // (window._jdJobs) -- whichever surface (card or full panel) is opened first
 // pays for the gasCall, the other reuses the already-loaded list for free.
+// The backend already returns tasks pre-ordered into 4 priority tiers
+// (critical office tasks, other office tasks, crew material, exteriors
+// subtasks) -- the frontend's job is just to cap/filter/label, not re-sort.
 window._myAsanaTasks = null;
 window._myAsanaTasksNoAccount = false;
 window._myAsanaTasksError = false;
+var ASANA_DASH_TASK_LIMIT = 10; // Dashboard card is a glanceable digest, not the full list -- the Other-tab panel shows everything
+var ASANA_BUCKET_LABELS = { critical: 'Critical', office: 'Office Tasks', material: 'Crew Material', exteriors: 'Exteriors Subtasks' };
+var ASANA_BUCKET_COLORS = { critical: 'sh-red', office: 'sh-blue', material: 'sh-teal', exteriors: 'sh-indigo' };
 
 function loadMyAsanaTasksData_(onReady) {
   if (window._myAsanaTasks !== null) { onReady(); return; }
@@ -4185,7 +4191,7 @@ function populateAsanaProjectFilterInto_(selectId) {
   fillSelect(selectId, names, 1);
 }
 
-function renderAsanaTasksInto_(contentId, selectId) {
+function renderAsanaTasksInto_(contentId, selectId, limit) {
   var el = document.getElementById(contentId);
   if (!el) return;
   if (window._myAsanaTasksError) { el.innerHTML = '<div class="empty">Could not load Asana tasks.</div>'; return; }
@@ -4199,11 +4205,21 @@ function renderAsanaTasksInto_(contentId, selectId) {
       return (t.projects || []).some(function(p) { return p.name === filterName; });
     });
   }
+  if (limit) tasks = tasks.slice(0, limit);
   if (!tasks.length) {
     el.innerHTML = '<div class="empty">No assigned tasks' + (filterName ? ' in ' + esc(filterName) : '') + '.</div>';
     return;
   }
-  el.innerHTML = tasks.map(asanaTaskRow_).join('');
+
+  var html = '', lastBucket = null;
+  tasks.forEach(function(t) {
+    if (t.bucket !== lastBucket) {
+      html += secHead(ASANA_BUCKET_LABELS[t.bucket] || '', ASANA_BUCKET_COLORS[t.bucket] || 'sh-blue');
+      lastBucket = t.bucket;
+    }
+    html += asanaTaskRow_(t);
+  });
+  el.innerHTML = html;
 }
 
 function asanaTaskRow_(t) {
@@ -4212,15 +4228,31 @@ function asanaTaskRow_(t) {
   var dueLabel = t.dueOn ? fmtISODate_(t.dueOn) : 'No due date';
   var projName = (t.projects && t.projects[0] && t.projects[0].name) || '';
   var extra    = (t.projects && t.projects.length > 1) ? ' +' + (t.projects.length - 1) : '';
-  return '<div class="po-item' + (overdue ? ' overdue' : '') + '">' +
+  return '<div class="po-item' + (overdue ? ' overdue' : '') + '" id="asana-task-' + esc(t.gid) + '">' +
     '<div class="row-between">' +
-      '<div>' +
-        '<div class="po-main" style="margin:0;font-size:15px">' + esc(t.name) + '</div>' +
-        '<div class="po-sub" style="font-size:12px;margin-top:2px">' + esc(dueLabel) + (projName ? ' · ' + esc(projName) + esc(extra) : '') + '</div>' +
+      '<div style="display:flex;gap:10px;align-items:flex-start;flex:1">' +
+        '<input type="checkbox" onclick="completeAsanaTask_(\'' + esc(t.gid) + '\', this)" style="margin-top:4px;width:18px;height:18px;flex-shrink:0;cursor:pointer">' +
+        '<div>' +
+          '<div class="po-main" style="margin:0;font-size:15px">' + esc(t.name) + '</div>' +
+          '<div class="po-sub" style="font-size:12px;margin-top:2px">' + esc(dueLabel) + (projName ? ' · ' + esc(projName) + esc(extra) : '') + '</div>' +
+        '</div>' +
       '</div>' +
       '<a class="btn btn-sm btn-secondary" href="' + esc(t.permalinkUrl) + '" target="_blank" rel="noopener">Open</a>' +
     '</div>' +
   '</div>';
+}
+
+function completeAsanaTask_(gid, checkboxEl) {
+  if (checkboxEl) checkboxEl.disabled = true;
+  gasCall('completeAsanaTask', { taskGid: gid }, function(d) {
+    if (d && d.error) { showToast(d.error); if (checkboxEl) checkboxEl.disabled = false; return; }
+    window._myAsanaTasks = (window._myAsanaTasks || []).filter(function(t) { return t.gid !== gid; });
+    renderAsanaTasksInto_('dash-asana-content', 'dash-asana-project-filter', ASANA_DASH_TASK_LIMIT);
+    renderAsanaTasksInto_('other-asana-content', 'other-asana-project-filter');
+  }, function() {
+    showToast('Could not complete task.');
+    if (checkboxEl) checkboxEl.disabled = false;
+  });
 }
 
 function viewAllOrders() {
