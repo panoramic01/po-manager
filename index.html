@@ -612,6 +612,11 @@
       <div id="home-attention-list"></div>
     </div>
 
+    <div class="card" id="home-asana-card">
+      <div class="card-title">My Asana Tasks</div>
+      <div id="home-asana-content"><div class="loading"><div class="spinner"></div><p>Loading tasks…</p></div></div>
+    </div>
+
     <div class="card" id="home-quality-card">
       <div class="card-title">Recent Quality Walks</div>
       <div id="home-quality-content"><div class="loading"><div class="spinner"></div><p>Loading…</p></div></div>
@@ -651,6 +656,11 @@
     </div>
 
     <div class="tile-grid" id="runner-home-quick-actions" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px"></div>
+
+    <div class="card" id="runnerhome-asana-card">
+      <div class="card-title">My Asana Tasks</div>
+      <div id="runnerhome-asana-content"><div class="loading"><div class="spinner"></div><p>Loading tasks…</p></div></div>
+    </div>
   </div>
 
   <!-- ══ SITE MANAGER HOME (site_manager-only, pure role) ══
@@ -681,6 +691,11 @@
       </div>
       <div id="sm-home-search-results"></div>
     </div>
+
+    <div class="card" id="smhome-asana-card">
+      <div class="card-title">My Asana Tasks</div>
+      <div id="smhome-asana-content"><div class="loading"><div class="spinner"></div><p>Loading tasks…</p></div></div>
+    </div>
   </div>
 
   <!-- ══ OFFICE HOME (office-only, pure role) ══
@@ -696,6 +711,11 @@
     </div>
 
     <div class="tile-grid" id="office-home-quick-actions" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px"></div>
+
+    <div class="card" id="officehome-asana-card">
+      <div class="card-title">My Asana Tasks</div>
+      <div id="officehome-asana-content"><div class="loading"><div class="spinner"></div><p>Loading tasks…</p></div></div>
+    </div>
   </div>
 
   <!-- ══ DASHBOARD ══ -->
@@ -3096,7 +3116,12 @@ function loadData() {
   // call never blocks the PO dashboard from loading.
   loadMyAsanaTasksData_(function() {
     populateAsanaProjectFilterInto_('dash-asana-project-filter');
-    renderAsanaTasksInto_('dash-asana-content', 'dash-asana-project-filter', ASANA_DASH_TASK_LIMIT);
+    // tab-dashboard is the "Purchasing" tool, not most people's main
+    // dashboard, so a task list that only lived there would go unseen by
+    // anyone who isn't admin/HR (the only roles without a dedicated home
+    // tab) -- renderAllAsanaSurfaces_ also paints the compact copy on
+    // whichever tab is each role's actual landing/home screen.
+    renderAllAsanaSurfaces_();
   });
 
   // Always refresh from GAS in background; update UI when fresh data arrives
@@ -4242,13 +4267,25 @@ function asanaTaskRow_(t) {
   '</div>';
 }
 
+// Re-renders every surface that shows "My Asana Tasks" from the shared
+// window._myAsanaTasks array -- the Purchasing dashboard card (filterable),
+// the Other-tab full panel (filterable, uncapped), and a compact capped copy
+// on whichever tab is each role's actual home/landing screen.
+function renderAllAsanaSurfaces_() {
+  renderAsanaTasksInto_('dash-asana-content', 'dash-asana-project-filter', ASANA_DASH_TASK_LIMIT);
+  renderAsanaTasksInto_('other-asana-content', 'other-asana-project-filter');
+  renderAsanaTasksInto_('home-asana-content', null, ASANA_DASH_TASK_LIMIT);
+  renderAsanaTasksInto_('officehome-asana-content', null, ASANA_DASH_TASK_LIMIT);
+  renderAsanaTasksInto_('smhome-asana-content', null, ASANA_DASH_TASK_LIMIT);
+  renderAsanaTasksInto_('runnerhome-asana-content', null, ASANA_DASH_TASK_LIMIT);
+}
+
 function completeAsanaTask_(gid, checkboxEl) {
   if (checkboxEl) checkboxEl.disabled = true;
   gasCall('completeAsanaTask', { taskGid: gid }, function(d) {
     if (d && d.error) { showToast(d.error); if (checkboxEl) checkboxEl.disabled = false; return; }
     window._myAsanaTasks = (window._myAsanaTasks || []).filter(function(t) { return t.gid !== gid; });
-    renderAsanaTasksInto_('dash-asana-content', 'dash-asana-project-filter', ASANA_DASH_TASK_LIMIT);
-    renderAsanaTasksInto_('other-asana-content', 'other-asana-project-filter');
+    renderAllAsanaSurfaces_();
   }, function() {
     showToast('Could not complete task.');
     if (checkboxEl) checkboxEl.disabled = false;
