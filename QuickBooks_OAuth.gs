@@ -744,6 +744,43 @@ function pushMaterialReturnToQuickBooks_(lines, qbCustomerId, builder, jobRef) {
  *
  * lines: [{qboItemId, qty}]. Returns per-line results on success.
  */
+/**
+ * Read-only estimate for the Pull-for-job confirm screen -- see
+ * previewMaterialPull (PO_Manager_Code.gs) for the caller/validation side.
+ * Same live on-hand hard-stop as pushMaterialPullToQuickBooks_, but pairs
+ * it with each Item's PurchaseCost (a real, documented QBO Item field --
+ * its currently-recorded/last cost) to estimate a $ impact before posting.
+ * Not a guarantee of the exact number: the real transaction lets QBO
+ * compute actual FIFO cost from whichever layer(s) get consumed, which can
+ * differ from PurchaseCost if this item has multiple cost layers.
+ */
+function previewMaterialPullFromQuickBooks_(lines) {
+  var idFilter = lines.map(function(l) { return "'" + l.qboItemId.replace(/'/g, "\\'") + "'"; }).join(',');
+  var itemRes = quickbooksApiGet_('/query?query=' + encodeURIComponent('select Id, Name, QtyOnHand, PurchaseCost from Item where Id in (' + idFilter + ')'));
+  if (!itemRes.success) return { success: false, error: itemRes.error };
+  var items = (itemRes.data && itemRes.data.QueryResponse && itemRes.data.QueryResponse.Item) || [];
+  var byId = {};
+  items.forEach(function(it) { byId[it.Id] = it; });
+
+  var results = [];
+  var grandTotal = 0;
+  for (var i = 0; i < lines.length; i++) {
+    var l = lines[i];
+    var item = byId[l.qboItemId];
+    if (!item) return { success: false, error: 'Could not find one of the selected materials in QuickBooks.' };
+    var onHand = parseFloat(item.QtyOnHand) || 0;
+    if (l.qty > onHand) {
+      return { success: false, error: 'Only ' + onHand + ' of "' + item.Name + '" on hand, can\'t pull ' + l.qty + '.' };
+    }
+    var estUnitCost = parseFloat(item.PurchaseCost) || 0;
+    var estLineTotal = Math.round(estUnitCost * l.qty * 100) / 100;
+    grandTotal += estLineTotal;
+    results.push({ qboItemId: l.qboItemId, materialName: item.Name, qty: l.qty, estUnitCost: estUnitCost, estLineTotal: estLineTotal });
+  }
+
+  return { success: true, lines: results, estGrandTotal: Math.round(grandTotal * 100) / 100 };
+}
+
 function pushMaterialPullToQuickBooks_(lines, qbCustomerId, builder, jobRef) {
   var idFilter = lines.map(function(l) { return "'" + l.qboItemId.replace(/'/g, "\\'") + "'"; }).join(',');
   var itemRes = quickbooksApiGet_('/query?query=' + encodeURIComponent('select Id, Name, QtyOnHand from Item where Id in (' + idFilter + ')'));

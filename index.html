@@ -1178,11 +1178,28 @@
           <label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Notes (optional)</label>
           <input type="text" id="mp-notes" placeholder="Notes" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">
           <div id="mp-total" style="font-size:12px;font-weight:700;color:var(--c-navy);text-align:right;margin-bottom:4px;display:none"></div>
-          <div id="mp-status" style="font-size:12px;color:var(--c-danger);margin-bottom:4px"></div>
-          <div style="display:flex;gap:8px;margin-top:4px">
-            <button id="mp-save-btn" onclick="submitMaterialPullOrReturn()" style="flex:1;background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:700;cursor:pointer">Pull Material</button>
-            <button onclick="showOtherPanel('material-inventory')" style="flex:1;background:var(--c-bg);color:var(--c-ink-soft);border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+        </div>
+
+        <!-- Pull-for-job confirm step: shown after "Pull Material" instead of
+             posting immediately -- previewMaterialPull looks up each item's
+             currently-recorded cost (QBO Item.PurchaseCost) so the reviewer
+             sees an estimated $ impact before committing. Return-from-job
+             skips this -- its cost is already visible/entered on the form
+             itself (the running Total), so there's nothing extra to preview. -->
+        <div id="mp-confirm-view" style="display:none">
+          <div style="background:var(--c-surface);border-radius:8px;padding:12px;margin-bottom:12px">
+            <div style="font-size:11px;font-weight:600;color:var(--c-ink-soft);margin-bottom:4px">Pulling for</div>
+            <div id="mp-confirm-job" style="font-size:14px;font-weight:700;color:var(--c-navy)"></div>
           </div>
+          <div id="mp-confirm-lines"></div>
+          <div id="mp-confirm-total" style="font-size:14px;font-weight:700;color:var(--c-navy);text-align:right;margin:12px 0 4px"></div>
+          <p style="font-size:11px;color:var(--c-ink-soft);margin:0 0 12px">Estimated from each item's currently-recorded cost in QuickBooks -- QuickBooks computes the exact FIFO cost when this actually posts, which may differ slightly.</p>
+        </div>
+
+        <div id="mp-status" style="font-size:12px;color:var(--c-danger);margin-bottom:4px"></div>
+        <div style="display:flex;gap:8px;margin-top:4px">
+          <button id="mp-save-btn" onclick="handleMaterialFormPrimaryAction()" style="flex:1;background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:700;cursor:pointer">Pull Material</button>
+          <button id="mp-cancel-btn" onclick="handleMaterialFormSecondaryAction()" style="flex:1;background:var(--c-bg);color:var(--c-ink-soft);border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
         </div>
       </div>
     </div>
@@ -8728,14 +8745,18 @@ function renderMaterialLog(log) {
 // job in a single submission instead of one at a time.
 function showMaterialFormCommon_(mode) {
   G.matFormMode = mode;
+  G.mpConfirmMode = false;
   G.matPullIdemKey = null;
   G.matFormLines = [{ qboItemId: '', qty: '', unitCost: '' }];
   G.mpLinkGate = null;
   document.getElementById('mp-job-combo').value = '';
+  document.getElementById('mp-job-combo').disabled = false;
   document.getElementById('mp-notes').value = '';
   document.getElementById('mp-status').textContent = '';
   document.getElementById('mp-link-gate').innerHTML = '';
   document.getElementById('mp-form-body').style.display = 'none';
+  document.getElementById('mp-confirm-view').style.display = 'none';
+  document.getElementById('mp-cancel-btn').textContent = 'Cancel';
   mpRenderLineRows();
   showOtherPanel('material-pull');
 }
@@ -8928,13 +8949,94 @@ function mpSaveJobLink() {
   });
 }
 
+// Pull-for-job's primary button routes through a confirm/estimate step
+// first (showMaterialPullPreview); Return-from-job posts directly, same as
+// before, since its cost is already visible/entered on the form itself.
+function handleMaterialFormPrimaryAction() {
+  if (G.matFormMode === 'pull' && !G.mpConfirmMode) {
+    showMaterialPullPreview();
+  } else {
+    submitMaterialPullOrReturn();
+  }
+}
+
+// Cancel goes back to the material line editor while in the confirm step
+// (so materials/qty can still be adjusted); otherwise it leaves the screen
+// entirely, same as before.
+function handleMaterialFormSecondaryAction() {
+  if (G.mpConfirmMode) {
+    cancelMaterialPullPreview();
+  } else {
+    showOtherPanel('material-inventory');
+  }
+}
+
+function showMaterialPullPreview() {
+  var status = document.getElementById('mp-status');
+  if (!G.mpLinkGate || !G.mpLinkGate.qbCustomerId) { status.textContent = 'Pick a linked job first.'; return; }
+
+  var lines = [];
+  G.matFormLines.forEach(function(l) {
+    if (l.qboItemId && l.qty > 0) lines.push({ qboItemId: l.qboItemId, qty: l.qty });
+  });
+  if (!lines.length) { status.textContent = 'Add at least one material with a quantity.'; return; }
+  status.textContent = '';
+
+  var btn = document.getElementById('mp-save-btn');
+  if (btn) { btn.textContent = 'Checking…'; btn.disabled = true; }
+
+  gasCall('previewMaterialPull', { lines: lines }, function(res) {
+    if (btn) { btn.textContent = 'Pull Material'; btn.disabled = false; }
+    if (!res.success) { status.textContent = res.error || 'Could not preview this pull.'; return; }
+    renderMaterialPullPreview_(res);
+  }, function(err) {
+    if (btn) { btn.textContent = 'Pull Material'; btn.disabled = false; }
+    status.textContent = abortAwareError(err, 'Could not connect');
+  });
+}
+
+function renderMaterialPullPreview_(res) {
+  G.mpConfirmMode = true;
+  document.getElementById('mp-form-body').style.display = 'none';
+  document.getElementById('mp-link-gate').style.display = 'none';
+  document.getElementById('mp-confirm-view').style.display = '';
+  document.getElementById('mp-status').textContent = '';
+  document.getElementById('mp-job-combo').disabled = true; // locked while the estimate is showing
+
+  var combo = document.getElementById('mp-job-combo').value.trim();
+  var match = G.jobComboMap && G.jobComboMap[combo];
+  document.getElementById('mp-confirm-job').textContent = match ? (match.builder + ' / ' + match.job) : combo;
+
+  document.getElementById('mp-confirm-lines').innerHTML = (res.lines || []).map(function(l) {
+    return '<div class="po-item"><div class="row-between">' +
+      '<span class="po-num">' + esc(l.materialName) + '</span>' +
+      '<span>' + fmtMatQty(l.qty) + ' × $' + l.estUnitCost.toFixed(2) + ' = $' + l.estLineTotal.toFixed(2) + '</span>' +
+    '</div></div>';
+  }).join('');
+  document.getElementById('mp-confirm-total').textContent = 'Estimated Total: $' + res.estGrandTotal.toFixed(2);
+
+  document.getElementById('mp-save-btn').textContent = 'Confirm and Post to QuickBooks';
+  document.getElementById('mp-cancel-btn').textContent = 'Back';
+}
+
+function cancelMaterialPullPreview() {
+  G.mpConfirmMode = false;
+  document.getElementById('mp-confirm-view').style.display = 'none';
+  document.getElementById('mp-link-gate').style.display = '';
+  document.getElementById('mp-form-body').style.display = '';
+  document.getElementById('mp-status').textContent = '';
+  document.getElementById('mp-save-btn').textContent = 'Pull Material';
+  document.getElementById('mp-cancel-btn').textContent = 'Cancel';
+  document.getElementById('mp-job-combo').disabled = false;
+}
+
 function submitMaterialPullOrReturn() {
   var isReturn = G.matFormMode === 'return';
   var combo = document.getElementById('mp-job-combo').value.trim();
   var notes = document.getElementById('mp-notes').value.trim();
   var status = document.getElementById('mp-status');
-  var busyLabel = isReturn ? 'Returning…' : 'Pulling…';
-  var idleLabel = isReturn ? 'Return Material' : 'Pull Material';
+  var busyLabel = isReturn ? 'Returning…' : 'Posting…';
+  var idleLabel = isReturn ? 'Return Material' : (G.mpConfirmMode ? 'Confirm and Post to QuickBooks' : 'Pull Material');
 
   // Defense in depth -- #mp-form-body is only ever shown once mpCheckJobLink
   // confirms a real QBO Customer Id, but this is the actual gate: the server

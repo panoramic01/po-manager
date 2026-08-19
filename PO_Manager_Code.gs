@@ -238,6 +238,7 @@ function doPost(e) {
     else if (action === 'unregisterPushToken')         result = unregisterPushToken(payload);
     else if (action === 'getMaterialInventory')        result = getMaterialInventory(payload);
     else if (action === 'pullMaterialForJob')          result = pullMaterialForJob(payload);
+    else if (action === 'previewMaterialPull')         result = previewMaterialPull(payload);
     else if (action === 'returnMaterialFromJob')       result = returnMaterialFromJob(payload);
     else if (action === 'deleteMaterialLogEntry')      result = deleteMaterialLogEntry(payload);
     else if (action === 'getInternalInvoices')         result = getInternalInvoices(payload);
@@ -3266,6 +3267,33 @@ function getMaterialInventory(payload) {
  * design), just a record of who pulled what, when, for which job.
  * payload: {lines: [{qboItemId, qty}], builder, jobRef, notes?}.
  */
+/**
+ * Read-only preview for Pull-for-job's confirm screen: for each material
+ * line, returns an ESTIMATED unit cost (from the QBO Item's PurchaseCost
+ * field -- its currently-recorded/last cost, a real documented field) and
+ * an estimated line/grand total, plus the same live on-hand hard-stop
+ * check pushMaterialPullToQuickBooks_ performs before actually posting --
+ * lets the confirm screen catch an insufficient-stock problem up front
+ * without touching QuickBooks. The estimate is NOT a guarantee:
+ * QuickBooks computes the real FIFO cost at post time from whichever cost
+ * layer(s) actually get consumed, which can differ from PurchaseCost.
+ * payload: {lines: [{qboItemId, qty}]}.
+ */
+function previewMaterialPull(payload) {
+  try {
+    var auth = authorizeCaller(payload, ['admin', 'office', 'runner']);
+    if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
+
+    var lines = Array.isArray(payload.lines) ? payload.lines : [];
+    lines = lines.map(function(l) {
+      return { qboItemId: (l.qboItemId || '').toString().trim(), qty: parseFloat(l.qty) };
+    }).filter(function(l) { return l.qboItemId && l.qty > 0; });
+    if (!lines.length) return { success: false, error: 'Add at least one material.' };
+
+    return previewMaterialPullFromQuickBooks_(lines);
+  } catch (e) { return { success: false, error: e.toString() }; }
+}
+
 function pullMaterialForJob(payload) {
   try {
     var auth = authorizeCaller(payload, ['admin', 'office', 'runner']);
