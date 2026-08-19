@@ -188,6 +188,7 @@ function doPost(e) {
     else if (action === 'getAsanaJobs')                result = getAsanaJobs();
     else if (action === 'getJobsByPhase')               result = getJobsByPhase(payload);
     else if (action === 'getRecentQualityWalks')        result = getRecentQualityWalks(payload);
+    else if (action === 'getMyAsanaTasks')              result = getMyAsanaTasks(payload);
     else if (action === 'submitQualityCheck')           result = submitQualityCheck(payload);
     else if (action === 'getQualityWalkPhotos')         result = getQualityWalkPhotos(payload);
     else if (action === 'submitOfficeNote')             result = submitOfficeNote(payload);
@@ -4439,6 +4440,14 @@ function getAsanaPAT() {
   return PropertiesService.getScriptProperties().getProperty('ASANA_PAT');
 }
 
+/** Escapes text for use inside an Asana html_notes <body> -- Asana's rich-text field only accepts a small tag whitelist (b/i/u/s/a/code/ol/ul/li/etc.), so any &, <, > from user-entered note/item text must be entitized or the request is rejected / mis-rendered. */
+function escapeAsanaHtml_(str) {
+  return String(str == null ? '' : str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 function asanaRequest(method, endpoint, payload) {
   var options = {
     method: method,
@@ -4776,6 +4785,93 @@ function getRecentQualityWalks(payload) {
   } catch (e) { return { error: e.toString() }; }
 }
 
+/**
+ * All of the caller's own assigned, incomplete Asana tasks across every
+ * project/list they're in -- for the "My Asana Tasks" Dashboard card and
+ * Other-tab panel. Two things make this different from getAsanaJobs()/
+ * getRecentQualityWalks() above:
+ *
+ * 1. The whole app authenticates to Asana with one shared script PAT
+ *    (getAsanaPAT()), which belongs to a single service-account identity --
+ *    not the person using the app. So `assignee=me` would return that
+ *    service account's tasks, not the caller's. The caller's own email
+ *    (verified via requireVerifiedEmail_) has to be translated to their
+ *    Asana user gid first via GET /users/{email}, which only works because
+ *    this is a domain-restricted Asana org. That gid is cached for 6 hours
+ *    (an Asana identity doesn't change minute to minute) so repeat loads
+ *    only pay for it once per workday, not once per dashboard paint.
+ * 2. "All of a person's tasks" spans however many projects they're a member
+ *    of -- crawling each one (like getAsanaJobs()'s up-to-10-page pagination
+ *    per project) would multiply that cost per project per user. Asana's
+ *    workspace task search does it in one call instead, same tradeoff
+ *    getRecentQualityWalks() already makes above. Results are capped at a
+ *    single page of 100 (sorted soonest-due-first) rather than paginated
+ *    further -- a person realistically has far fewer open assigned tasks
+ *    than that, and paginating would reintroduce the exact per-call latency
+ *    this design is trying to avoid.
+ *
+ * The task list itself (unlike the gid) is cached for only 120s -- someone
+ * actively working through their tasks expects to see changes reflected
+ * soon, so staleness tolerance here is much lower than the identity lookup.
+ */
+function getMyAsanaTasks(payload) {
+  try {
+    var auth = requireVerifiedEmail_(payload);
+    if (auth.error) return { error: auth.error, code: auth.code };
+    var email = auth.email;
+
+    var cache = CacheService.getScriptCache();
+    var gidCacheKey = 'asana_user_gid_v1_' + email;
+    var userGid = null;
+    try { userGid = cache.get(gidCacheKey); } catch (e) { /* fall through and resolve fresh */ }
+
+    if (userGid === null) {
+      // Not cached at all (distinct from a cached '' sentinel, which means
+      // "already confirmed this email has no Asana account").
+      var userResult = asanaRequest('get', '/users/' + encodeURIComponent(email) + '?opt_fields=gid');
+      userGid = (!userResult.errors && userResult.data && userResult.data.gid) ? userResult.data.gid : '';
+      try { cache.put(gidCacheKey, userGid, userGid ? 21600 : 900); } catch (e) { /* over cache size limit -- fine, just skip caching */ }
+    }
+
+    if (!userGid) return { tasks: [], noAsanaAccount: true };
+
+    var tasksCacheKey = 'asana_my_tasks_v1_' + userGid;
+    try {
+      var cachedTasks = cache.get(tasksCacheKey);
+      if (cachedTasks) return JSON.parse(cachedTasks);
+    } catch (e) { /* fall through and fetch fresh */ }
+
+    var wsResult = asanaRequest('get', '/workspaces?opt_fields=gid&limit=1');
+    if (wsResult.errors || !wsResult.data || !wsResult.data.length) return { tasks: [] };
+    var workspaceGid = wsResult.data[0].gid;
+
+    var searchUrl = '/workspaces/' + workspaceGid + '/tasks/search' +
+      '?assignee.any=' + userGid + '&completed=false' +
+      '&sort_by=due_date&sort_ascending=true&limit=100' +
+      '&opt_fields=name,due_on,permalink_url,memberships.project.gid,memberships.project.name';
+    var searchResult = asanaRequest('get', searchUrl);
+    if (searchResult.errors) return { tasks: [], error: searchResult.errors[0].message };
+
+    var tasks = (searchResult.data || []).map(function(t) {
+      var projects = (t.memberships || [])
+        .map(function(m) { return m.project; })
+        .filter(function(p) { return p && p.gid; })
+        .map(function(p) { return { gid: p.gid, name: p.name || '' }; });
+      return {
+        gid:          t.gid,
+        name:         t.name || '',
+        dueOn:        t.due_on || '',
+        permalinkUrl: t.permalink_url || '',
+        projects:     projects
+      };
+    });
+
+    var response = { tasks: tasks };
+    try { cache.put(tasksCacheKey, JSON.stringify(response), 120); } catch (e) { /* over cache size limit -- fine, just skip caching */ }
+    return response;
+  } catch (e) { return { error: e.toString() }; }
+}
+
 var QC_SUBMIT_MAX_PHOTOS = 30; // generous upper bound (legitimate UI max is 3 per flagged item + 3 general) -- just a backstop against a malformed/hostile payload
 
 function submitQualityCheck(payload) {
@@ -4869,20 +4965,23 @@ function submitQualityCheck(payload) {
     }
 
     if (flagged.length > 0) {
-      var offLines = ['Quality check flagged items for: ' + jobName + ' (' + date + ')', ''];
+      // Bold the item name (the "question") via html_notes so it's scannable at a glance in Asana,
+      // leaving the field-entered note itself in normal text right after it.
+      var offLines = ['Quality check flagged items for: ' + escapeAsanaHtml_(jobName) + ' (' + date + ')', ''];
       var flaggedPhotos = []; // photos on flagged items only -- also attached to this Office Task copy, not just the subtask
       flagged.forEach(function(f) {
         var fNoteParts = [];
-        if (f.notes) fNoteParts.push(f.notes);
+        if (f.notes) fNoteParts.push(escapeAsanaHtml_(f.notes));
         var fPNote = photoNote(f.photos);
         if (fPNote) fNoteParts.push(fPNote);
-        offLines.push('- ' + f.name + (fNoteParts.length ? ': ' + fNoteParts.join(' — ') : ''));
+        offLines.push('- <b>' + escapeAsanaHtml_(f.name) + '</b>' + (fNoteParts.length ? ': ' + fNoteParts.join(' — ') : ''));
         if (f.photos && f.photos.length) flaggedPhotos = flaggedPhotos.concat(f.photos);
       });
       var officeTask = asanaRequest('post', '/tasks', {
-        projects: [ASANA_OFFICE_TASKS],
-        name:     'Quality Check - ' + jobName + ' - ' + date,
-        notes:    offLines.join('\n')
+        projects:   [ASANA_OFFICE_TASKS],
+        name:       'Quality Check - ' + jobName + ' - ' + date,
+        html_notes: '<body>' + offLines.join('\n') + '</body>',
+        assignee:   auth.email
       });
       var officeTaskGid = officeTask.data && officeTask.data.gid;
       if (officeTaskGid) {
@@ -4959,8 +5058,10 @@ function submitOfficeNote(payload) {
       name:     taskName,
       notes:    lines.join('\n')
     };
-    if (dueDate)       taskPayload.due_on   = dueDate;
-    if (assigneeEmail) taskPayload.assignee = assigneeEmail;
+    if (dueDate) taskPayload.due_on = dueDate;
+    // Default to whoever submitted the note (the verified session email) when the
+    // "Assigned To" picker was left unset; an explicit pick there still wins.
+    taskPayload.assignee = assigneeEmail || auth.email;
 
     var created = asanaRequest('post', '/tasks', taskPayload);
     if (created.errors) return { success: false, error: created.errors[0].message };

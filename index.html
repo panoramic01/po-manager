@@ -723,6 +723,19 @@
       <div id="dash-delpick-content"></div>
     </div>
 
+    <!-- My Asana Tasks summary card -->
+    <div class="card" id="dash-asana-card">
+      <div class="row-between" style="margin-bottom:2px">
+        <div class="card-title" style="margin-bottom:0">My Asana Tasks</div>
+      </div>
+      <div class="dash-filter-row" style="margin:10px 0 0;display:flex">
+        <select class="dash-filter-select" id="dash-asana-project-filter" onchange="renderAsanaTasksInto_('dash-asana-content','dash-asana-project-filter')">
+          <option value="">All Projects</option>
+        </select>
+      </div>
+      <div id="dash-asana-content"><div class="loading"><div class="spinner"></div><p>Loading tasks…</p></div></div>
+    </div>
+
     <!-- Recent Orders summary card -->
     <div class="card" id="dash-recent-card">
       <div class="row-between" style="margin-bottom:14px">
@@ -1008,6 +1021,10 @@
           <span class="tile-swatch ts-navy"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></span>
           <span class="tile-label">Office Notes</span>
         </div>
+        <div id="other-card-my-asana-tasks" class="tile" onclick="showOtherPanel('my-asana-tasks')">
+          <span class="tile-swatch ts-navy"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></span>
+          <span class="tile-label">My Asana Tasks</span>
+        </div>
       </div>
 
       <div class="sec-head sh-green">Setup</div>
@@ -1096,9 +1113,29 @@
         <p style="font-size:12px;color:var(--c-ink-soft);margin:8px 2px 0">Stock arrives by creating a "Stock/warehouse order" PO -- receiving it in QuickBooks is what adds to On Hand below. Pull moves stock out to a job; Return brings leftover material back at a cost you enter (for material with no vendor invoice, e.g. leftover from a job).</p>
       </div>
 
-      <div id="mi-form" style="display:none;background:var(--c-surface);border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin:12px 16px 0">
-        <div id="mp-title" style="font-size:14px;font-weight:700;color:var(--c-navy);margin-bottom:12px">Pull Material for Job</div>
+      <div id="mi-loading" style="display:none"><div class="loading"><div class="spinner"></div><p>Loading inventory...</p></div></div>
 
+      <div style="padding:16px">
+        <div style="font-size:13px;font-weight:700;color:var(--c-navy);margin-bottom:8px">On Hand</div>
+        <div id="mi-onhand-list"></div>
+
+        <div style="font-size:13px;font-weight:700;color:var(--c-navy);margin:20px 0 8px">Recent Activity</div>
+        <div id="mi-log-list"></div>
+      </div>
+    </div>
+
+    <!-- Pull/Return sub-panel: opened via the "Pull for Job"/"Return from Job"
+         buttons on the Material Inventory screen -- its own full page, same
+         pattern as Add Invoice (other-panel-invoice-review), not an inline
+         expanding box. Always scoped to Material Inventory -- Back always
+         returns there. -->
+    <div id="other-panel-material-pull" style="display:none">
+      <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid var(--c-border-hair);background:var(--c-surface);position:sticky;top:0;z-index:1">
+        <button onclick="showOtherPanel('material-inventory')" style="background:none;border:none;font-size:14px;font-weight:600;color:var(--c-navy);cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
+        <span id="mp-title" style="font-size:15px;font-weight:700;color:var(--c-navy);flex:1;margin-left:2px">Pull Material for Job</span>
+      </div>
+
+      <div style="padding:16px">
         <label id="mp-job-label" style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Builder &amp; Job *</label>
         <div style="position:relative">
           <input type="text" id="mp-job-combo" autocomplete="off" placeholder="e.g. CRESCENT_RIDGE-WEGNER"
@@ -1129,18 +1166,8 @@
         <div id="mp-status" style="font-size:12px;color:var(--c-danger);margin-bottom:4px"></div>
         <div style="display:flex;gap:8px;margin-top:4px">
           <button id="mp-save-btn" onclick="submitMaterialPullOrReturn()" style="flex:1;background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:700;cursor:pointer">Pull Material</button>
-          <button onclick="document.getElementById('mi-form').style.display='none'" style="flex:1;background:var(--c-bg);color:var(--c-ink-soft);border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+          <button onclick="showOtherPanel('material-inventory')" style="flex:1;background:var(--c-bg);color:var(--c-ink-soft);border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
         </div>
-      </div>
-
-      <div id="mi-loading" style="display:none"><div class="loading"><div class="spinner"></div><p>Loading inventory...</p></div></div>
-
-      <div style="padding:16px">
-        <div style="font-size:13px;font-weight:700;color:var(--c-navy);margin-bottom:8px">On Hand</div>
-        <div id="mi-onhand-list"></div>
-
-        <div style="font-size:13px;font-weight:700;color:var(--c-navy);margin:20px 0 8px">Recent Activity</div>
-        <div id="mi-log-list"></div>
       </div>
     </div>
 
@@ -1994,6 +2021,20 @@
         <div id="pto-overview-pending"></div>
         <div style="font-size:13px;font-weight:700;color:var(--c-ink-soft);text-transform:uppercase;letter-spacing:0.4px;margin:18px 0 10px">Balances</div>
         <div id="pto-overview-balances"></div>
+      </div>
+    </div>
+
+    <!-- ── My Asana Tasks panel ─────────────────────────────────────────────── -->
+    <div id="other-panel-my-asana-tasks" style="display:none">
+      <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid var(--c-border-hair);background:var(--c-surface);position:sticky;top:0;z-index:1">
+        <button onclick="showOtherHome()" style="background:none;border:none;font-size:14px;font-weight:600;color:var(--c-navy);cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
+        <span style="font-size:16px;font-weight:700;color:var(--c-navy)">My Asana Tasks</span>
+      </div>
+      <div style="padding:16px;max-width:680px;margin:0 auto">
+        <select class="dash-filter-select" id="other-asana-project-filter" onchange="renderAsanaTasksInto_('other-asana-content','other-asana-project-filter')" style="width:100%;margin-bottom:12px">
+          <option value="">All Projects</option>
+        </select>
+        <div id="other-asana-content"><div class="loading"><div class="spinner"></div><p>Loading tasks…</p></div></div>
       </div>
     </div>
 
@@ -3051,6 +3092,13 @@ function loadData() {
     document.getElementById('dash-content').style.display  = 'none';
   }
 
+  // Independent of PO data -- fetched in parallel so a slow/failed Asana
+  // call never blocks the PO dashboard from loading.
+  loadMyAsanaTasksData_(function() {
+    populateAsanaProjectFilterInto_('dash-asana-project-filter');
+    renderAsanaTasksInto_('dash-asana-content', 'dash-asana-project-filter');
+  });
+
   // Always refresh from GAS in background; update UI when fresh data arrives
   gasCall('getSheetData', {}, function(pos) {
     G.pos = pos || [];
@@ -4092,6 +4140,85 @@ function recentOrderRow(po) {
         '<div class="po-sub" style="font-size:12px;margin-top:2px">PO# '+(po.poNum||'\u2014')+(po.dateIssued?' \u00b7 Created '+po.dateIssued:'')+(po.orderedBy?' by '+po.orderedBy:'')+'</div>' +
       '</div>' +
       badge(po.status) +
+    '</div>' +
+  '</div>';
+}
+
+// ── My Asana Tasks (Dashboard card + Other-tab panel share one fetch) ───────
+// Fetched once and cached on window._myAsanaTasks, following the same
+// fetch-once/render-everywhere idiom as the Job Dashboard's job picker
+// (window._jdJobs) -- whichever surface (card or full panel) is opened first
+// pays for the gasCall, the other reuses the already-loaded list for free.
+window._myAsanaTasks = null;
+window._myAsanaTasksNoAccount = false;
+window._myAsanaTasksError = false;
+
+function loadMyAsanaTasksData_(onReady) {
+  if (window._myAsanaTasks !== null) { onReady(); return; }
+  gasCall('getMyAsanaTasks', {}, function(d) {
+    window._myAsanaTasksError = !!(d && d.error);
+    window._myAsanaTasksNoAccount = !!(d && d.noAsanaAccount);
+    window._myAsanaTasks = (d && d.tasks) || [];
+    onReady();
+  }, function() {
+    window._myAsanaTasksError = true;
+    window._myAsanaTasks = [];
+    onReady();
+  });
+}
+
+function openMyAsanaTasksPanel() {
+  loadMyAsanaTasksData_(function() {
+    populateAsanaProjectFilterInto_('other-asana-project-filter');
+    renderAsanaTasksInto_('other-asana-content', 'other-asana-project-filter');
+  });
+}
+
+function populateAsanaProjectFilterInto_(selectId) {
+  var seen = {}, names = [];
+  (window._myAsanaTasks || []).forEach(function(t) {
+    (t.projects || []).forEach(function(p) {
+      if (p.name && !seen[p.gid]) { seen[p.gid] = true; names.push(p.name); }
+    });
+  });
+  names.sort();
+  fillSelect(selectId, names, 1);
+}
+
+function renderAsanaTasksInto_(contentId, selectId) {
+  var el = document.getElementById(contentId);
+  if (!el) return;
+  if (window._myAsanaTasksError) { el.innerHTML = '<div class="empty">Could not load Asana tasks.</div>'; return; }
+  if (window._myAsanaTasksNoAccount) { el.innerHTML = '<div class="empty">No Asana account found for your email.</div>'; return; }
+
+  var selectEl = document.getElementById(selectId);
+  var filterName = selectEl ? selectEl.value : '';
+  var tasks = window._myAsanaTasks || [];
+  if (filterName) {
+    tasks = tasks.filter(function(t) {
+      return (t.projects || []).some(function(p) { return p.name === filterName; });
+    });
+  }
+  if (!tasks.length) {
+    el.innerHTML = '<div class="empty">No assigned tasks' + (filterName ? ' in ' + esc(filterName) : '') + '.</div>';
+    return;
+  }
+  el.innerHTML = tasks.map(asanaTaskRow_).join('');
+}
+
+function asanaTaskRow_(t) {
+  var todayIso = new Date().toISOString().slice(0, 10);
+  var overdue  = !!(t.dueOn && t.dueOn < todayIso);
+  var dueLabel = t.dueOn ? fmtISODate_(t.dueOn) : 'No due date';
+  var projName = (t.projects && t.projects[0] && t.projects[0].name) || '';
+  var extra    = (t.projects && t.projects.length > 1) ? ' +' + (t.projects.length - 1) : '';
+  return '<div class="po-item' + (overdue ? ' overdue' : '') + '">' +
+    '<div class="row-between">' +
+      '<div>' +
+        '<div class="po-main" style="margin:0;font-size:15px">' + esc(t.name) + '</div>' +
+        '<div class="po-sub" style="font-size:12px;margin-top:2px">' + esc(dueLabel) + (projName ? ' · ' + esc(projName) + esc(extra) : '') + '</div>' +
+      '</div>' +
+      '<a class="btn btn-sm btn-secondary" href="' + esc(t.permalinkUrl) + '" target="_blank" rel="noopener">Open</a>' +
     '</div>' +
   '</div>';
 }
@@ -7517,7 +7644,7 @@ function showOtherPanel(name) {
   var activeTab = document.querySelector('.tab.active');
   if (activeTab) activeTab.style.display = 'none';
   document.getElementById('other-home').style.display = 'none';
-  ['pricing', 'contacts', 'inventory', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'material-inventory', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project', 'quickbooks', 'invoice-review', 'portal-storage'].forEach(function(p) {
+  ['pricing', 'contacts', 'inventory', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'material-inventory', 'material-pull', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project', 'quickbooks', 'invoice-review', 'portal-storage', 'my-asana-tasks'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
     if (el) el.style.display = p === name ? '' : 'none';
   });
@@ -7539,6 +7666,7 @@ function showOtherPanel(name) {
   if (name === 'new-project') resetNewProjectDriveHint();
   if (name === 'quickbooks') loadQuickBooksPanel();
   if (name === 'portal-storage') openPortalStoragePanel();
+  if (name === 'my-asana-tasks') openMyAsanaTasksPanel();
 }
 
 // Several other-panel-* elements aren't actually nested inside #tab-other in
@@ -7553,7 +7681,7 @@ function resetOtherPanels() {
   // always wins over the .tab/.tab.active CSS class rule.
   document.querySelectorAll('.tab').forEach(function(t) { t.style.display = ''; });
   document.getElementById('other-home').style.display = '';
-  ['pricing', 'contacts', 'inventory', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'material-inventory', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project', 'quickbooks', 'invoice-review', 'portal-storage'].forEach(function(p) {
+  ['pricing', 'contacts', 'inventory', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'material-inventory', 'material-pull', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project', 'quickbooks', 'invoice-review', 'portal-storage', 'my-asana-tasks'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
     if (el) el.style.display = 'none';
   });
@@ -8462,7 +8590,6 @@ function irCreateBill() {
 
 // ── Material Inventory ────────────────────────────────────────────────────────
 function openMaterialInventoryPanel() {
-  document.getElementById('mi-form').style.display = 'none';
   loadMaterialInventory();
 }
 
@@ -8528,8 +8655,9 @@ function renderMaterialLog(log) {
   }).join('');
 }
 
-// Pull and Return share the same form (#mi-form) -- G.matFormMode ('pull' |
-// 'return') drives which columns show and which endpoint
+// Pull and Return share the same full-screen panel (other-panel-material-pull,
+// same pattern as Add Invoice/other-panel-invoice-review) -- G.matFormMode
+// ('pull' | 'return') drives which columns show and which endpoint
 // submitMaterialPullOrReturn posts to. Both only offer materials already
 // tracked as a real QBO Inventory Item; a material that isn't stocked yet
 // needs to become one via a normal stock PO first. G.matFormLines holds one
@@ -8544,7 +8672,7 @@ function showMaterialFormCommon_(mode) {
   document.getElementById('mp-notes').value = '';
   document.getElementById('mp-status').textContent = '';
   mpRenderLineRows();
-  document.getElementById('mi-form').style.display = '';
+  showOtherPanel('material-pull');
 }
 
 function showMaterialPullForm() {
@@ -8692,14 +8820,13 @@ function submitMaterialPullOrReturn() {
     if (btn) { btn.textContent = idleLabel; btn.disabled = false; }
     if (res.success) {
       G.matPullIdemKey = null;
-      document.getElementById('mi-form').style.display = 'none';
+      showOtherPanel('material-inventory');
       if (isReturn) {
         showToast('Returned from ' + match.builder + ' / ' + match.job + (res.creditWarning ? ' — ' + res.creditWarning : ''));
       } else {
         var summary = (res.lines || []).map(function(l) { return l.materialName + ': ' + fmtMatQty(l.onHandAfter) + ' left'; }).join(', ');
         showToast('Pulled for ' + match.builder + ' / ' + match.job + (summary ? ' — ' + summary : ''));
       }
-      loadMaterialInventory();
     } else {
       status.textContent = res.error || ('Could not ' + (isReturn ? 'return' : 'pull') + ' material.');
     }
