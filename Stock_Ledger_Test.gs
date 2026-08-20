@@ -129,27 +129,25 @@ function testStockLedgerIntegration_() {
     ], who);
     check('count increase without a cost is refused', foundNoCost.success, false);
 
-    // --- zero-cost opening window --------------------------------------
-    // Default (no opts): a $0 receipt is refused, matching production
-    // behavior when the Script Property window is closed.
-    var zeroClosed = appendStockMoves_([
-      { materialId: 'M-UNDERLAY', materialName: 'Synthetic underlayment', moveType: 'RECEIPT_STOCK', qtyDelta: 8, unitCost: 0, effectiveDate: d('2026-08-10') }
+    // --- $0 opening-balance receipts -------------------------------------
+    // Allowed by default now -- for material already in the warehouse whose
+    // cost was already expensed on a prior job. The quantity must actually
+    // land (not silently be dropped, which is what the OLD replay engine
+    // used to do to any $0 receipt).
+    var zeroRes = appendStockMoves_([
+      { materialId: 'M-UNDERLAY', materialName: 'Synthetic underlayment', moveType: 'RECEIPT_STOCK', qtyDelta: 8, unitCost: 0, effectiveDate: d('2026-08-10'), note: 'already in stock -- already expensed on a prior job' }
     ], who);
-    check('$0 receipt refused with the window closed', zeroClosed.success, false);
-
-    // With the window explicitly open: the receipt is accepted, the
-    // quantity is real (not silently dropped), and it costs exactly $0 --
-    // this is the case that a naive validation-only fix would get wrong,
-    // since the OLD replay engine used to skip a $0 receipt's quantity too.
-    var zeroOpen = appendStockMoves_([
-      { materialId: 'M-UNDERLAY', materialName: 'Synthetic underlayment', moveType: 'RECEIPT_STOCK', qtyDelta: 8, unitCost: 0, effectiveDate: d('2026-08-10'), note: 'opening balance -- already expensed on a prior job' }
-    ], who, { allowZeroCost: true });
-    check('$0 receipt accepted with the window open', zeroOpen.success, true);
+    check('$0 receipt accepted', zeroRes.success, true);
     var afterZero = getStockPosition_();
     // 10 @ 42.00 (42000 cents) already on hand; +8 @ $0 adds quantity but
     // not value -- 18 on hand, value unchanged at 42000.
     check('$0 receipt quantity actually lands', qtyOf(afterZero, 'M-UNDERLAY'), 18);
     check('$0 receipt adds no value', valOf(afterZero, 'M-UNDERLAY'), 42000);
+
+    var negRes = appendStockMoves_([
+      { materialId: 'M-UNDERLAY', materialName: 'Synthetic underlayment', moveType: 'RECEIPT_STOCK', qtyDelta: 1, unitCost: -5, effectiveDate: d('2026-08-10') }
+    ], who);
+    check('negative-cost receipt still refused', negRes.success, false);
 
     // --- snapshot seeds the next replay --------------------------------
     var before = getStockPosition_();

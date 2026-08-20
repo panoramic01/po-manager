@@ -1130,9 +1130,7 @@
         <button onclick="slResetTestData()" style="margin-top:8px;background:none;border:1px solid var(--c-amber);color:#7A5A00;border-radius:7px;padding:6px 10px;font-size:12px;font-weight:700;cursor:pointer">Clear test data</button>
       </div>
 
-      <div id="sl-zerocost-bar" style="display:none;padding:10px 16px;background:#FDECEA;border-bottom:1px solid var(--c-border-hair)">
-        <div style="font-size:12px;color:#9B2C1C;line-height:1.45"><b>$0 receipts are open.</b> Receive In currently accepts a $0 unit cost, for material already in the warehouse whose cost was already charged to an earlier job. Close the window in the Apps Script editor (Script Properties -> STOCK_ZERO_COST_WINDOW_OPEN) once the opening batch is loaded.</div>
-      </div>
+
 
       <div style="padding:14px 16px 0">
         <div style="display:flex;gap:8px;margin-bottom:12px">
@@ -9183,7 +9181,7 @@ function irCreateBill() {
 // accounting integration is wired to it.
 
 var SL = { testMode: false, materials: [], moves: [], mode: 'receive', lines: [], loaded: false,
-           catMode: 'pricing', candidates: [], selected: {}, zeroCostWindowOpen: false };
+           catMode: 'pricing', candidates: [], selected: {} };
 
 function slMoney(n) {
   var v = parseFloat(n) || 0;
@@ -9237,9 +9235,7 @@ function loadStockLedger() {
     if (data && data.error) { showToast(data.error); return; }
     SL.materials = data.materials || [];
     SL.moves = data.recentMoves || [];
-    SL.zeroCostWindowOpen = !!data.zeroCostWindowOpen;
     SL.loaded = true;
-    slShow('sl-zerocost-bar', SL.zeroCostWindowOpen);
 
     document.getElementById('sl-total-value').textContent = slMoney(data.totalValue);
     document.getElementById('sl-material-count').textContent = SL.materials.length;
@@ -9332,7 +9328,7 @@ function slResetTestData() {
 // ── Move form ─────────────────────────────────────────────────────────────────
 
 var SL_MODES = {
-  receive: { title: 'Receive Material In',  hint: 'Material arriving from a vendor into the warehouse. The cost you enter becomes its FIFO cost layer. If $0 receipts are open, enter 0 for material you already have that was already paid for on an earlier job.', job: false, source: true,  cost: true,  lines: true },
+  receive: { title: 'Receive Material In',  hint: 'Material arriving from a vendor into the warehouse. The cost you enter becomes its FIFO cost layer -- enter 0 for material you already have that was already paid for on an earlier job.', job: false, source: true,  cost: true,  lines: true },
   issue:   { title: 'Issue Material to Job', hint: 'Material leaving the warehouse for a job. Cost is calculated from the oldest stock first -- you do not enter it.', job: true,  source: false, cost: false, lines: true },
   'return':{ title: 'Return Material to Stock', hint: 'Material coming back from a job. Stock we issued returns at the cost it went out at; material billed straight to the job enters at what it was bought for.', job: true, source: false, cost: true, lines: true },
   count:   { title: 'Count Adjustment',      hint: 'Correct on-hand to match a physical count. Every adjustment is recorded against your name and needs a reason.', job: false, source: false, cost: false, lines: false },
@@ -9486,11 +9482,7 @@ function slCollectLines() {
     var line = { materialId: ln.materialId, qty: qty };
     if (cfg.cost) {
       var c = parseFloat(ln.unitCost);
-      var zeroOk = SL.mode === 'receive' && SL.zeroCostWindowOpen;
-      var costValid = zeroOk ? (!isNaN(c) && c >= 0) : (c > 0);
-      if (!costValid) {
-        return { error: 'Line ' + (i + 1) + ': enter a unit cost' + (zeroOk ? ' (0 or more).' : ' greater than zero.') };
-      }
+      if (isNaN(c) || c < 0) return { error: 'Line ' + (i + 1) + ': enter a unit cost (0 or more).' };
       line.unitCost = c;
     }
     if (SL.mode === 'return') line.kind = ln.kind;

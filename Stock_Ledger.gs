@@ -68,21 +68,6 @@ function stockSheetName_(base) {
   return base + STOCK_SHEET_SUFFIX_;
 }
 
-/**
- * Whether a NEW receipt is currently allowed to carry a $0 unit cost --
- * for bringing in material already sitting in the warehouse whose cost was
- * expensed on a prior job, so capitalizing it again here would double-
- * count. Controlled entirely by a Script Property so it is a durable,
- * explicit, editor-visible switch rather than app state that could drift
- * back open silently: Apps Script editor -> Project Settings -> Script
- * Properties -> STOCK_ZERO_COST_WINDOW_OPEN = true. Set it back to false
- * (or delete it) once the opening batch is loaded -- every row already
- * written stays correct either way, since replay never re-checks this.
- */
-function getStockZeroCostWindowOpen_() {
-  return PropertiesService.getScriptProperties().getProperty('STOCK_ZERO_COST_WINDOW_OPEN') === 'true';
-}
-
 // --- Enums ---------------------------------------------------------------
 
 /**
@@ -298,7 +283,7 @@ function lastKnownUnitCost_(pos, seedLayers, materialId) {
  * so a bad row cannot be edited away later -- it can only be corrected by a
  * further row, which is exactly the mess worth refusing up front.
  */
-function validateStockMove_(move, onHandByMaterial, opts) {
+function validateStockMove_(move, onHandByMaterial) {
   if (!move || !move.materialId) return 'Missing material.';
   var spec = STOCK_MOVE[move.moveType];
   if (!spec) return 'Unknown move type "' + move.moveType + '".';
@@ -313,17 +298,17 @@ function validateStockMove_(move, onHandByMaterial, opts) {
   // existing layers like any issue, so supplying a cost would let a caller
   // override FIFO. Hence the rule depends on direction, not just type.
   var needsCost = spec.needsCost || (move.moveType === 'COUNT_ADJUST' && qty > 0);
-  // opts.allowZeroCost relaxes cost>0 to cost>=0, and ONLY for ordinary
-  // receipt-shaped types (spec.needsCost) -- never for a COUNT_ADJUST that
-  // adds stock, which is a correction against a physical count and should
-  // always carry a real, defensible cost.
-  var allowZero = !!(opts && opts.allowZeroCost) && spec.needsCost;
   if (needsCost) {
     var cost = roundUnitCost_(move.unitCost);
-    var costOk = allowZero ? cost >= 0 : cost > 0;
+    // Ordinary receipt-shaped types (spec.needsCost) allow $0 -- material
+    // already in the warehouse whose cost was already expensed on a prior
+    // job can be brought in without double-counting it. A COUNT_ADJUST
+    // that adds stock is a correction against a physical count, not a
+    // bulk load, and always needs a real, defensible number.
+    var costOk = spec.needsCost ? cost >= 0 : cost > 0;
     if (!costOk) {
       return move.moveType + (move.moveType === 'COUNT_ADJUST' ? ' that adds stock' : '') +
-        (allowZero ? ' needs a unit cost of 0 or more.' : ' needs a unit cost greater than zero.');
+        (spec.needsCost ? ' needs a unit cost of 0 or more.' : ' needs a unit cost greater than zero.');
     }
   }
   if (!needsCost && move.unitCost) {
@@ -404,7 +389,7 @@ function readStockLedgerMoves_(afterSeq) {
  * stamps the txn id, so an Intuit outage can never lose the fact that
  * material physically moved.
  */
-function appendStockMoves_(moves, byEmail, opts) {
+function appendStockMoves_(moves, byEmail) {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(15000)) return { success: false, error: 'Server is busy - try again in a moment.' };
   try {
@@ -420,7 +405,7 @@ function appendStockMoves_(moves, byEmail, opts) {
     var prepared = [];
     for (var i = 0; i < moves.length; i++) {
       var m = moves[i];
-      var err = validateStockMove_(m, onHand, opts);
+      var err = validateStockMove_(m, onHand);
       if (err) return { success: false, error: err, failedIndex: i };
       onHand[m.materialId] = (parseFloat(onHand[m.materialId]) || 0) + (parseFloat(m.qtyDelta) || 0);
       prepared.push(m);
@@ -665,8 +650,12 @@ function testStockLedger_() {
     !!validateStockMove_({ materialId: 'M1', moveType: 'ISSUE_JOB', qtyDelta: -5, jobRef: 'J1', effectiveDate: d('2026-08-01') }, { M1: 2 }), true);
   check('rejects supplied cost on an issue',
     !!validateStockMove_({ materialId: 'M1', moveType: 'ISSUE_JOB', qtyDelta: -1, unitCost: 5, jobRef: 'J1', effectiveDate: d('2026-08-01') }, { M1: 9 }), true);
-  check('rejects receipt with no cost',
-    !!validateStockMove_({ materialId: 'M1', moveType: 'RECEIPT_STOCK', qtyDelta: 5, effectiveDate: d('2026-08-01') }, {}), true);
+  // A receipt with unitCost omitted defaults to $0, same as an explicit 0
+  // -- receipts now allow $0 by default. The client's own numeric input
+  // validation is what actually guards against an accidentally-blank field
+  // reaching here in practice.
+  check('receipt with no cost defaults to $0, not refused',
+    validateStockMove_({ materialId: 'M1', moveType: 'RECEIPT_STOCK', qtyDelta: 5, effectiveDate: d('2026-08-01') }, {}), null);
   check('rejects wrong sign',
     !!validateStockMove_({ materialId: 'M1', moveType: 'RECEIPT_STOCK', qtyDelta: -5, unitCost: 2, effectiveDate: d('2026-08-01') }, {}), true);
   check('rejects issue with no job',
@@ -674,17 +663,17 @@ function testStockLedger_() {
   check('accepts a good issue',
     validateStockMove_({ materialId: 'M1', moveType: 'ISSUE_JOB', qtyDelta: -2, jobRef: 'J1', effectiveDate: d('2026-08-01') }, { M1: 9 }), null);
 
-  // The zero-cost window (opts.allowZeroCost): closed by default, opens
-  // only for receipt-shaped types, and never for a COUNT_ADJUST that adds
-  // stock -- a count correction should always carry a real cost.
-  check('rejects $0 receipt with the window closed',
-    !!validateStockMove_({ materialId: 'M1', moveType: 'RECEIPT_STOCK', qtyDelta: 5, unitCost: 0, effectiveDate: d('2026-08-01') }, {}), true);
-  check('accepts $0 receipt with the window open',
-    validateStockMove_({ materialId: 'M1', moveType: 'RECEIPT_STOCK', qtyDelta: 5, unitCost: 0, effectiveDate: d('2026-08-01') }, {}, { allowZeroCost: true }), null);
-  check('still rejects a NEGATIVE cost even with the window open',
-    !!validateStockMove_({ materialId: 'M1', moveType: 'RECEIPT_STOCK', qtyDelta: 5, unitCost: -1, effectiveDate: d('2026-08-01') }, {}, { allowZeroCost: true }), true);
-  check('window open never relaxes a COUNT_ADJUST increase',
-    !!validateStockMove_({ materialId: 'M1', moveType: 'COUNT_ADJUST', qtyDelta: 5, effectiveDate: d('2026-08-01') }, { M1: 0 }, { allowZeroCost: true }), true);
+  // Receipt-shaped types allow $0 by default -- material already in the
+  // warehouse whose cost was already expensed on a prior job. A negative
+  // cost is still always rejected, and a COUNT_ADJUST that adds stock still
+  // always needs a real, defensible number -- a count correction is not a
+  // bulk opening load.
+  check('accepts $0 on a receipt',
+    validateStockMove_({ materialId: 'M1', moveType: 'RECEIPT_STOCK', qtyDelta: 5, unitCost: 0, effectiveDate: d('2026-08-01') }, {}), null);
+  check('still rejects a NEGATIVE cost on a receipt',
+    !!validateStockMove_({ materialId: 'M1', moveType: 'RECEIPT_STOCK', qtyDelta: 5, unitCost: -1, effectiveDate: d('2026-08-01') }, {}), true);
+  check('a COUNT_ADJUST increase still always needs a real cost',
+    !!validateStockMove_({ materialId: 'M1', moveType: 'COUNT_ADJUST', qtyDelta: 5, effectiveDate: d('2026-08-01') }, { M1: 0 }), true);
 
   Logger.log(failures === 0 ? 'ALL PASS' : (failures + ' FAILED'));
   return failures;

@@ -144,8 +144,7 @@ function getStockLedgerView(payload) {
         moveCount:    moves.length,
         fromSnapshot: position.fromSnapshot,
         warnings:     position.warnings,
-        testMode:     !!(payload && payload.testMode),
-        zeroCostWindowOpen: getStockZeroCostWindowOpen_()
+        testMode:     !!(payload && payload.testMode)
       };
     });
   } catch (e) {
@@ -249,9 +248,10 @@ function receiveStockMaterial(payload) {
           note:          (payload.note || '').toString().trim()
         });
       }
-      // Only relaxed when the Script Property window is open -- see
-      // getStockZeroCostWindowOpen_ (Stock_Ledger.gs) for how that's set.
-      return appendStockMoves_(moves, auth.email, { allowZeroCost: getStockZeroCostWindowOpen_() });
+      // $0 is allowed here (validateStockMove_ treats a receipt-shaped
+      // cost as >= 0, not > 0) -- for material already in the warehouse
+      // whose cost was already expensed on a prior job.
+      return appendStockMoves_(moves, auth.email);
     });
   } catch (e) {
     return { success: false, error: e.toString() };
