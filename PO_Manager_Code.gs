@@ -5225,10 +5225,6 @@ function createWarrantyClaim(payload) {
     var submittedBy    = (payload.submittedBy || '').toString().trim();
     var photos         = payload.photos || [];
 
-    if (!builder || !jobName || !claimType || !priority || !description || !dateReported) {
-      return { success: false, error: 'Builder, Job Name, Claim Type, Priority, Description, and Date Reported are required.' };
-    }
-
     // Idempotency guard -- see createPO() for the full rationale. A cache hit
     // means this exact submission already created its Asana task.
     var idemKey = (payload.idempotencyKey || '').toString().trim();
@@ -5245,7 +5241,12 @@ function createWarrantyClaim(payload) {
 
       var tz    = Session.getScriptTimeZone();
       var today = Utilities.formatDate(new Date(), tz, 'MM/dd/yyyy');
-      var taskName = builder + ', ' + jobName + ' — ' + claimType;
+      // Every field is optional, so assemble the name from whatever was
+      // actually filled in. Without this a blank submission produces a task
+      // named ", — " -- or an empty name, which Asana rejects outright.
+      var taskName = [builder, jobName].filter(function(s) { return s; }).join(', ');
+      if (claimType) taskName = taskName ? (taskName + ' — ' + claimType) : claimType;
+      if (!taskName) taskName = 'Warranty Claim ' + today;
       var notes = [
         'Builder Tag: '      + builder,
         'Job Name: '         + jobName,
