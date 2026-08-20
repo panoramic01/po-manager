@@ -166,6 +166,7 @@ function doPost(e) {
     else if (action === 'findPOByNumber')    result = findPOByNumber(payload);
     else if (action === 'savePhotoToDrive')  result = savePhotoToDrive(payload);
     else if (action === 'createProject')       result = createProjectAndTask(payload);
+    else if (action === 'createWarrantyClaim') result = createWarrantyClaim(payload);
     else if (action === 'saveFileToFolderById') result = saveFileToFolderById(payload);
     else if (action === 'setProjectDriveLink') result = setProjectDriveLink(payload);
     else if (action === 'getPricingData')    result = getPricingData(payload);
@@ -4463,6 +4464,9 @@ function getSopData() {
 var ASANA_API          = 'https://app.asana.com/api/1.0';
 var ASANA_EXT_SCHED    = '1208049422174439';
 var ASANA_OFFICE_TASKS = '1208049422174458';
+// Warranty Claims Management board -- the Warranty Claim intake form files
+// tasks into its 'New Claims' section.
+var ASANA_WARRANTY_PROJECT = '1217659846418161';
 var ASANA_PTO_PROJECT  = '1210392177822419';
 
 function getAsanaPAT() {
@@ -5186,6 +5190,132 @@ function submitOfficeNote(payload) {
     return result;
   } catch(e) { return { success: false, error: e.toString() }; }
   finally { if (haveLock) lock.releaseLock(); }
+}
+
+/**
+ * Warranty Claim intake: creates an Asana task in ASANA_WARRANTY_PROJECT,
+ * moved into the "New Claims" section, and attaches any submitted photos.
+ *
+ * Builder Tag / Priority / Claim Type are written into the task notes as
+ * labelled lines rather than set as Asana custom fields -- this app has no
+ * custom-field plumbing yet, and doing it properly needs the field GIDs plus
+ * an enum-option GID per dropdown value. Swapping the notes lines for real
+ * custom_fields is a contained follow-up once those GIDs are on hand.
+ *
+ * Photo attachment failures are non-fatal: the claim itself is the thing
+ * that must not be lost, so a failed upload comes back as photoWarning on an
+ * otherwise successful response rather than failing the whole submission.
+ */
+function createWarrantyClaim(payload) {
+  try {
+    var auth = authorizeCaller(payload, ['admin', 'office', 'site_manager', 'human_resources']);
+    if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
+
+    var builder        = (payload.builder || '').toString().trim();
+    var jobName        = (payload.jobName || '').toString().trim();
+    var address        = (payload.address || '').toString().trim();
+    var claimType      = (payload.claimType || '').toString().trim();
+    var priority       = (payload.priority || '').toString().trim();
+    var homeowner      = (payload.homeowner || '').toString().trim();
+    var homeownerPhone = (payload.homeownerPhone || '').toString().trim();
+    var description    = (payload.description || '').toString().trim();
+    var dateReported   = (payload.dateReported || '').toString().trim();
+    var targetDate     = (payload.targetDate || '').toString().trim();
+    var assigneeEmail  = (payload.assigneeEmail || '').toString().trim();
+    var submittedBy    = (payload.submittedBy || '').toString().trim();
+    var photos         = payload.photos || [];
+
+    if (!builder || !jobName || !claimType || !priority || !description || !dateReported) {
+      return { success: false, error: 'Builder, Job Name, Claim Type, Priority, Description, and Date Reported are required.' };
+    }
+
+    // Idempotency guard -- see createPO() for the full rationale. A cache hit
+    // means this exact submission already created its Asana task.
+    var idemKey = (payload.idempotencyKey || '').toString().trim();
+    var cache = CacheService.getScriptCache();
+    var cacheKey = idemKey ? ('idem_warranty_' + idemKey) : null;
+    var lock = LockService.getScriptLock();
+    var haveLock = lock.tryLock(10000);
+    try {
+      if (cacheKey && haveLock) {
+        var cached = null;
+        try { cached = cache.get(cacheKey); } catch (e) {}
+        if (cached) return JSON.parse(cached);
+      }
+
+      var tz    = Session.getScriptTimeZone();
+      var today = Utilities.formatDate(new Date(), tz, 'MM/dd/yyyy');
+      var taskName = builder + ', ' + jobName + ' — ' + claimType;
+      var notes = [
+        'Builder Tag: '      + builder,
+        'Job Name: '         + jobName,
+        'Address: '          + (address || 'N/A'),
+        'Claim Type: '       + claimType,
+        'Priority: '         + priority,
+        'Homeowner: '        + (homeowner || 'N/A'),
+        'Homeowner Phone: '  + (homeownerPhone || 'N/A'),
+        'Date Reported: '    + dateReported,
+        'Target Resolution: ' + (targetDate || 'N/A'),
+        '',
+        'Description of Issue:',
+        description,
+        '',
+        'Submitted by: '     + (submittedBy || 'N/A'),
+        'Submitted: '        + today
+      ].join('\n');
+
+      var taskFields = {
+        projects: [ASANA_WARRANTY_PROJECT],
+        name:     taskName,
+        notes:    notes
+      };
+      // input type="date" already gives YYYY-MM-DD, which is what Asana wants
+      if (targetDate) taskFields.due_on = targetDate;
+
+      if (assigneeEmail) {
+        var assigneeGid = getAsanaUserGid_(assigneeEmail, cache);
+        if (assigneeGid) taskFields.assignee = assigneeGid;
+      }
+
+      var created = asanaRequest('post', '/tasks', taskFields);
+      if (created.errors) return { success: false, error: created.errors[0].message };
+
+      var asanaTaskGid = created.data.gid;
+
+      var sectionGid = getSectionGidByName(ASANA_WARRANTY_PROJECT, 'New Claims');
+      if (sectionGid) {
+        asanaRequest('post', '/sections/' + sectionGid + '/addTask', { task: asanaTaskGid });
+      }
+
+      var photoFailures = 0;
+      for (var i = 0; i < photos.length; i++) {
+        var p = photos[i];
+        try {
+          var res = asanaUploadAttachment(
+            asanaTaskGid, p.base64Data, p.mimeType || 'image/jpeg', p.filename || 'photo.jpg');
+          if (!res || !res.success) photoFailures++;
+        } catch (photoErr) {
+          photoFailures++;
+        }
+      }
+
+      var result = {
+        success: true,
+        asanaTaskGid: asanaTaskGid,
+        asanaTaskUrl: 'https://app.asana.com/0/' + ASANA_WARRANTY_PROJECT + '/' + asanaTaskGid
+      };
+      if (photoFailures) {
+        result.photoWarning = photoFailures + ' of ' + photos.length +
+          ' photo(s) failed to attach - the claim was filed, add them in Asana.';
+      }
+      if (cacheKey) { try { cache.put(cacheKey, JSON.stringify(result), 300); } catch (e) {} }
+      return result;
+    } finally {
+      if (haveLock) lock.releaseLock();
+    }
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
 }
 
 /**
