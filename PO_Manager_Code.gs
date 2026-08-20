@@ -186,6 +186,17 @@ function doPost(e) {
     else if (action === 'processEstimateWithMatching') result = processEstimateWithMatching(payload);
     else if (action === 'getSopData')                  result = getSopData();
     else if (action === 'saveMaterialHistory')          result = saveMaterialHistory(payload);
+    // Stock Ledger (Stock_Ledger_Api.gs) -- the app's own inventory
+    // subledger. Independent of QuickBooks by design: moves land as
+    // 'pending' and posting is a separate, later step.
+    else if (action === 'getStockLedgerView')           result = getStockLedgerView(payload);
+    else if (action === 'previewStockIssue')            result = previewStockIssue(payload);
+    else if (action === 'receiveStockMaterial')         result = receiveStockMaterial(payload);
+    else if (action === 'issueStockToJob')              result = issueStockToJob(payload);
+    else if (action === 'returnStockToWarehouse')       result = returnStockToWarehouse(payload);
+    else if (action === 'adjustStockCount')             result = adjustStockCount(payload);
+    else if (action === 'saveMaterialCatalogItem')      result = saveMaterialCatalogItem(payload);
+    else if (action === 'resetStockTestData')           result = resetStockTestData(payload);
     else if (action === 'getAsanaJobs')                result = getAsanaJobs();
     else if (action === 'getJobsByPhase')               result = getJobsByPhase(payload);
     else if (action === 'getRecentQualityWalks')        result = getRecentQualityWalks(payload);

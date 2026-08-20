@@ -960,6 +960,10 @@
           <span class="tile-swatch ts-teal"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg></span>
           <span class="tile-label">Material Inventory</span>
         </div>
+        <div id="other-card-stock-ledger" class="tile" onclick="showOtherPanel('stock-ledger')">
+          <span class="tile-swatch ts-navy"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17V7m4 10V4m4 13v-6M4 20h16"/></svg></span>
+          <span class="tile-label">Stock Ledger</span>
+        </div>
         <div id="other-card-inventory" class="tile" onclick="showOtherPanel('inventory')">
           <span class="tile-swatch ts-teal"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7l9-4 9 4-9 4-9-4zm0 0v10l9 4 9-4V7M12 11v10"/></svg></span>
           <span class="tile-label">Inventory</span>
@@ -1107,6 +1111,150 @@
         <div class="loading"><div class="spinner"></div><p>Loading contacts…</p></div>
       </div>
       <div id="ct-results"><div class="empty">Loading contacts…</div></div>
+    </div>
+
+    <!-- Stock Ledger sub-panel: the app's own inventory subledger. Separate
+         from the older Material Inventory screen above, which reads on-hand
+         from QuickBooks -- this one owns quantity and cost itself and does
+         not talk to QuickBooks at all. -->
+    <div id="other-panel-stock-ledger" style="display:none">
+      <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid var(--c-border-hair);background:var(--c-surface);position:sticky;top:0;z-index:1">
+        <button onclick="showOtherHome()" style="background:none;border:none;font-size:14px;font-weight:600;color:var(--c-navy);cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
+        <span style="font-size:15px;font-weight:700;color:var(--c-navy);flex:1;margin-left:2px">Stock Ledger</span>
+        <span id="sl-test-badge" style="display:none;background:var(--c-amber);color:#fff;font-size:10px;font-weight:800;letter-spacing:.06em;padding:3px 7px;border-radius:5px;margin-right:8px">TEST</span>
+        <button id="sl-test-toggle" onclick="slToggleTestMode()" style="display:none;background:none;border:1px solid var(--c-border);color:var(--c-ink-soft);border-radius:6px;padding:4px 9px;font-size:11px;font-weight:700;cursor:pointer">Test mode</button>
+      </div>
+
+      <div id="sl-test-bar" style="display:none;padding:10px 16px;background:#FFF7E6;border-bottom:1px solid var(--c-border-hair)">
+        <div style="font-size:12px;color:#7A5A00;line-height:1.45">Test mode is on. Everything reads and writes disposable <b>"(TEST)"</b> sheets -- real stock is untouched.</div>
+        <button onclick="slResetTestData()" style="margin-top:8px;background:none;border:1px solid var(--c-amber);color:#7A5A00;border-radius:7px;padding:6px 10px;font-size:12px;font-weight:700;cursor:pointer">Clear test data</button>
+      </div>
+
+      <div style="padding:14px 16px 0">
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <div style="flex:1;background:var(--c-surface);border:1px solid var(--c-border-hair);border-radius:10px;padding:10px 12px">
+            <div style="font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--c-ink-faint);text-transform:uppercase">Value</div>
+            <div id="sl-total-value" style="font-size:19px;font-weight:800;color:var(--c-navy);margin-top:3px">--</div>
+          </div>
+          <div style="flex:1;background:var(--c-surface);border:1px solid var(--c-border-hair);border-radius:10px;padding:10px 12px">
+            <div style="font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--c-ink-faint);text-transform:uppercase">Materials</div>
+            <div id="sl-material-count" style="font-size:19px;font-weight:800;color:var(--c-navy);margin-top:3px">--</div>
+          </div>
+          <div style="flex:1;background:var(--c-surface);border:1px solid var(--c-border-hair);border-radius:10px;padding:10px 12px">
+            <div style="font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--c-ink-faint);text-transform:uppercase">Moves</div>
+            <div id="sl-move-count" style="font-size:19px;font-weight:800;color:var(--c-navy);margin-top:3px">--</div>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:8px">
+          <button onclick="showStockMoveForm('receive')" style="flex:1;background:var(--c-navy);color:#fff;border:none;border-radius:10px;padding:12px 6px;font-size:13px;font-weight:700;cursor:pointer">Receive In</button>
+          <button onclick="showStockMoveForm('issue')" style="flex:1;background:var(--c-danger);color:#fff;border:none;border-radius:10px;padding:12px 6px;font-size:13px;font-weight:700;cursor:pointer">Issue Out</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button onclick="showStockMoveForm('return')" style="flex:1;background:var(--c-surface);color:var(--c-navy);border:1.5px solid var(--c-border);border-radius:10px;padding:10px 6px;font-size:12px;font-weight:700;cursor:pointer">Return</button>
+          <button id="sl-count-btn" onclick="showStockMoveForm('count')" style="flex:1;background:var(--c-surface);color:var(--c-navy);border:1.5px solid var(--c-border);border-radius:10px;padding:10px 6px;font-size:12px;font-weight:700;cursor:pointer">Count</button>
+          <button id="sl-catalog-btn" onclick="showStockMoveForm('catalog')" style="flex:1;background:var(--c-surface);color:var(--c-navy);border:1.5px solid var(--c-border);border-radius:10px;padding:10px 6px;font-size:12px;font-weight:700;cursor:pointer">Add Material</button>
+        </div>
+      </div>
+
+      <div id="sl-loading" style="display:none"><div class="loading"><div class="spinner"></div><p>Loading ledger...</p></div></div>
+      <div id="sl-warnings" style="display:none;margin:14px 16px 0;padding:10px 12px;background:#FDECEA;border-radius:9px;font-size:12px;color:#9B2C1C;line-height:1.5"></div>
+
+      <div style="padding:16px">
+        <div style="font-size:13px;font-weight:700;color:var(--c-navy);margin-bottom:8px">On Hand</div>
+        <div id="sl-onhand-list"></div>
+        <div style="font-size:13px;font-weight:700;color:var(--c-navy);margin:22px 0 8px">Recent Moves</div>
+        <div id="sl-moves-list"></div>
+      </div>
+    </div>
+
+    <!-- Stock move form: one panel that morphs between receive / issue /
+         return / count / add-material, same pattern as the Pull/Return
+         screen above rather than five near-identical panels. -->
+    <div id="other-panel-stock-move" style="display:none">
+      <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid var(--c-border-hair);background:var(--c-surface);position:sticky;top:0;z-index:1">
+        <button onclick="showOtherPanel('stock-ledger')" style="background:none;border:none;font-size:14px;font-weight:600;color:var(--c-navy);cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
+        <span id="sm-title" style="font-size:15px;font-weight:700;color:var(--c-navy);flex:1;margin-left:2px">Receive Material</span>
+      </div>
+
+      <div style="padding:16px">
+        <p id="sm-hint" style="font-size:12px;color:var(--c-ink-soft);margin:0 0 14px;line-height:1.5"></p>
+
+        <div id="sm-job-wrap" style="display:none">
+          <label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Builder &amp; Job *</label>
+          <input type="text" id="sm-job" autocomplete="off" placeholder="e.g. CRESCENT_RIDGE-WEGNER"
+                 oninput="this.value=this.value.toUpperCase().replace(/\s+/g,'_')"
+                 style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:12px">
+        </div>
+
+        <div id="sm-source-wrap" style="display:none">
+          <label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">PO / Reference</label>
+          <input type="text" id="sm-source" placeholder="e.g. PO 26-03-114"
+                 style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:12px">
+        </div>
+
+        <div id="sm-date-wrap">
+          <label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Effective Date</label>
+          <input type="date" id="sm-date"
+                 style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:14px">
+        </div>
+
+        <!-- Line-item builder: receive / issue / return -->
+        <div id="sm-lines-wrap">
+          <div style="font-size:12px;font-weight:700;color:var(--c-navy);margin-bottom:8px">Materials</div>
+          <div id="sm-lines"></div>
+          <button onclick="slAddLine()" style="width:100%;background:var(--c-surface);color:var(--c-navy);border:1.5px dashed var(--c-border);border-radius:9px;padding:10px;font-size:12px;font-weight:700;cursor:pointer;margin-top:2px">+ Add material</button>
+        </div>
+
+        <!-- Count adjustment -->
+        <div id="sm-count-wrap" style="display:none">
+          <label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Material *</label>
+          <select id="sm-count-material" onchange="slRenderCountHint()"
+                  style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:12px;background:var(--c-surface)"></select>
+          <div id="sm-count-hint" style="font-size:12px;color:var(--c-ink-soft);margin:-6px 2px 12px"></div>
+          <label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Counted Quantity *</label>
+          <input type="number" id="sm-count-qty" step="any" inputmode="decimal" oninput="slRenderCountHint()"
+                 style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:12px">
+          <div id="sm-count-cost-wrap" style="display:none">
+            <label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Unit Cost * <span style="font-weight:500">(a count that adds stock needs a cost)</span></label>
+            <input type="number" id="sm-count-cost" step="any" inputmode="decimal"
+                   style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:12px">
+          </div>
+        </div>
+
+        <!-- Add material to catalog -->
+        <div id="sm-catalog-wrap" style="display:none">
+          <label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Material Id *</label>
+          <input type="text" id="sm-cat-id" placeholder="e.g. M-SHINGLE"
+                 oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9_-]/g,'')"
+                 style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:12px">
+          <label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Material Name *</label>
+          <input type="text" id="sm-cat-name" placeholder="e.g. Architectural shingle"
+                 style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:12px">
+          <div style="display:flex;gap:8px">
+            <div style="flex:1">
+              <label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Unit</label>
+              <input type="text" id="sm-cat-unit" placeholder="SQ / EA / RL"
+                     style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:12px">
+            </div>
+            <div style="flex:1">
+              <label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Category</label>
+              <input type="text" id="sm-cat-category" placeholder="Roofing"
+                     style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:12px">
+            </div>
+          </div>
+        </div>
+
+        <label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Note <span id="sm-note-req" style="display:none">*</span></label>
+        <textarea id="sm-note" rows="2" placeholder="Optional"
+                  style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:14px;font-family:inherit;resize:vertical"></textarea>
+
+        <div id="sm-preview" style="display:none;background:#F4F8F7;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px"></div>
+        <div id="sm-error" style="display:none;background:#FDECEA;color:#9B2C1C;border-radius:9px;padding:10px 12px;margin-bottom:14px;font-size:12.5px;line-height:1.5"></div>
+
+        <button id="sm-preview-btn" onclick="slPreviewIssue()" style="display:none;width:100%;background:var(--c-surface);color:var(--c-navy);border:1.5px solid var(--c-navy);border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:8px">Check Cost</button>
+        <button id="sm-submit" onclick="slSubmitMove()" style="width:100%;background:var(--c-navy);color:#fff;border:none;border-radius:10px;padding:13px;font-size:14px;font-weight:700;cursor:pointer">Save</button>
+      </div>
     </div>
 
     <!-- Material Inventory sub-panel -->
@@ -3394,6 +3542,7 @@ function applyRole(role, skipNav) {
   sd('other-card-vendor-spend', has(['admin', 'office']));
   sd('other-card-material-report', has(['admin', 'office']));
   sd('other-card-material-inventory', has(['admin', 'office', 'runner']));
+  sd('other-card-stock-ledger', has(['admin', 'office', 'runner', 'site_manager']));
   sd('other-card-inventory', has(['admin', 'office']));
   // Moved here from the Log tab's quick-tile grid -- gated by canReceivePO
   // (not HR-only) to match who could reach them there before the move.
@@ -8060,7 +8209,7 @@ function showOtherPanel(name) {
   var activeTab = document.querySelector('.tab.active');
   if (activeTab) activeTab.style.display = 'none';
   document.getElementById('other-home').style.display = 'none';
-  ['pricing', 'contacts', 'inventory', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'material-inventory', 'material-pull', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project', 'quickbooks', 'invoice-review', 'portal-storage', 'my-asana-tasks', 'warranty'].forEach(function(p) {
+  ['pricing', 'contacts', 'inventory', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'material-inventory', 'material-pull', 'stock-ledger', 'stock-move', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project', 'quickbooks', 'invoice-review', 'portal-storage', 'my-asana-tasks', 'warranty'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
     if (el) el.style.display = p === name ? '' : 'none';
   });
@@ -8073,6 +8222,7 @@ function showOtherPanel(name) {
   if (name === 'vendor-spend') openVendorSpendPanel();
   if (name === 'material-report') openMaterialReportPanel();
   if (name === 'material-inventory') openMaterialInventoryPanel();
+  if (name === 'stock-ledger') openStockLedgerPanel();
   if (name === 'sop') loadSops();
   if (name === 'pto') loadPTOPanel();
   if (name === 'timeclock') loadTimeClock();
@@ -8098,7 +8248,7 @@ function resetOtherPanels() {
   // always wins over the .tab/.tab.active CSS class rule.
   document.querySelectorAll('.tab').forEach(function(t) { t.style.display = ''; });
   document.getElementById('other-home').style.display = '';
-  ['pricing', 'contacts', 'inventory', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'material-inventory', 'material-pull', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project', 'quickbooks', 'invoice-review', 'portal-storage', 'my-asana-tasks', 'warranty'].forEach(function(p) {
+  ['pricing', 'contacts', 'inventory', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'material-inventory', 'material-pull', 'stock-ledger', 'stock-move', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project', 'quickbooks', 'invoice-review', 'portal-storage', 'my-asana-tasks', 'warranty'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
     if (el) el.style.display = 'none';
   });
@@ -9004,6 +9154,412 @@ function irCreateBill() {
   }, { timeoutMs: 45000 });
 }
 
+
+// ── Stock Ledger ──────────────────────────────────────────────────────────────
+// The app's own inventory subledger. Distinct from the Material Inventory
+// screen above: that one reads on-hand from QuickBooks, this one owns both
+// quantity and FIFO cost itself and never calls QuickBooks. Moves land as
+// 'pending' -- posting to the books is a separate step that does not exist yet,
+// which is deliberate: the warehouse should be provably correct before any
+// accounting integration is wired to it.
+
+var SL = { testMode: false, materials: [], moves: [], mode: 'receive', lines: [], loaded: false };
+
+function slMoney(n) {
+  var v = parseFloat(n) || 0;
+  return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function slQty(n) {
+  var v = parseFloat(n) || 0;
+  return (Math.round(v * 10000) / 10000).toString();
+}
+
+function slEsc(s) {
+  return (s == null ? '' : String(s)).replace(/[&<>"']/g, function(c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+
+/** Local stand-in for the sd() helper, which is scoped inside applyRole(). */
+function slShow(id, show) {
+  var el = document.getElementById(id);
+  if (el) el.style.display = show ? '' : 'none';
+}
+
+/**
+ * Client-side convenience gate only -- the server re-checks admin/owner on
+ * every one of these calls, and an owner without the admin role still gets
+ * through there even though these buttons stay hidden here.
+ */
+function slIsAdmin() {
+  var roles = (typeof effRoleTokens === 'function' ? effRoleTokens(G.role) : []) || [];
+  return roles.indexOf('admin') !== -1;
+}
+
+function openStockLedgerPanel() {
+  var d = document.getElementById('sm-date');
+  if (d && !d.value) d.value = new Date().toISOString().slice(0, 10);
+  // Count adjustments and catalog edits are admin/owner only, matching the
+  // server-side gate -- hiding them here is convenience, not the control.
+  slShow('sl-count-btn', slIsAdmin());
+  slShow('sl-catalog-btn', slIsAdmin());
+  slShow('sl-test-toggle', slIsAdmin());
+  slShow('sl-test-badge', SL.testMode);
+  slShow('sl-test-bar', SL.testMode);
+  loadStockLedger();
+}
+
+function loadStockLedger() {
+  document.getElementById('sl-loading').style.display = '';
+  gasCall('getStockLedgerView', { testMode: SL.testMode }, function(data) {
+    document.getElementById('sl-loading').style.display = 'none';
+    if (data && data.error) { showToast(data.error); return; }
+    SL.materials = data.materials || [];
+    SL.moves = data.recentMoves || [];
+    SL.loaded = true;
+
+    document.getElementById('sl-total-value').textContent = slMoney(data.totalValue);
+    document.getElementById('sl-material-count').textContent = SL.materials.length;
+    document.getElementById('sl-move-count').textContent = data.moveCount || 0;
+
+    var warn = document.getElementById('sl-warnings');
+    if (data.warnings && data.warnings.length) {
+      warn.style.display = '';
+      warn.innerHTML = '<b>Needs attention</b><br>' + data.warnings.map(function(w) {
+        return slEsc(w.message);
+      }).join('<br>');
+    } else {
+      warn.style.display = 'none';
+    }
+
+    slRenderOnHand();
+    slRenderMoves();
+  }, function() {
+    document.getElementById('sl-loading').style.display = 'none';
+    showToast('Could not load the stock ledger.');
+  });
+}
+
+function slRenderOnHand() {
+  var el = document.getElementById('sl-onhand-list');
+  if (!SL.materials.length) {
+    el.innerHTML = '<div style="font-size:13px;color:var(--c-ink-soft);padding:14px 2px">No materials yet. Use <b>Add Material</b> to create one, then <b>Receive In</b>.</div>';
+    return;
+  }
+  el.innerHTML = SL.materials.map(function(m, i) {
+    var layers = (m.layers || []).map(function(l) {
+      return slQty(l.qty) + ' @ ' + slMoney(l.unitCost);
+    }).join(' &middot; ') || 'no cost layers';
+    var zero = m.onHand === 0;
+    return '' +
+      '<div style="background:var(--c-surface);border:1px solid var(--c-border-hair);border-radius:10px;padding:11px 13px;margin-bottom:8px">' +
+        '<div style="display:flex;align-items:baseline;gap:10px">' +
+          '<span style="font-size:13.5px;font-weight:700;color:var(--c-navy);flex:1">' + slEsc(m.materialName) + '</span>' +
+          '<span style="font-size:15px;font-weight:800;color:' + (zero ? 'var(--c-ink-faint)' : 'var(--c-navy)') + '">' + slQty(m.onHand) + '</span>' +
+          '<span style="font-size:11px;color:var(--c-ink-faint)">' + slEsc(m.unit) + '</span>' +
+        '</div>' +
+        '<div style="display:flex;gap:12px;margin-top:5px;font-size:11.5px;color:var(--c-ink-soft)">' +
+          '<span>' + slMoney(m.value) + '</span>' +
+          '<span>avg ' + slMoney(m.avgCost) + '</span>' +
+          '<span style="margin-left:auto;color:var(--c-ink-faint)">' + slEsc(m.materialId) + '</span>' +
+        '</div>' +
+        '<div style="margin-top:5px;font-size:11px;color:var(--c-ink-faint)">' + layers + '</div>' +
+      '</div>';
+  }).join('');
+}
+
+function slRenderMoves() {
+  var el = document.getElementById('sl-moves-list');
+  if (!SL.moves.length) {
+    el.innerHTML = '<div style="font-size:13px;color:var(--c-ink-soft);padding:14px 2px">No movements recorded yet.</div>';
+    return;
+  }
+  el.innerHTML = SL.moves.map(function(mv) {
+    var isOut = mv.qtyDelta < 0;
+    var when = mv.effectiveDate ? mv.effectiveDate.slice(0, 10) : '';
+    var cost = mv.unitCost ? ' @ ' + slMoney(mv.unitCost) : '';
+    return '' +
+      '<div style="display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--c-border-hair)">' +
+        '<span style="font-size:14px;font-weight:800;min-width:52px;text-align:right;color:' + (isOut ? 'var(--c-danger)' : 'var(--c-navy)') + '">' +
+          (isOut ? '' : '+') + slQty(mv.qtyDelta) + '</span>' +
+        '<span style="flex:1;min-width:0">' +
+          '<span style="display:block;font-size:12.5px;font-weight:600;color:var(--c-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + slEsc(mv.materialName || mv.materialId) + '</span>' +
+          '<span style="display:block;font-size:11px;color:var(--c-ink-soft);margin-top:2px">' +
+            when + ' &middot; ' + slEsc(mv.moveType) + cost + (mv.jobRef ? ' &middot; ' + slEsc(mv.jobRef) : '') + '</span>' +
+        '</span>' +
+      '</div>';
+  }).join('');
+}
+
+function slToggleTestMode() {
+  SL.testMode = !SL.testMode;
+  slShow('sl-test-badge', SL.testMode);
+  slShow('sl-test-bar', SL.testMode);
+  loadStockLedger();
+}
+
+function slResetTestData() {
+  if (!confirm('Delete all test data? The "(TEST)" sheets will be removed. Real stock is not affected.')) return;
+  gasCall('resetStockTestData', { testMode: true }, function(res) {
+    if (res && res.success) { showToast('Test data cleared.'); loadStockLedger(); }
+    else showToast((res && res.error) || 'Could not clear test data.');
+  }, function() { showToast('Could not clear test data.'); });
+}
+
+// ── Move form ─────────────────────────────────────────────────────────────────
+
+var SL_MODES = {
+  receive: { title: 'Receive Material In',  hint: 'Material arriving from a vendor into the warehouse. The cost you enter becomes its FIFO cost layer.', job: false, source: true,  cost: true,  lines: true },
+  issue:   { title: 'Issue Material to Job', hint: 'Material leaving the warehouse for a job. Cost is calculated from the oldest stock first -- you do not enter it.', job: true,  source: false, cost: false, lines: true },
+  'return':{ title: 'Return Material to Stock', hint: 'Material coming back from a job. Stock we issued returns at the cost it went out at; material billed straight to the job enters at what it was bought for.', job: true, source: false, cost: true, lines: true },
+  count:   { title: 'Count Adjustment',      hint: 'Correct on-hand to match a physical count. Every adjustment is recorded against your name and needs a reason.', job: false, source: false, cost: false, lines: false },
+  catalog: { title: 'Add Material',          hint: 'Create a material before it can be received. The Id is permanent -- it is what ties every movement together.', job: false, source: false, cost: false, lines: false }
+};
+
+function showStockMoveForm(mode) {
+  SL.mode = mode;
+  SL.lines = [];
+  var cfg = SL_MODES[mode];
+
+  document.getElementById('sm-title').textContent = cfg.title;
+  document.getElementById('sm-hint').textContent = cfg.hint;
+  slShow('sm-job-wrap', cfg.job);
+  slShow('sm-source-wrap', cfg.source);
+  slShow('sm-lines-wrap', cfg.lines);
+  slShow('sm-date-wrap', mode !== 'catalog');
+  slShow('sm-count-wrap', mode === 'count');
+  slShow('sm-catalog-wrap', mode === 'catalog');
+  slShow('sm-preview-btn', mode === 'issue');
+  slShow('sm-note-req', mode === 'count');
+
+  ['sm-job', 'sm-source', 'sm-note', 'sm-count-qty', 'sm-count-cost',
+   'sm-cat-id', 'sm-cat-name', 'sm-cat-unit', 'sm-cat-category'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('sm-preview').style.display = 'none';
+  document.getElementById('sm-error').style.display = 'none';
+  document.getElementById('sm-submit').textContent = mode === 'catalog' ? 'Add Material' : 'Save';
+
+  var d = document.getElementById('sm-date');
+  if (d) d.value = new Date().toISOString().slice(0, 10);
+
+  if (mode === 'count') slPopulateCountMaterials();
+  if (cfg.lines) { slAddLine(); }
+
+  showOtherPanel('stock-move');
+}
+
+function slMaterialOptions(selected) {
+  return '<option value="">Select material...</option>' + SL.materials.map(function(m) {
+    return '<option value="' + slEsc(m.materialId) + '"' + (m.materialId === selected ? ' selected' : '') + '>' +
+           slEsc(m.materialName) + (m.unit ? ' (' + slEsc(m.unit) + ')' : '') + '</option>';
+  }).join('');
+}
+
+function slAddLine() {
+  SL.lines.push({ materialId: '', qty: '', unitCost: '', kind: 'pulled' });
+  slRenderLines();
+}
+
+function slRemoveLine(i) {
+  SL.lines.splice(i, 1);
+  if (!SL.lines.length) SL.lines.push({ materialId: '', qty: '', unitCost: '', kind: 'pulled' });
+  slRenderLines();
+}
+
+function slLineChange(i, field, value) {
+  SL.lines[i][field] = value;
+  // The cost estimate is only valid for the lines it was computed from.
+  document.getElementById('sm-preview').style.display = 'none';
+}
+
+function slRenderLines() {
+  var cfg = SL_MODES[SL.mode];
+  var el = document.getElementById('sm-lines');
+  el.innerHTML = SL.lines.map(function(ln, i) {
+    var onHand = '';
+    var m = SL.materials.filter(function(x) { return x.materialId === ln.materialId; })[0];
+    if (m) onHand = slQty(m.onHand) + ' on hand' + (m.avgCost ? ' &middot; avg ' + slMoney(m.avgCost) : '');
+
+    var costField = cfg.cost ?
+      '<input type="number" step="any" inputmode="decimal" placeholder="Unit cost" value="' + slEsc(ln.unitCost) + '"' +
+      ' oninput="slLineChange(' + i + ',\'unitCost\',this.value)"' +
+      ' style="flex:1;min-width:0;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:8px 10px;font-size:13px">' : '';
+
+    var kindField = SL.mode === 'return' ?
+      '<select onchange="slLineChange(' + i + ',\'kind\',this.value)"' +
+      ' style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:8px 10px;font-size:12px;margin-top:7px;background:var(--c-surface)">' +
+      '<option value="pulled"' + (ln.kind === 'pulled' ? ' selected' : '') + '>Was pulled from our stock</option>' +
+      '<option value="direct"' + (ln.kind === 'direct' ? ' selected' : '') + '>Was billed direct to the job</option>' +
+      '</select>' : '';
+
+    return '' +
+      '<div style="background:var(--c-surface);border:1px solid var(--c-border-hair);border-radius:10px;padding:11px 12px;margin-bottom:8px">' +
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">' +
+          '<select onchange="slLineChange(' + i + ',\'materialId\',this.value);slRenderLines()"' +
+            ' style="flex:1;min-width:0;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:8px 10px;font-size:13px;background:var(--c-surface)">' +
+            slMaterialOptions(ln.materialId) + '</select>' +
+          '<button onclick="slRemoveLine(' + i + ')" style="background:none;border:none;color:var(--c-ink-faint);font-size:20px;line-height:1;cursor:pointer;padding:0 2px">&times;</button>' +
+        '</div>' +
+        '<div style="display:flex;gap:8px">' +
+          '<input type="number" step="any" inputmode="decimal" placeholder="Qty" value="' + slEsc(ln.qty) + '"' +
+            ' oninput="slLineChange(' + i + ',\'qty\',this.value)"' +
+            ' style="flex:1;min-width:0;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:8px 10px;font-size:13px">' +
+          costField +
+        '</div>' +
+        kindField +
+        (onHand ? '<div style="font-size:11px;color:var(--c-ink-faint);margin-top:6px">' + onHand + '</div>' : '') +
+      '</div>';
+  }).join('');
+}
+
+function slPopulateCountMaterials() {
+  var el = document.getElementById('sm-count-material');
+  el.innerHTML = slMaterialOptions('');
+  document.getElementById('sm-count-hint').textContent = '';
+  slShow('sm-count-cost-wrap', false);
+}
+
+function slRenderCountHint() {
+  var id = document.getElementById('sm-count-material').value;
+  var m = SL.materials.filter(function(x) { return x.materialId === id; })[0];
+  var hintEl = document.getElementById('sm-count-hint');
+  if (!m) { hintEl.textContent = ''; slShow('sm-count-cost-wrap', false); return; }
+
+  var counted = parseFloat(document.getElementById('sm-count-qty').value);
+  if (isNaN(counted)) {
+    hintEl.textContent = 'Currently ' + slQty(m.onHand) + ' on hand.';
+    slShow('sm-count-cost-wrap', false);
+    return;
+  }
+  var delta = counted - m.onHand;
+  hintEl.innerHTML = 'Currently ' + slQty(m.onHand) + ' on hand. This will ' +
+    (delta === 0 ? 'change nothing.' :
+     '<b style="color:' + (delta > 0 ? 'var(--c-navy)' : 'var(--c-danger)') + '">' +
+     (delta > 0 ? 'add ' : 'remove ') + slQty(Math.abs(delta)) + '</b>.');
+  // Only an increase needs a price -- a decrease consumes existing layers.
+  slShow('sm-count-cost-wrap', delta > 0);
+}
+
+function slShowError(msg) {
+  var el = document.getElementById('sm-error');
+  if (!msg) { el.style.display = 'none'; return; }
+  el.style.display = '';
+  el.textContent = msg;
+}
+
+function slCollectLines() {
+  var cfg = SL_MODES[SL.mode];
+  var out = [];
+  for (var i = 0; i < SL.lines.length; i++) {
+    var ln = SL.lines[i];
+    if (!ln.materialId && !ln.qty) continue;
+    if (!ln.materialId) return { error: 'Line ' + (i + 1) + ': pick a material.' };
+    var qty = parseFloat(ln.qty);
+    if (!qty || qty <= 0) return { error: 'Line ' + (i + 1) + ': enter a quantity greater than zero.' };
+    var line = { materialId: ln.materialId, qty: qty };
+    if (cfg.cost) {
+      var c = parseFloat(ln.unitCost);
+      if (!c || c <= 0) return { error: 'Line ' + (i + 1) + ': enter a unit cost greater than zero.' };
+      line.unitCost = c;
+    }
+    if (SL.mode === 'return') line.kind = ln.kind;
+    out.push(line);
+  }
+  if (!out.length) return { error: 'Add at least one material.' };
+  return { lines: out };
+}
+
+function slPreviewIssue() {
+  slShowError('');
+  var collected = slCollectLines();
+  if (collected.error) { slShowError(collected.error); return; }
+
+  gasCall('previewStockIssue', {
+    testMode: SL.testMode,
+    lines: collected.lines,
+    effectiveDate: document.getElementById('sm-date').value
+  }, function(res) {
+    if (!res || !res.success) { slShowError((res && res.error) || 'Could not calculate the cost.'); return; }
+    var el = document.getElementById('sm-preview');
+    el.style.display = '';
+    el.innerHTML = '<div style="font-weight:700;color:var(--c-navy);margin-bottom:7px">Cost to this job</div>' +
+      res.lines.map(function(l) {
+        return '<div style="display:flex;gap:8px;padding:3px 0"><span style="flex:1">' + slEsc(l.materialName) +
+               ' &times; ' + slQty(l.qty) + '</span><span style="font-weight:600">' + slMoney(l.lineTotal) + '</span></div>';
+      }).join('') +
+      '<div style="display:flex;gap:8px;border-top:1px solid var(--c-border);margin-top:7px;padding-top:7px">' +
+      '<span style="flex:1;font-weight:700">Total</span><span style="font-weight:800">' + slMoney(res.grandTotal) + '</span></div>';
+  }, function() { slShowError('Could not calculate the cost.'); });
+}
+
+function slSubmitMove() {
+  slShowError('');
+  var btn = document.getElementById('sm-submit');
+  var note = document.getElementById('sm-note').value.trim();
+  var date = document.getElementById('sm-date').value;
+  var payload, action;
+
+  if (SL.mode === 'catalog') {
+    var id = document.getElementById('sm-cat-id').value.trim();
+    var name = document.getElementById('sm-cat-name').value.trim();
+    if (!id)   { slShowError('Material Id is required.'); return; }
+    if (!name) { slShowError('Material name is required.'); return; }
+    action = 'saveMaterialCatalogItem';
+    payload = {
+      testMode: SL.testMode, materialId: id, materialName: name,
+      unit: document.getElementById('sm-cat-unit').value.trim(),
+      category: document.getElementById('sm-cat-category').value.trim(),
+      notes: note
+    };
+  } else if (SL.mode === 'count') {
+    var mid = document.getElementById('sm-count-material').value;
+    var counted = parseFloat(document.getElementById('sm-count-qty').value);
+    if (!mid) { slShowError('Pick a material.'); return; }
+    if (isNaN(counted)) { slShowError('Enter the counted quantity.'); return; }
+    if (!note) { slShowError('A reason is required for a count adjustment.'); return; }
+    action = 'adjustStockCount';
+    payload = { testMode: SL.testMode, materialId: mid, countedQty: counted, effectiveDate: date, note: note };
+    var cw = document.getElementById('sm-count-cost-wrap');
+    if (cw && cw.style.display !== 'none') {
+      var uc = parseFloat(document.getElementById('sm-count-cost').value);
+      if (!uc || uc <= 0) { slShowError('A count that adds stock needs a unit cost.'); return; }
+      payload.unitCost = uc;
+    }
+  } else {
+    var collected = slCollectLines();
+    if (collected.error) { slShowError(collected.error); return; }
+    var cfg = SL_MODES[SL.mode];
+    var jobRef = cfg.job ? document.getElementById('sm-job').value.trim() : '';
+    if (cfg.job && !jobRef) { slShowError('Job reference is required.'); return; }
+
+    action = SL.mode === 'receive' ? 'receiveStockMaterial'
+           : SL.mode === 'issue'   ? 'issueStockToJob'
+           : 'returnStockToWarehouse';
+    payload = { testMode: SL.testMode, lines: collected.lines, effectiveDate: date, note: note };
+    if (cfg.job) payload.jobRef = jobRef;
+    if (cfg.source) payload.sourceDoc = document.getElementById('sm-source').value.trim();
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+  gasCall(action, payload, function(res) {
+    btn.disabled = false;
+    btn.textContent = SL.mode === 'catalog' ? 'Add Material' : 'Save';
+    if (!res || !res.success) { slShowError((res && res.error) || 'Could not save.'); return; }
+    showToast(SL.mode === 'catalog' ? 'Material added.'
+            : SL.mode === 'count'   ? 'Adjusted from ' + slQty(res.from) + ' to ' + slQty(res.to) + '.'
+            : 'Recorded.');
+    loadStockLedger();
+    showOtherPanel('stock-ledger');
+  }, function() {
+    btn.disabled = false;
+    btn.textContent = 'Save';
+    slShowError('Could not reach the server. Nothing was saved.');
+  });
+}
 
 // ── Material Inventory ────────────────────────────────────────────────────────
 function openMaterialInventoryPanel() {
