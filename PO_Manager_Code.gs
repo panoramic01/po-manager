@@ -196,6 +196,8 @@ function doPost(e) {
     else if (action === 'returnStockToWarehouse')       result = returnStockToWarehouse(payload);
     else if (action === 'adjustStockCount')             result = adjustStockCount(payload);
     else if (action === 'saveMaterialCatalogItem')      result = saveMaterialCatalogItem(payload);
+    else if (action === 'getStockCatalogCandidates')     result = getStockCatalogCandidates(payload);
+    else if (action === 'addMaterialsToCatalog')         result = addMaterialsToCatalog(payload);
     else if (action === 'resetStockTestData')           result = resetStockTestData(payload);
     else if (action === 'getAsanaJobs')                result = getAsanaJobs();
     else if (action === 'getJobsByPhase')               result = getJobsByPhase(payload);

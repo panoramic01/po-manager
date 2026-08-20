@@ -129,6 +129,28 @@ function testStockLedgerIntegration_() {
     ], who);
     check('count increase without a cost is refused', foundNoCost.success, false);
 
+    // --- zero-cost opening window --------------------------------------
+    // Default (no opts): a $0 receipt is refused, matching production
+    // behavior when the Script Property window is closed.
+    var zeroClosed = appendStockMoves_([
+      { materialId: 'M-UNDERLAY', materialName: 'Synthetic underlayment', moveType: 'RECEIPT_STOCK', qtyDelta: 8, unitCost: 0, effectiveDate: d('2026-08-10') }
+    ], who);
+    check('$0 receipt refused with the window closed', zeroClosed.success, false);
+
+    // With the window explicitly open: the receipt is accepted, the
+    // quantity is real (not silently dropped), and it costs exactly $0 --
+    // this is the case that a naive validation-only fix would get wrong,
+    // since the OLD replay engine used to skip a $0 receipt's quantity too.
+    var zeroOpen = appendStockMoves_([
+      { materialId: 'M-UNDERLAY', materialName: 'Synthetic underlayment', moveType: 'RECEIPT_STOCK', qtyDelta: 8, unitCost: 0, effectiveDate: d('2026-08-10'), note: 'opening balance -- already expensed on a prior job' }
+    ], who, { allowZeroCost: true });
+    check('$0 receipt accepted with the window open', zeroOpen.success, true);
+    var afterZero = getStockPosition_();
+    // 10 @ 42.00 (42000 cents) already on hand; +8 @ $0 adds quantity but
+    // not value -- 18 on hand, value unchanged at 42000.
+    check('$0 receipt quantity actually lands', qtyOf(afterZero, 'M-UNDERLAY'), 18);
+    check('$0 receipt adds no value', valOf(afterZero, 'M-UNDERLAY'), 42000);
+
     // --- snapshot seeds the next replay --------------------------------
     var before = getStockPosition_();
     writeStockSnapshot_('2026-08', before.positions, currentStockSeq_(), who);
@@ -137,14 +159,21 @@ function testStockLedgerIntegration_() {
     check('replay now starts from the snapshot', after.fromSnapshot, '2026-08');
     check('snapshot preserves qty', qtyOf(after, 'M-SHINGLE'), qtyOf(before, 'M-SHINGLE'));
     check('snapshot preserves value', valOf(after, 'M-SHINGLE'), valOf(before, 'M-SHINGLE'));
-    check('snapshot preserves an idle material', qtyOf(after, 'M-UNDERLAY'), 10);
+    // Includes the earlier $0 receipt (10 @ 42.00 + 8 @ 0.00 = 18 units,
+    // still 42000 cents of value) -- the snapshot must round-trip that
+    // mixed-cost layer set exactly, not just a single-layer material.
+    check('snapshot preserves a $0-layered material', qtyOf(after, 'M-UNDERLAY'), 18);
+    check('snapshot preserves its value', valOf(after, 'M-UNDERLAY'), 42000);
 
     // A move after the snapshot must layer on top of it, not replace it.
     appendStockMoves_([
       { materialId: 'M-UNDERLAY', materialName: 'Synthetic underlayment', moveType: 'ISSUE_JOB', qtyDelta: -4, jobRef: 'JOB-103', effectiveDate: d('2026-09-02') }
     ], who);
     var p4 = getStockPosition_();
-    check('post-snapshot issue applies', qtyOf(p4, 'M-UNDERLAY'), 6);
+    // Issuing 4 consumes from the $42.00 layer first (FIFO): 18 - 4 = 14 on
+    // hand; value drops by 4 x 42.00 = 168.00 (16800 cents) from the paid
+    // layer, the $0 layer untouched -- 42000 - 16800 = 25200.
+    check('post-snapshot issue applies', qtyOf(p4, 'M-UNDERLAY'), 14);
     check('post-snapshot value correct', valOf(p4, 'M-UNDERLAY'), 25200);
 
   } catch (e) {

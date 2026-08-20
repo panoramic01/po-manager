@@ -1130,6 +1130,10 @@
         <button onclick="slResetTestData()" style="margin-top:8px;background:none;border:1px solid var(--c-amber);color:#7A5A00;border-radius:7px;padding:6px 10px;font-size:12px;font-weight:700;cursor:pointer">Clear test data</button>
       </div>
 
+      <div id="sl-zerocost-bar" style="display:none;padding:10px 16px;background:#FDECEA;border-bottom:1px solid var(--c-border-hair)">
+        <div style="font-size:12px;color:#9B2C1C;line-height:1.45"><b>$0 receipts are open.</b> Receive In currently accepts a $0 unit cost, for material already in the warehouse whose cost was already charged to an earlier job. Close the window in the Apps Script editor (Script Properties -> STOCK_ZERO_COST_WINDOW_OPEN) once the opening batch is loaded.</div>
+      </div>
+
       <div style="padding:14px 16px 0">
         <div style="display:flex;gap:8px;margin-bottom:12px">
           <div style="flex:1;background:var(--c-surface);border:1px solid var(--c-border-hair);border-radius:10px;padding:10px 12px">
@@ -1224,6 +1228,20 @@
 
         <!-- Add material to catalog -->
         <div id="sm-catalog-wrap" style="display:none">
+          <div style="display:flex;gap:6px;margin-bottom:14px">
+            <button id="sm-cat-tab-pricing" onclick="slSetCatalogMode('pricing')" style="flex:1;border:1.5px solid var(--c-navy);background:var(--c-navy);color:#fff;border-radius:8px;padding:9px 6px;font-size:12px;font-weight:700;cursor:pointer">From Pricing List</button>
+            <button id="sm-cat-tab-manual" onclick="slSetCatalogMode('manual')" style="flex:1;border:1.5px solid var(--c-border);background:var(--c-surface);color:var(--c-navy);border-radius:8px;padding:9px 6px;font-size:12px;font-weight:700;cursor:pointer">Type it in</button>
+          </div>
+
+          <div id="sm-cat-picker">
+            <input type="text" id="sm-cat-search" placeholder="Search materials..." oninput="slRenderCandidates()"
+                   style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:10px">
+            <div id="sm-cat-picker-status" style="font-size:12px;color:var(--c-ink-soft);margin:0 2px 10px"></div>
+            <div id="sm-cat-candidates" style="max-height:46vh;overflow-y:auto;-webkit-overflow-scrolling:touch"></div>
+            <button id="sm-cat-add-selected" onclick="slAddSelectedMaterials()" style="width:100%;background:var(--c-navy);color:#fff;border:none;border-radius:10px;padding:13px;font-size:14px;font-weight:700;cursor:pointer;margin-top:12px">Add selected</button>
+          </div>
+
+          <div id="sm-cat-manual" style="display:none">
           <label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Material Id *</label>
           <input type="text" id="sm-cat-id" placeholder="e.g. M-SHINGLE"
                  oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9_-]/g,'')"
@@ -1242,6 +1260,7 @@
               <input type="text" id="sm-cat-category" placeholder="Roofing"
                      style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:12px">
             </div>
+          </div>
           </div>
         </div>
 
@@ -9163,7 +9182,8 @@ function irCreateBill() {
 // which is deliberate: the warehouse should be provably correct before any
 // accounting integration is wired to it.
 
-var SL = { testMode: false, materials: [], moves: [], mode: 'receive', lines: [], loaded: false };
+var SL = { testMode: false, materials: [], moves: [], mode: 'receive', lines: [], loaded: false,
+           catMode: 'pricing', candidates: [], selected: {}, zeroCostWindowOpen: false };
 
 function slMoney(n) {
   var v = parseFloat(n) || 0;
@@ -9217,7 +9237,9 @@ function loadStockLedger() {
     if (data && data.error) { showToast(data.error); return; }
     SL.materials = data.materials || [];
     SL.moves = data.recentMoves || [];
+    SL.zeroCostWindowOpen = !!data.zeroCostWindowOpen;
     SL.loaded = true;
+    slShow('sl-zerocost-bar', SL.zeroCostWindowOpen);
 
     document.getElementById('sl-total-value').textContent = slMoney(data.totalValue);
     document.getElementById('sl-material-count').textContent = SL.materials.length;
@@ -9310,7 +9332,7 @@ function slResetTestData() {
 // ── Move form ─────────────────────────────────────────────────────────────────
 
 var SL_MODES = {
-  receive: { title: 'Receive Material In',  hint: 'Material arriving from a vendor into the warehouse. The cost you enter becomes its FIFO cost layer.', job: false, source: true,  cost: true,  lines: true },
+  receive: { title: 'Receive Material In',  hint: 'Material arriving from a vendor into the warehouse. The cost you enter becomes its FIFO cost layer. If $0 receipts are open, enter 0 for material you already have that was already paid for on an earlier job.', job: false, source: true,  cost: true,  lines: true },
   issue:   { title: 'Issue Material to Job', hint: 'Material leaving the warehouse for a job. Cost is calculated from the oldest stock first -- you do not enter it.', job: true,  source: false, cost: false, lines: true },
   'return':{ title: 'Return Material to Stock', hint: 'Material coming back from a job. Stock we issued returns at the cost it went out at; material billed straight to the job enters at what it was bought for.', job: true, source: false, cost: true, lines: true },
   count:   { title: 'Count Adjustment',      hint: 'Correct on-hand to match a physical count. Every adjustment is recorded against your name and needs a reason.', job: false, source: false, cost: false, lines: false },
@@ -9346,6 +9368,8 @@ function showStockMoveForm(mode) {
   if (d) d.value = new Date().toISOString().slice(0, 10);
 
   if (mode === 'count') slPopulateCountMaterials();
+  if (mode === 'catalog') { SL.selected = {}; slSetCatalogMode('pricing'); }
+  else slShow('sm-submit', true);
   if (cfg.lines) { slAddLine(); }
 
   showOtherPanel('stock-move');
@@ -9462,7 +9486,11 @@ function slCollectLines() {
     var line = { materialId: ln.materialId, qty: qty };
     if (cfg.cost) {
       var c = parseFloat(ln.unitCost);
-      if (!c || c <= 0) return { error: 'Line ' + (i + 1) + ': enter a unit cost greater than zero.' };
+      var zeroOk = SL.mode === 'receive' && SL.zeroCostWindowOpen;
+      var costValid = zeroOk ? (!isNaN(c) && c >= 0) : (c > 0);
+      if (!costValid) {
+        return { error: 'Line ' + (i + 1) + ': enter a unit cost' + (zeroOk ? ' (0 or more).' : ' greater than zero.') };
+      }
       line.unitCost = c;
     }
     if (SL.mode === 'return') line.kind = ln.kind;
@@ -9558,6 +9586,136 @@ function slSubmitMove() {
     btn.disabled = false;
     btn.textContent = 'Save';
     slShowError('Could not reach the server. Nothing was saved.');
+  });
+}
+
+
+// ── Add material: pick from the Pricing sheet ─────────────────────────────────
+// The Pricing sheet is already the material master this business keeps, so the
+// default path is to pick from it rather than retype descriptions into a second
+// list that then drifts. Manual entry stays for anything not priced yet.
+
+function slSetCatalogMode(mode) {
+  SL.catMode = mode;
+  var onPricing = mode === 'pricing';
+  slShow('sm-cat-picker', onPricing);
+  slShow('sm-cat-manual', !onPricing);
+  // The shared Save button belongs to manual entry; the picker has its own.
+  slShow('sm-submit', !onPricing);
+  slShow('sm-note-req', false);
+
+  var pick = document.getElementById('sm-cat-tab-pricing');
+  var man  = document.getElementById('sm-cat-tab-manual');
+  pick.style.background = onPricing ? 'var(--c-navy)' : 'var(--c-surface)';
+  pick.style.color      = onPricing ? '#fff' : 'var(--c-navy)';
+  pick.style.borderColor = onPricing ? 'var(--c-navy)' : 'var(--c-border)';
+  man.style.background  = onPricing ? 'var(--c-surface)' : 'var(--c-navy)';
+  man.style.color       = onPricing ? 'var(--c-navy)' : '#fff';
+  man.style.borderColor = onPricing ? 'var(--c-border)' : 'var(--c-navy)';
+
+  if (onPricing && !SL.candidates.length) slLoadCandidates();
+}
+
+function slLoadCandidates() {
+  var status = document.getElementById('sm-cat-picker-status');
+  status.textContent = 'Loading the Pricing list...';
+  gasCall('getStockCatalogCandidates', { testMode: SL.testMode }, function(res) {
+    if (!res || res.error) {
+      status.textContent = (res && res.error) || 'Could not read the Pricing sheet.';
+      return;
+    }
+    SL.candidates = res.candidates || [];
+    SL.selected = {};
+    slRenderCandidates();
+  }, function() { status.textContent = 'Could not read the Pricing sheet.'; });
+}
+
+function slToggleCandidate(idx) {
+  var c = SL.candidates[idx];
+  if (!c || c.alreadyInCatalog) return;
+  if (SL.selected[idx]) delete SL.selected[idx]; else SL.selected[idx] = true;
+  slRenderCandidates();
+}
+
+function slRenderCandidates() {
+  var q = (document.getElementById('sm-cat-search').value || '').trim().toLowerCase();
+  var el = document.getElementById('sm-cat-candidates');
+  var status = document.getElementById('sm-cat-picker-status');
+  var btn = document.getElementById('sm-cat-add-selected');
+
+  var matches = [];
+  SL.candidates.forEach(function(c, i) {
+    if (q && (c.description + ' ' + c.category).toLowerCase().indexOf(q) === -1) return;
+    matches.push({ c: c, i: i });
+  });
+
+  var selectedCount = Object.keys(SL.selected).length;
+  var alreadyCount = SL.candidates.filter(function(c) { return c.alreadyInCatalog; }).length;
+  status.textContent = SL.candidates.length
+    ? matches.length + ' of ' + SL.candidates.length + ' shown, ' + alreadyCount + ' already added'
+    : 'No materials found on the Pricing sheet.';
+
+  btn.textContent = selectedCount ? 'Add ' + selectedCount + ' material' + (selectedCount === 1 ? '' : 's') : 'Add selected';
+  btn.style.opacity = selectedCount ? '1' : '.5';
+
+  if (!matches.length) {
+    el.innerHTML = '<div style="font-size:13px;color:var(--c-ink-soft);padding:14px 2px">Nothing matches that search.</div>';
+    return;
+  }
+
+  el.innerHTML = matches.map(function(m) {
+    var c = m.c, i = m.i;
+    var on = !!SL.selected[i];
+    var done = c.alreadyInCatalog;
+    var box = done
+      ? '<span style="font-size:11px;font-weight:700;color:var(--c-ink-faint);white-space:nowrap">Added</span>'
+      : '<span style="width:19px;height:19px;flex:none;border-radius:5px;border:1.5px solid ' + (on ? 'var(--c-navy)' : 'var(--c-border)') +
+        ';background:' + (on ? 'var(--c-navy)' : 'var(--c-surface)') +
+        ';display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:800">' + (on ? '&#10003;' : '') + '</span>';
+    // Reference price only -- never used as a cost. FIFO layers come from
+    // what was actually paid on a real receipt.
+    var meta = [c.unit, c.category, c.bestPrice ? 'ref ' + slMoney(c.bestPrice) : '']
+      .filter(function(x) { return x; }).join(' &middot; ');
+    return '' +
+      '<div onclick="slToggleCandidate(' + i + ')" style="display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid var(--c-border-hair);cursor:' + (done ? 'default' : 'pointer') + ';opacity:' + (done ? '.55' : '1') + '">' +
+        box +
+        '<span style="flex:1;min-width:0">' +
+          '<span style="display:block;font-size:13px;font-weight:600;color:var(--c-ink)">' + slEsc(c.description) + '</span>' +
+          (meta ? '<span style="display:block;font-size:11px;color:var(--c-ink-soft);margin-top:2px">' + meta + '</span>' : '') +
+        '</span>' +
+      '</div>';
+  }).join('');
+}
+
+function slAddSelectedMaterials() {
+  var idxs = Object.keys(SL.selected);
+  if (!idxs.length) { slShowError('Tick at least one material.'); return; }
+  slShowError('');
+
+  var items = idxs.map(function(i) {
+    var c = SL.candidates[i];
+    return { materialId: c.suggestedId, materialName: c.description, unit: c.unit, category: c.category };
+  });
+
+  var btn = document.getElementById('sm-cat-add-selected');
+  btn.disabled = true;
+  btn.textContent = 'Adding...';
+  gasCall('addMaterialsToCatalog', { testMode: SL.testMode, items: items }, function(res) {
+    btn.disabled = false;
+    if (!res || !res.success) {
+      btn.textContent = 'Add selected';
+      slShowError((res && res.error) || 'Could not add these materials.');
+      return;
+    }
+    showToast('Added ' + res.added + ' material' + (res.added === 1 ? '' : 's') + '.');
+    SL.selected = {};
+    SL.candidates = [];
+    loadStockLedger();
+    showOtherPanel('stock-ledger');
+  }, function() {
+    btn.disabled = false;
+    btn.textContent = 'Add selected';
+    slShowError('Could not reach the server. Nothing was added.');
   });
 }
 

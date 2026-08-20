@@ -68,6 +68,21 @@ function stockSheetName_(base) {
   return base + STOCK_SHEET_SUFFIX_;
 }
 
+/**
+ * Whether a NEW receipt is currently allowed to carry a $0 unit cost --
+ * for bringing in material already sitting in the warehouse whose cost was
+ * expensed on a prior job, so capitalizing it again here would double-
+ * count. Controlled entirely by a Script Property so it is a durable,
+ * explicit, editor-visible switch rather than app state that could drift
+ * back open silently: Apps Script editor -> Project Settings -> Script
+ * Properties -> STOCK_ZERO_COST_WINDOW_OPEN = true. Set it back to false
+ * (or delete it) once the opening batch is loaded -- every row already
+ * written stays correct either way, since replay never re-checks this.
+ */
+function getStockZeroCostWindowOpen_() {
+  return PropertiesService.getScriptProperties().getProperty('STOCK_ZERO_COST_WINDOW_OPEN') === 'true';
+}
+
 // --- Enums ---------------------------------------------------------------
 
 /**
@@ -184,18 +199,13 @@ function replayStockFifo_(moves, openingLayers) {
     if (!qty) return;
 
     if (qty > 0) {
-      // Receipt of any kind. A costless receipt would poison every layer
-      // downstream of it, so it is refused rather than admitted at zero.
-      var unitCost = roundUnitCost_(m.unitCost);
-      if (!(unitCost > 0)) {
-        warnings.push({
-          ledgerId: m.ledgerId,
-          materialId: m.materialId,
-          message: 'Receipt has no unit cost -- skipped so it cannot poison the cost layers.'
-        });
-        return;
-      }
-      pos.layers.push({ qty: qty, unitCost: unitCost });
+      // Receipt of any kind. Whether a $0 receipt was ALLOWED to be
+      // written is decided once, at append time (validateStockMove_) --
+      // replay never re-litigates it. A row that made it into the ledger
+      // replays faithfully forever, $0 included, so closing the zero-cost
+      // window later never breaks a receipt legitimately written while it
+      // was open.
+      pos.layers.push({ qty: qty, unitCost: roundUnitCost_(m.unitCost) });
       return;
     }
 
@@ -288,7 +298,7 @@ function lastKnownUnitCost_(pos, seedLayers, materialId) {
  * so a bad row cannot be edited away later -- it can only be corrected by a
  * further row, which is exactly the mess worth refusing up front.
  */
-function validateStockMove_(move, onHandByMaterial) {
+function validateStockMove_(move, onHandByMaterial, opts) {
   if (!move || !move.materialId) return 'Missing material.';
   var spec = STOCK_MOVE[move.moveType];
   if (!spec) return 'Unknown move type "' + move.moveType + '".';
@@ -303,8 +313,18 @@ function validateStockMove_(move, onHandByMaterial) {
   // existing layers like any issue, so supplying a cost would let a caller
   // override FIFO. Hence the rule depends on direction, not just type.
   var needsCost = spec.needsCost || (move.moveType === 'COUNT_ADJUST' && qty > 0);
-  if (needsCost && !(roundUnitCost_(move.unitCost) > 0)) {
-    return move.moveType + (move.moveType === 'COUNT_ADJUST' ? ' that adds stock' : '') + ' needs a unit cost greater than zero.';
+  // opts.allowZeroCost relaxes cost>0 to cost>=0, and ONLY for ordinary
+  // receipt-shaped types (spec.needsCost) -- never for a COUNT_ADJUST that
+  // adds stock, which is a correction against a physical count and should
+  // always carry a real, defensible cost.
+  var allowZero = !!(opts && opts.allowZeroCost) && spec.needsCost;
+  if (needsCost) {
+    var cost = roundUnitCost_(move.unitCost);
+    var costOk = allowZero ? cost >= 0 : cost > 0;
+    if (!costOk) {
+      return move.moveType + (move.moveType === 'COUNT_ADJUST' ? ' that adds stock' : '') +
+        (allowZero ? ' needs a unit cost of 0 or more.' : ' needs a unit cost greater than zero.');
+    }
   }
   if (!needsCost && move.unitCost) {
     return move.moveType + ' derives its cost from the ledger -- do not supply a unit cost.';
@@ -384,7 +404,7 @@ function readStockLedgerMoves_(afterSeq) {
  * stamps the txn id, so an Intuit outage can never lose the fact that
  * material physically moved.
  */
-function appendStockMoves_(moves, byEmail) {
+function appendStockMoves_(moves, byEmail, opts) {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(15000)) return { success: false, error: 'Server is busy - try again in a moment.' };
   try {
@@ -400,7 +420,7 @@ function appendStockMoves_(moves, byEmail) {
     var prepared = [];
     for (var i = 0; i < moves.length; i++) {
       var m = moves[i];
-      var err = validateStockMove_(m, onHand);
+      var err = validateStockMove_(m, onHand, opts);
       if (err) return { success: false, error: err, failedIndex: i };
       onHand[m.materialId] = (parseFloat(onHand[m.materialId]) || 0) + (parseFloat(m.qtyDelta) || 0);
       prepared.push(m);
@@ -613,12 +633,15 @@ function testStockLedger_() {
   var r6 = replayStockFifo_([], { M9: [{ qty: 7, unitCost: 3 }] });
   check('idle material still reported', r6.positions['M9'].qty, 7);
 
-  // Zero-cost receipts are refused rather than admitted, and say so.
+  // Replay is purely faithful: whether a $0 receipt was ALLOWED to be
+  // written is a validateStockMove_/append-time decision, never replay's --
+  // a $0 row that made it into the ledger replays as a real, qty-bearing
+  // layer at $0 cost.
   var r7 = replayStockFifo_([
     { seq: 1, ledgerId: 'A', effectiveDate: d('2026-08-01'), materialId: 'M1', qtyDelta: 5, unitCost: 0, moveType: 'RECEIPT_STOCK' }
   ], {});
-  check('zero-cost receipt refused', r7.warnings.length, 1);
-  check('zero-cost receipt adds nothing', r7.positions['M1'].qty, 0);
+  check('replay admits a $0 receipt as a real layer', r7.positions['M1'].qty, 5);
+  check('replay prices that layer at $0', r7.positions['M1'].valueCents, 0);
 
   // A short issue is priced at last known cost and flagged loudly.
   var r8 = replayStockFifo_([
@@ -650,6 +673,18 @@ function testStockLedger_() {
     !!validateStockMove_({ materialId: 'M1', moveType: 'ISSUE_JOB', qtyDelta: -1, effectiveDate: d('2026-08-01') }, { M1: 9 }), true);
   check('accepts a good issue',
     validateStockMove_({ materialId: 'M1', moveType: 'ISSUE_JOB', qtyDelta: -2, jobRef: 'J1', effectiveDate: d('2026-08-01') }, { M1: 9 }), null);
+
+  // The zero-cost window (opts.allowZeroCost): closed by default, opens
+  // only for receipt-shaped types, and never for a COUNT_ADJUST that adds
+  // stock -- a count correction should always carry a real cost.
+  check('rejects $0 receipt with the window closed',
+    !!validateStockMove_({ materialId: 'M1', moveType: 'RECEIPT_STOCK', qtyDelta: 5, unitCost: 0, effectiveDate: d('2026-08-01') }, {}), true);
+  check('accepts $0 receipt with the window open',
+    validateStockMove_({ materialId: 'M1', moveType: 'RECEIPT_STOCK', qtyDelta: 5, unitCost: 0, effectiveDate: d('2026-08-01') }, {}, { allowZeroCost: true }), null);
+  check('still rejects a NEGATIVE cost even with the window open',
+    !!validateStockMove_({ materialId: 'M1', moveType: 'RECEIPT_STOCK', qtyDelta: 5, unitCost: -1, effectiveDate: d('2026-08-01') }, {}, { allowZeroCost: true }), true);
+  check('window open never relaxes a COUNT_ADJUST increase',
+    !!validateStockMove_({ materialId: 'M1', moveType: 'COUNT_ADJUST', qtyDelta: 5, effectiveDate: d('2026-08-01') }, { M1: 0 }, { allowZeroCost: true }), true);
 
   Logger.log(failures === 0 ? 'ALL PASS' : (failures + ' FAILED'));
   return failures;

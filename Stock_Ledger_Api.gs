@@ -144,7 +144,8 @@ function getStockLedgerView(payload) {
         moveCount:    moves.length,
         fromSnapshot: position.fromSnapshot,
         warnings:     position.warnings,
-        testMode:     !!(payload && payload.testMode)
+        testMode:     !!(payload && payload.testMode),
+        zeroCostWindowOpen: getStockZeroCostWindowOpen_()
       };
     });
   } catch (e) {
@@ -248,7 +249,9 @@ function receiveStockMaterial(payload) {
           note:          (payload.note || '').toString().trim()
         });
       }
-      return appendStockMoves_(moves, auth.email);
+      // Only relaxed when the Script Property window is open -- see
+      // getStockZeroCostWindowOpen_ (Stock_Ledger.gs) for how that's set.
+      return appendStockMoves_(moves, auth.email, { allowZeroCost: getStockZeroCostWindowOpen_() });
     });
   } catch (e) {
     return { success: false, error: e.toString() };
@@ -415,30 +418,19 @@ function saveMaterialCatalogItem(payload) {
     if (!lock.tryLock(10000)) return { success: false, error: 'Server is busy - try again in a moment.' };
     try {
       return withStockSheets_(payload, function() {
-        var sheet = ensureSheetWithHeaders_(stockSheetName_(MATERIAL_CATALOG_SHEET), MATERIAL_CATALOG_HEADERS);
-        var row = [];
-        for (var c = 0; c < MATERIAL_CATALOG_HEADERS.length; c++) row.push('');
-        row[MATERIAL_CATALOG_COL['Material Id']]        = materialId;
-        row[MATERIAL_CATALOG_COL['Material Name']]      = materialName;
-        row[MATERIAL_CATALOG_COL['Unit']]               = (payload.unit || '').toString().trim();
-        row[MATERIAL_CATALOG_COL['Category']]           = (payload.category || '').toString().trim();
-        row[MATERIAL_CATALOG_COL['QBO Post Item Id']]   = (payload.qboPostItemId || '').toString().trim();
-        row[MATERIAL_CATALOG_COL['QBO Post Item Name']] = (payload.qboPostItemName || '').toString().trim();
-        row[MATERIAL_CATALOG_COL['Active']]             = payload.active === false ? false : true;
-        row[MATERIAL_CATALOG_COL['Notes']]              = (payload.notes || '').toString().trim();
-
-        var lastRow = sheet.getLastRow();
-        if (lastRow >= 2) {
-          var ids = sheet.getRange(2, MATERIAL_CATALOG_COL['Material Id'] + 1, lastRow - 1, 1).getValues();
-          for (var i = 0; i < ids.length; i++) {
-            if ((ids[i][0] || '').toString().trim().toUpperCase() === materialId) {
-              sheet.getRange(i + 2, 1, 1, MATERIAL_CATALOG_HEADERS.length).setValues([row]);
-              return { success: true, materialId: materialId, updated: true };
-            }
-          }
-        }
-        sheet.getRange(sheet.getLastRow() + 1, 1, 1, MATERIAL_CATALOG_HEADERS.length).setValues([row]);
-        return { success: true, materialId: materialId, updated: false };
+        // Same upsert the bulk import uses, so single-add and bulk-add can
+        // never disagree about how a catalog row is written.
+        var res = upsertMaterialCatalog_([{
+          materialId:      materialId,
+          materialName:    materialName,
+          unit:            (payload.unit || '').toString().trim(),
+          category:        (payload.category || '').toString().trim(),
+          qboPostItemId:   (payload.qboPostItemId || '').toString().trim(),
+          qboPostItemName: (payload.qboPostItemName || '').toString().trim(),
+          active:          payload.active !== false,
+          notes:           (payload.notes || '').toString().trim()
+        }]);
+        return { success: true, materialId: materialId, updated: res.updated > 0 };
       });
     } finally {
       lock.releaseLock();
@@ -462,6 +454,181 @@ function resetStockTestData(payload) {
     }
     dropStockTestSheets_();
     return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
+}
+
+// --- Bulk catalog from the Pricing sheet ---------------------------------
+
+/**
+ * Turns a free-text material description into a stable Material Id.
+ * Deliberately derived rather than random: an id you can read tells you
+ * what it is when you meet it in a ledger row a year from now.
+ */
+function slugifyMaterialId_(description) {
+  var slug = (description || '').toString().toUpperCase()
+    .replace(/&/g, ' AND ')
+    .replace(/[^A-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 44)
+    .replace(/-+$/, '');
+  return slug || 'MATERIAL';
+}
+
+/**
+ * Shared upsert for the Material Catalog, keyed on Material Id. Reads the
+ * existing ids ONCE and writes the whole batch, rather than re-reading per
+ * row -- importing 150 materials one call at a time would be both slow and
+ * a good way to hit the Apps Script execution limit.
+ * entries: [{materialId, materialName, unit, category, qboPostItemId,
+ *            qboPostItemName, active, notes}]
+ */
+function upsertMaterialCatalog_(entries) {
+  var sheet = ensureSheetWithHeaders_(stockSheetName_(MATERIAL_CATALOG_SHEET), MATERIAL_CATALOG_HEADERS);
+  var lastRow = sheet.getLastRow();
+  var rowById = {};
+  if (lastRow >= 2) {
+    var ids = sheet.getRange(2, MATERIAL_CATALOG_COL['Material Id'] + 1, lastRow - 1, 1).getValues();
+    for (var i = 0; i < ids.length; i++) {
+      var existing = (ids[i][0] || '').toString().trim().toUpperCase();
+      if (existing) rowById[existing] = i + 2;
+    }
+  }
+
+  var appended = [];
+  var updated = 0;
+  entries.forEach(function(e) {
+    var row = [];
+    for (var c = 0; c < MATERIAL_CATALOG_HEADERS.length; c++) row.push('');
+    row[MATERIAL_CATALOG_COL['Material Id']]        = e.materialId;
+    row[MATERIAL_CATALOG_COL['Material Name']]      = e.materialName;
+    row[MATERIAL_CATALOG_COL['Unit']]               = e.unit || '';
+    row[MATERIAL_CATALOG_COL['Category']]           = e.category || '';
+    row[MATERIAL_CATALOG_COL['QBO Post Item Id']]   = e.qboPostItemId || '';
+    row[MATERIAL_CATALOG_COL['QBO Post Item Name']] = e.qboPostItemName || '';
+    row[MATERIAL_CATALOG_COL['Active']]             = e.active === false ? false : true;
+    row[MATERIAL_CATALOG_COL['Notes']]              = e.notes || '';
+
+    var at = rowById[e.materialId];
+    if (at) {
+      sheet.getRange(at, 1, 1, MATERIAL_CATALOG_HEADERS.length).setValues([row]);
+      updated++;
+    } else {
+      appended.push(row);
+    }
+  });
+
+  if (appended.length) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, appended.length, MATERIAL_CATALOG_HEADERS.length)
+         .setValues(appended);
+  }
+  return { added: appended.length, updated: updated };
+}
+
+/**
+ * The Pricing sheet is already the material master this business
+ * maintains -- description, unit of measure, category and vendor prices.
+ * Rather than ask anyone to retype 50-200 materials into a second list
+ * that then drifts, this offers them as candidates with a suggested
+ * Material Id and a flag for the ones already in the stock catalog.
+ *
+ * Best price comes back for context only. It is deliberately NOT used as a
+ * cost anywhere: FIFO layers must come from what was actually paid on a
+ * real receipt, not from a reference price that was right last quarter.
+ */
+function getStockCatalogCandidates(payload) {
+  try {
+    var auth = authorizeStockAdmin_(payload);
+    if (!auth.ok) return { error: auth.error, code: auth.code, candidates: [] };
+
+    // Reuses getPricingData's parsing (category headers, dynamic vendor
+    // columns) rather than re-deriving it here and drifting from it.
+    var pricing = getPricingData(payload);
+    if (!pricing || pricing.error) {
+      return { error: (pricing && pricing.error) || 'Could not read the Pricing sheet.', candidates: [] };
+    }
+
+    return withStockSheets_(payload, function() {
+      var catalog = getMaterialCatalog_();
+      var takenIds = {};
+      var byName = {};
+      Object.keys(catalog).forEach(function(id) {
+        takenIds[id.toUpperCase()] = true;
+        byName[(catalog[id].materialName || '').toLowerCase()] = id;
+      });
+
+      var usedThisPass = {};
+      var candidates = (pricing.items || []).map(function(it) {
+        var already = byName[(it.description || '').toLowerCase()] || null;
+        var base = slugifyMaterialId_(it.description);
+        // Uniquify against both the saved catalog and earlier rows in this
+        // same list, so two similar descriptions cannot collide on one id.
+        var id = base, n = 2;
+        while (!already && (takenIds[id] || usedThisPass[id])) { id = base + '-' + n; n++; }
+        usedThisPass[id] = true;
+        return {
+          description:   it.description,
+          unit:          it.um || '',
+          category:      it.category || '',
+          bestPrice:     it.bestPrice || 0,
+          suggestedId:   already || id,
+          alreadyInCatalog: !!already
+        };
+      });
+
+      return {
+        candidates: candidates,
+        totalInCatalog: Object.keys(catalog).length,
+        testMode: !!(payload && payload.testMode)
+      };
+    });
+  } catch (e) {
+    return { error: e.toString(), candidates: [] };
+  }
+}
+
+/**
+ * Adds a chosen set of Pricing-sheet materials to the stock catalog in one
+ * write. payload: {items:[{materialId, materialName, unit, category}]}.
+ */
+function addMaterialsToCatalog(payload) {
+  try {
+    var auth = authorizeStockAdmin_(payload);
+    if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
+
+    var items = Array.isArray(payload.items) ? payload.items : [];
+    if (!items.length) return { success: false, error: 'Pick at least one material.' };
+    if (items.length > 400) return { success: false, error: 'Too many at once -- add up to 400 at a time.' };
+
+    var entries = [];
+    var seen = {};
+    for (var i = 0; i < items.length; i++) {
+      var id = (items[i].materialId || '').toString().trim().toUpperCase();
+      var name = (items[i].materialName || '').toString().trim();
+      if (!id || !name) return { success: false, error: 'Every material needs an Id and a name.' };
+      if (!/^[A-Z0-9][A-Z0-9_-]*$/.test(id)) {
+        return { success: false, error: 'Invalid Material Id "' + id + '" -- letters, numbers, hyphens and underscores only.' };
+      }
+      if (seen[id]) return { success: false, error: 'Duplicate Material Id "' + id + '" in this batch.' };
+      seen[id] = true;
+      entries.push({
+        materialId: id, materialName: name,
+        unit: (items[i].unit || '').toString().trim(),
+        category: (items[i].category || '').toString().trim()
+      });
+    }
+
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(15000)) return { success: false, error: 'Server is busy - try again in a moment.' };
+    try {
+      return withStockSheets_(payload, function() {
+        var res = upsertMaterialCatalog_(entries);
+        return { success: true, added: res.added, updated: res.updated };
+      });
+    } finally {
+      lock.releaseLock();
+    }
   } catch (e) {
     return { success: false, error: e.toString() };
   }
