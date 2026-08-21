@@ -8430,7 +8430,17 @@ function irRefreshStatusBadge_() {
 // link only after the reviewer has already picked a file and waited on
 // extraction is a bad time to discover it. Blocks upload until both are
 // resolved.
+// Office no longer posts to QuickBooks (they can only send for approval --
+// see irApprove/authorizeInvoiceApprover_), so they shouldn't need to look
+// up and type in QuickBooks Vendor/Customer Ids either -- that's an admin
+// setup task now. Admin/aidan still hit this gate on their own uploads,
+// unchanged, since they're the ones who actually post the Bill. A vendor/job
+// office submits without a link surfaces to admin as red text in the review
+// screen header and blocks createQuickBooksBill with a clear error until
+// it's fixed (Projects sheet / QB Vendor Map, or by re-adding the invoice
+// as admin to go through this same gate).
 function irCheckLinkGate() {
+  if (!G.isAidan) { irShowUploadView_(); return; }
   var ctx = G_ir.poContext;
   document.getElementById('ir-link-gate-view').style.display = '';
   document.getElementById('ir-link-gate-header').textContent = 'Checking QuickBooks links…';
