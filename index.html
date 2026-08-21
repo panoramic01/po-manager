@@ -980,6 +980,11 @@
           <span class="tile-swatch ts-amber"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg></span>
           <span class="tile-label">Credit Card</span>
         </div>
+        <div id="other-card-pending-approval" class="tile" onclick="showOtherPanel('pending-approval')" style="position:relative">
+          <span id="pending-approval-badge" style="display:none;position:absolute;top:8px;right:8px;background:var(--c-danger);color:#fff;font-size:11px;font-weight:700;line-height:1;border-radius:10px;padding:3px 6px;min-width:16px;text-align:center"></span>
+          <span class="tile-swatch ts-amber"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg></span>
+          <span class="tile-label">Invoices to Approve</span>
+        </div>
         <div id="other-card-vendor-spend" class="tile" onclick="showOtherPanel('vendor-spend')">
           <span class="tile-swatch ts-amber"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></span>
           <span class="tile-label">Vendor Spend</span>
@@ -1529,7 +1534,7 @@
 
             <div style="display:flex;gap:8px">
               <button onclick="irSaveDraft(this)" style="flex:1;background:var(--c-bg);color:var(--c-navy);border:1px solid var(--c-border);border-radius:8px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">Save Draft</button>
-              <button onclick="irApprove(this)" style="flex:1;background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">Approve</button>
+              <button id="ir-approve-btn" onclick="irApprove(this)" style="flex:1;background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">Approve</button>
             </div>
             <button id="ir-create-bill-btn" onclick="irCreateBill()" style="display:none;width:100%;margin-top:8px;background:var(--bd-green-fg);color:#fff;border:none;border-radius:8px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">Create Bill in QuickBooks</button>
             <div id="ir-detail-status" style="font-size:12px;color:var(--c-ink-soft);margin-top:8px"></div>
@@ -1655,6 +1660,20 @@
           <p style="font-size:13px;color:var(--c-ink-soft)">Scanning PO database…</p>
         </div>
         <div id="mi-results" style="display:none"></div>
+      </div>
+    </div>
+
+    <!-- Invoices to Approve sub-panel (Admin/aidan only) -->
+    <div id="other-panel-pending-approval" style="display:none">
+      <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid var(--c-border-hair);background:var(--c-surface);position:sticky;top:0;z-index:1">
+      <button onclick="showOtherHome()" style="background:none;border:none;font-size:14px;font-weight:600;color:var(--c-navy);cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
+    </div>
+      <div style="padding:16px;max-width:680px;margin:0 auto">
+        <div id="pa-loading" style="text-align:center;padding:20px">
+          <div class="spinner" style="margin:0 auto 8px"></div>
+          <p style="font-size:13px;color:var(--c-ink-soft)">Loading invoices sent for approval…</p>
+        </div>
+        <div id="pa-results" style="display:none"></div>
       </div>
     </div>
 
@@ -3544,9 +3563,11 @@ function applyRole(role, skipNav) {
   // label) -- effRoles already normalizes 'aidan' to 'admin', so checking
   // for 'admin' here covers both.
   G.isAidan = effRoles.indexOf('admin') !== -1;
-  // Invoice review pipeline (upload/view/approve/create-bill) is open to
+  // Invoice review pipeline (upload/view/edit/send-for-approval) is open to
   // Admin + Office, wider than the rest of the owner-only QuickBooks-facing
-  // surface (settings/connection) which stays G.isAidan-gated.
+  // surface (settings/connection) which stays G.isAidan-gated. Finalizing
+  // (Approve) and creating the QuickBooks Bill are Admin/aidan-only -- see
+  // irApprove/irOpenDetail and authorizeInvoiceApprover_ server-side.
   G.canReviewInvoices = G.isAidan || effRoles.indexOf('office') !== -1;
   // Pure runner/site_manager only -- a combined role (e.g.
   // 'runner,site_manager') keeps the fuller nav the other role grants
@@ -3588,6 +3609,8 @@ function applyRole(role, skipNav) {
   sd('other-card-payroll',       has(['admin', 'human_resources']));
   sd('other-card-new-project',   p.canNewProject);
   sd('other-card-warranty',      has(['admin', 'office', 'site_manager', 'human_resources']));
+  sd('other-card-pending-approval', G.isAidan);
+  if (G.isAidan) refreshPendingApprovalBadge();
   sd('other-card-quickbooks',    G.isAidan);
   sd('other-card-portal-storage', has(['admin', 'office', 'human_resources']));
   sd('receive-po-card', p.canReceivePO);
@@ -5795,8 +5818,10 @@ function showPODetail(poNum) {
   if (editBtn) editBtn.style.display = G.perms.canEdit ? '' : 'none';
   var subpoBtn = document.getElementById('po-detail-subpo-btn');
   if (subpoBtn) subpoBtn.style.display = G.perms.canEdit ? '' : 'none';
-  // Admin + Office, matching the rest of the invoice-review pipeline (review/approve/
-  // create-bill are all gated the same way server-side too -- see authorizeInvoiceReviewer_).
+  // Admin + Office can both open the review screen (authorizeInvoiceReviewer_
+  // server-side) -- but only Admin/aidan can finalize (Approve) or create the
+  // QuickBooks Bill (authorizeInvoiceApprover_); Office's button there sends
+  // for approval instead. See irApprove/irOpenDetail.
   var addInvoiceBtn = document.getElementById('po-detail-addinvoice-btn');
   if (addInvoiceBtn) addInvoiceBtn.style.display = G.canReviewInvoices ? '' : 'none';
 
@@ -8237,7 +8262,7 @@ function showOtherPanel(name) {
   var activeTab = document.querySelector('.tab.active');
   if (activeTab) activeTab.style.display = 'none';
   document.getElementById('other-home').style.display = 'none';
-  ['pricing', 'contacts', 'inventory', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'stock-ledger', 'stock-move', 'stock-close', 'stock-count', 'stock-close-review', 'stock-close-detail', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project', 'quickbooks', 'invoice-review', 'portal-storage', 'my-asana-tasks', 'warranty'].forEach(function(p) {
+  ['pricing', 'contacts', 'inventory', 'reconcile', 'job-cost', 'missing-inv', 'pending-approval', 'vendor-spend', 'material-report', 'stock-ledger', 'stock-move', 'stock-close', 'stock-count', 'stock-close-review', 'stock-close-detail', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project', 'quickbooks', 'invoice-review', 'portal-storage', 'my-asana-tasks', 'warranty'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
     if (el) el.style.display = p === name ? '' : 'none';
   });
@@ -8247,6 +8272,7 @@ function showOtherPanel(name) {
   if (name === 'reconcile')  initStmtDrop();
   if (name === 'job-cost')   openJobDashboardPanel();
   if (name === 'missing-inv') loadMissingInvoices();
+  if (name === 'pending-approval') loadPendingApprovalInvoices();
   if (name === 'vendor-spend') openVendorSpendPanel();
   if (name === 'material-report') openMaterialReportPanel();
   if (name === 'stock-ledger') openStockLedgerPanel();
@@ -8279,7 +8305,7 @@ function resetOtherPanels() {
   // always wins over the .tab/.tab.active CSS class rule.
   document.querySelectorAll('.tab').forEach(function(t) { t.style.display = ''; });
   document.getElementById('other-home').style.display = '';
-  ['pricing', 'contacts', 'inventory', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'stock-ledger', 'stock-move', 'stock-close', 'stock-count', 'stock-close-review', 'stock-close-detail', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project', 'quickbooks', 'invoice-review', 'portal-storage', 'my-asana-tasks', 'warranty'].forEach(function(p) {
+  ['pricing', 'contacts', 'inventory', 'reconcile', 'job-cost', 'missing-inv', 'pending-approval', 'vendor-spend', 'material-report', 'stock-ledger', 'stock-move', 'stock-close', 'stock-count', 'stock-close-review', 'stock-close-detail', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project', 'quickbooks', 'invoice-review', 'portal-storage', 'my-asana-tasks', 'warranty'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
     if (el) el.style.display = 'none';
   });
@@ -8617,12 +8643,19 @@ function irOpenDetail(stagingId) {
     irRenderLineRows();
     var billBtn = document.getElementById('ir-create-bill-btn');
     var statusEl = document.getElementById('ir-detail-status');
+    var approveBtn = document.getElementById('ir-approve-btn');
+    if (approveBtn) approveBtn.textContent = G.isAidan ? 'Approve' : 'Send for Approval';
+    // Office never sees the QuickBooks-posting control, even if a row somehow
+    // reached 'Approved' -- defense in depth alongside the server-side gate.
     if (row.status === 'Posted') {
       billBtn.style.display = 'none';
       statusEl.textContent = 'Posted to QuickBooks — Bill ' + row.qbBillId + '.';
     } else if (row.status === 'Approved') {
-      billBtn.style.display = '';
-      statusEl.textContent = 'Approved — ready to create the Bill in QuickBooks.';
+      billBtn.style.display = G.isAidan ? '' : 'none';
+      statusEl.textContent = G.isAidan ? 'Approved — ready to create the Bill in QuickBooks.' : 'Approved by admin.';
+    } else if (row.status === 'Pending Approval') {
+      billBtn.style.display = 'none';
+      statusEl.textContent = G.isAidan ? 'Sent for approval — review and approve to post to QuickBooks.' : 'Sent for approval — waiting on admin to post to QuickBooks.';
     } else {
       billBtn.style.display = 'none';
       statusEl.textContent = '';
@@ -9120,16 +9153,22 @@ function irSaveDraft(btn) {
   }, function(err) { if (btn) { btn.disabled = false; btn.textContent = orig; } showToast(friendlyUploadError(err)); });
 }
 
+// Office can only submit an invoice for admin/aidan to finalize -- they never
+// reach 'Approved' or see the Create Bill control (enforced server-side too,
+// see authorizeInvoiceApprover_ in QuickBooks_OAuth.gs). Admin/aidan's own
+// review flow is unchanged: this button still approves directly.
 function irApprove(btn) {
   if (!G_ir.stagingId) return;
-  if (!G_ir.lineItems.length) { showToast('Add at least one line item before approving'); return; }
+  if (!G_ir.lineItems.length) { showToast('Add at least one line item before ' + (G.isAidan ? 'approving' : 'sending') + '.'); return; }
   var vendorInvoice = trim('ir-vendor-invoice');
   var orig = btn && btn.textContent;
-  if (btn) { btn.disabled = true; btn.textContent = 'Approving…'; }
-  gasCall('saveInvoiceStagingReview', { stagingId: G_ir.stagingId, lineItems: G_ir.lineItems, vendorInvoice: vendorInvoice, approve: true }, function(res) {
+  var payload = { stagingId: G_ir.stagingId, lineItems: G_ir.lineItems, vendorInvoice: vendorInvoice };
+  if (G.isAidan) payload.approve = true; else payload.sendForApproval = true;
+  if (btn) { btn.disabled = true; btn.textContent = G.isAidan ? 'Approving…' : 'Sending…'; }
+  gasCall('saveInvoiceStagingReview', payload, function(res) {
     if (btn) { btn.disabled = false; btn.textContent = orig; }
-    if (!res.success) { showToast(res.error || 'Approve failed'); return; }
-    showToast('Approved — PO updated');
+    if (!res.success) { showToast(res.error || (G.isAidan ? 'Approve failed' : 'Send failed')); return; }
+    showToast(G.isAidan ? 'Approved — PO updated' : 'Sent for approval — PO updated');
     irPatchPOFromStaging(vendorInvoice, res);
     irOpenDetail(G_ir.stagingId);
   }, function(err) { if (btn) { btn.disabled = false; btn.textContent = orig; } showToast(friendlyUploadError(err)); });
@@ -10368,6 +10407,75 @@ function loadMissingInvoices() {
     document.getElementById('mi-results').innerHTML = '<div style="text-align:center;padding:20px"><p style="color:var(--c-ink-soft);margin-bottom:12px">Failed to load. Redeploy GAS and retry.</p><button onclick="loadMissingInvoices()" style="background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer">Retry</button></div>';
     document.getElementById('mi-results').style.display = 'block';
   });
+}
+
+// Admin/aidan-only queue of invoices Office has sent for approval -- see
+// authorizeInvoiceApprover_ (QuickBooks_OAuth.gs) for the server-side gate
+// that keeps this to Admin/aidan. Tapping a row jumps straight into the same
+// Invoice Review detail screen Office used, where Approve + Create Bill in
+// QuickBooks are available.
+function loadPendingApprovalInvoices() {
+  document.getElementById('pa-loading').style.display = 'block';
+  document.getElementById('pa-results').style.display = 'none';
+  gasCall('getInvoiceStaging', { status: 'Pending Approval' }, function(res) {
+    document.getElementById('pa-loading').style.display = 'none';
+    updatePendingApprovalBadge_(res && res.rows);
+    if (res.error) {
+      document.getElementById('pa-results').innerHTML = '<div style="text-align:center;padding:20px"><p style="color:var(--c-ink-soft);margin-bottom:12px">' + esc(res.error) + '</p><button onclick="loadPendingApprovalInvoices()" style="background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer">Retry</button></div>';
+      document.getElementById('pa-results').style.display = 'block';
+      return;
+    }
+    var rows = res.rows || [];
+    var html = '';
+    if (!rows.length) {
+      html = '<div style="background:var(--bd-green-bg);border-radius:12px;padding:24px;text-align:center">'
+           + '<div style="font-size:28px;margin-bottom:8px">✅</div>'
+           + '<p style="font-size:15px;font-weight:600;color:var(--bd-green-fg);margin:0">Nothing waiting on approval.</p></div>';
+    } else {
+      html = '<div style="background:var(--c-surface);border-radius:12px;padding:4px 16px;box-shadow:0 1px 4px rgba(0,0,0,0.08)">'
+           + rows.map(function(row) {
+               return '<div onclick="openPendingApprovalInvoice(\'' + esc(row.stagingId) + '\')" style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--c-border-soft);gap:8px;cursor:pointer">'
+                 + '<div style="flex:1;min-width:0">'
+                 + '<div style="font-size:13px;font-weight:600;color:var(--c-ink)">' + esc(row.vendor || '—') + '</div>'
+                 + '<div style="font-size:11px;color:var(--c-ink-soft)">PO #' + esc(row.poNumber) + ' · ' + esc(row.builder || '—') + ' / ' + esc(row.jobRef || '—') + (row.reviewedBy ? ' · sent by ' + esc(row.reviewedBy) : '') + '</div>'
+                 + '</div>'
+                 + '<span style="font-size:13px;font-weight:700;color:var(--c-ink);white-space:nowrap">$' + (parseFloat(row.invoiceTotal) || 0).toFixed(2) + '</span>'
+                 + '</div>';
+             }).join('')
+           + '</div>';
+    }
+    document.getElementById('pa-results').innerHTML = html;
+    document.getElementById('pa-results').style.display = 'block';
+  }, function() {
+    document.getElementById('pa-loading').style.display = 'none';
+    document.getElementById('pa-results').innerHTML = '<div style="text-align:center;padding:20px"><p style="color:var(--c-ink-soft);margin-bottom:12px">Failed to load. Redeploy GAS and retry.</p><button onclick="loadPendingApprovalInvoices()" style="background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer">Retry</button></div>';
+    document.getElementById('pa-results').style.display = 'block';
+  });
+}
+
+function updatePendingApprovalBadge_(rows) {
+  var el = document.getElementById('pending-approval-badge');
+  if (!el) return;
+  var n = (rows || []).length;
+  el.textContent = n > 99 ? '99+' : String(n);
+  el.style.display = n > 0 ? '' : 'none';
+}
+
+// Cheap on-login nudge for admin/aidan (see applyRole()) so the queue is
+// visible without opening the tile first -- reuses the same list endpoint
+// since getInvoiceStaging has no separate count-only mode.
+function refreshPendingApprovalBadge() {
+  gasCall('getInvoiceStaging', { status: 'Pending Approval' }, function(res) {
+    if (res && !res.error) updatePendingApprovalBadge_(res.rows);
+  }, function() {});
+}
+
+function openPendingApprovalInvoice(stagingId) {
+  G_ir = { stagingId: null, lineItems: [], row: null, catalog: null, docs: [], docIndex: 0, poContext: null, linkGate: null };
+  showOtherPanel('invoice-review');
+  document.getElementById('ir-link-gate-view').style.display = 'none';
+  document.getElementById('ir-upload-view').style.display = 'none';
+  irOpenDetail(stagingId);
 }
 
 // ── Vendor Spend ──────────────────────────────────────────────────────────────

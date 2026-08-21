@@ -1860,7 +1860,10 @@ function logPurchaseLineItems_(staging, qbBillId, postedByEmail, postedAt) {
 // yet posted to QuickBooks" record. A sheet (not Cache/PropertiesService)
 // because review can happen well after upload, across sessions, and needs an
 // audit trail; Cache's TTL/size limits make it unsuitable as the source of
-// truth here. Status moves Pending -> Approved -> Posted (or Rejected).
+// truth here. Status moves Pending -> Pending Approval -> Approved -> Posted
+// (or Rejected). Office can submit (Pending -> Pending Approval) but only
+// Admin/aidan can finalize (-> Approved) or post to QuickBooks -- see
+// authorizeInvoiceApprover_ in QuickBooks_OAuth.gs.
 // Each line item in the JSON blob carries lineType: 'material' | 'tax' |
 // 'freight' -- tax/freight lines skip QBO Item-matching (Phase 2) and map to
 // fixed dedicated QBO Items instead, and are excluded from the material
@@ -1988,10 +1991,20 @@ function getInvoiceStaging(payload) {
  * item ids, skip flags, manual customer/vendor id overrides) and/or
  * transitions its Status. Owner-gated. Does not touch QuickBooks -- that
  * only happens in createQuickBooksBill once Status is 'Approved'.
+ *
+ * Status transitions have two different gates: sendForApproval (Office's
+ * "Send for Approval", Pending -> Pending Approval) is allowed under the
+ * base submitter auth below, but approve (-> Approved, the transition that
+ * unlocks createQuickBooksBill) requires the stricter
+ * authorizeInvoiceApprover_ check -- Office can submit but never finalize.
  */
 function saveInvoiceStagingReview(payload) {
   var auth = authorizeInvoiceReviewer_(payload);
   if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
+  if (payload.approve === true) {
+    var approverAuth = authorizeInvoiceApprover_(payload);
+    if (!approverAuth.ok) return { success: false, error: approverAuth.error, code: approverAuth.code };
+  }
   try {
     var stagingId = payload.stagingId;
     if (!stagingId) return { success: false, error: 'Missing stagingId' };
@@ -2038,7 +2051,9 @@ function saveInvoiceStagingReview(payload) {
       sheet.getRange(rowIdx, QB_STAGING_COL['Vendor Invoice#'] + 1).setValue(payload.vendorInvoice);
     }
 
-    var nextStatus = payload.approve ? 'Approved' : (payload.reject ? 'Rejected' : currentStatus);
+    var nextStatus = payload.approve ? 'Approved' :
+      (payload.reject ? 'Rejected' :
+      (payload.sendForApproval ? 'Pending Approval' : currentStatus));
     var approvedAt = null;
     sheet.getRange(rowIdx, QB_STAGING_COL['Status'] + 1).setValue(nextStatus);
     sheet.getRange(rowIdx, QB_STAGING_COL['Reviewed By'] + 1).setValue(auth.email || '');

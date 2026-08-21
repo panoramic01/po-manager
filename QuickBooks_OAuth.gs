@@ -44,9 +44,14 @@ function authorizeQuickBooksOwner_(payload) {
   return auth;
 }
 
-/** Invoice-review pipeline gate: Admin or Office role (no owner-email restriction) -- upload/view/approve/create-bill. */
+/** Invoice-review pipeline gate: Admin or Office role (no owner-email restriction) -- upload/view/edit/send-for-approval. */
 function authorizeInvoiceReviewer_(payload) {
   return authorizeCaller(payload, ['admin', 'office']);
+}
+
+/** Invoice-approval gate: Admin/aidan only -- final Approve transition and createQuickBooksBill. Office can submit but never finalize or post. */
+function authorizeInvoiceApprover_(payload) {
+  return authorizeCaller(payload, ['admin']);
 }
 
 function getQuickBooksService_() {
@@ -696,7 +701,7 @@ function applyWarehouseNonMaterialAllocation_(lineItems) {
  * attachmentWarning on the response rather than failing the whole call.
  */
 function createQuickBooksBill(payload) {
-  var auth = authorizeInvoiceReviewer_(payload);
+  var auth = authorizeInvoiceApprover_(payload);
   if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
 
   var stagingId = payload.stagingId;
