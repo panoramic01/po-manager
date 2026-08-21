@@ -956,13 +956,13 @@
           <span class="tile-swatch ts-navy"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg></span>
           <span class="tile-label">Runner Request</span>
         </div>
-        <div id="other-card-material-inventory" class="tile" onclick="showOtherPanel('material-inventory')">
-          <span class="tile-swatch ts-teal"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg></span>
-          <span class="tile-label">Material Inventory</span>
-        </div>
         <div id="other-card-stock-ledger" class="tile" onclick="showOtherPanel('stock-ledger')">
           <span class="tile-swatch ts-navy"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17V7m4 10V4m4 13v-6M4 20h16"/></svg></span>
           <span class="tile-label">Stock Ledger</span>
+        </div>
+        <div id="other-card-stock-close" class="tile" onclick="showOtherPanel('stock-close')">
+          <span class="tile-swatch ts-navy"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></span>
+          <span class="tile-label">Month-End Close</span>
         </div>
         <div id="other-card-inventory" class="tile" onclick="showOtherPanel('inventory')">
           <span class="tile-swatch ts-teal"><svg width="20" height="20" fill="none" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7l9-4 9 4-9 4-9-4zm0 0v10l9 4 9-4V7M12 11v10"/></svg></span>
@@ -1113,10 +1113,8 @@
       <div id="ct-results"><div class="empty">Loading contacts…</div></div>
     </div>
 
-    <!-- Stock Ledger sub-panel: the app's own inventory subledger. Separate
-         from the older Material Inventory screen above, which reads on-hand
-         from QuickBooks -- this one owns quantity and cost itself and does
-         not talk to QuickBooks at all. -->
+    <!-- Stock Ledger sub-panel: the app's own inventory subledger. It owns
+         quantity and cost itself and does not talk to QuickBooks at all. -->
     <div id="other-panel-stock-ledger" style="display:none">
       <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid var(--c-border-hair);background:var(--c-surface);position:sticky;top:0;z-index:1">
         <button onclick="showOtherHome()" style="background:none;border:none;font-size:14px;font-weight:600;color:var(--c-navy);cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
@@ -1274,102 +1272,117 @@
       </div>
     </div>
 
-    <!-- Material Inventory sub-panel -->
-    <div id="other-panel-material-inventory" style="display:none">
+    <!-- Month-End Close: full physical count reconciled against the Stock
+         Ledger. Admin/owner only -- freezing a period is a financial
+         control, not warehouse work. Compares count vs ledger only for
+         now; the QBO leg is blank until posting exists. -->
+    <div id="other-panel-stock-close" style="display:none">
       <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid var(--c-border-hair);background:var(--c-surface);position:sticky;top:0;z-index:1">
         <button onclick="showOtherHome()" style="background:none;border:none;font-size:14px;font-weight:600;color:var(--c-navy);cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
-        <span style="font-size:15px;font-weight:700;color:var(--c-navy);flex:1;margin-left:2px">Material Inventory</span>
+        <span style="font-size:15px;font-weight:700;color:var(--c-navy);flex:1;margin-left:2px">Month-End Close</span>
       </div>
 
-      <div style="padding:16px 16px 0">
-        <div style="display:flex;gap:8px">
-          <button onclick="showMaterialPullForm()" style="flex:1;background:var(--c-danger);color:#fff;border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">Pull for Job</button>
-          <button onclick="showMaterialReturnForm()" style="flex:1;background:var(--c-navy);color:#fff;border:none;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer">Return from Job</button>
+      <div id="sc-loading" style="display:none"><div class="loading"><div class="spinner"></div><p>Loading...</p></div></div>
+
+      <div id="sc-nothing" style="display:none;padding:32px 20px;text-align:center">
+        <div style="font-size:14px;color:var(--c-ink-soft);line-height:1.5">Nothing to close right now -- a period closes after it has ledger activity and a full count.</div>
+      </div>
+
+      <div id="sc-status-card" style="display:none;padding:16px">
+        <div style="background:var(--c-surface);border:1px solid var(--c-border-hair);border-radius:12px;padding:16px">
+          <div style="display:flex;align-items:baseline;gap:8px">
+            <span id="sc-period" style="font-size:17px;font-weight:800;color:var(--c-navy)"></span>
+            <span id="sc-current-badge" style="display:none;font-size:11px;font-weight:700;color:var(--c-amber);background:#FFF3DD;padding:2px 7px;border-radius:5px">still in progress</span>
+          </div>
+          <div style="margin-top:12px">
+            <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--c-ink-soft);margin-bottom:5px">
+              <span>Physical count</span>
+              <span id="sc-count-progress"></span>
+            </div>
+            <div style="height:7px;border-radius:4px;background:var(--c-border-soft);overflow:hidden">
+              <div id="sc-count-bar" style="height:100%;background:var(--c-navy);width:0%;transition:width .2s"></div>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:16px">
+            <button onclick="showOtherPanel('stock-count')" style="flex:1;background:var(--c-navy);color:#fff;border:none;border-radius:10px;padding:12px 6px;font-size:13px;font-weight:700;cursor:pointer">Count Materials</button>
+            <button id="sc-review-btn" onclick="showOtherPanel('stock-close-review')" style="flex:1;background:var(--c-surface);color:var(--c-navy);border:1.5px solid var(--c-navy);border-radius:10px;padding:12px 6px;font-size:13px;font-weight:700;cursor:pointer">Review &amp; Close</button>
+          </div>
         </div>
-        <p style="font-size:12px;color:var(--c-ink-soft);margin:8px 2px 0">Stock arrives by creating a "Stock/warehouse order" PO -- receiving it in QuickBooks is what adds to On Hand below. Pull moves stock out to a job; Return brings leftover material back at a cost you enter (for material with no vendor invoice, e.g. leftover from a job).</p>
       </div>
 
-      <div id="mi-loading" style="display:none"><div class="loading"><div class="spinner"></div><p>Loading inventory...</p></div></div>
-
-      <div style="padding:16px">
-        <div style="font-size:13px;font-weight:700;color:var(--c-navy);margin-bottom:8px">On Hand</div>
-        <div id="mi-onhand-list"></div>
-
-        <div style="font-size:13px;font-weight:700;color:var(--c-navy);margin:20px 0 8px">Recent Activity</div>
-        <div id="mi-log-list"></div>
+      <div style="padding:8px 16px 16px">
+        <div style="font-size:13px;font-weight:700;color:var(--c-navy);margin:12px 0 8px">Closed Periods</div>
+        <div id="sc-history-list"></div>
       </div>
     </div>
 
-    <!-- Pull/Return sub-panel: opened via the "Pull for Job"/"Return from Job"
-         buttons on the Material Inventory screen -- its own full page, same
-         pattern as Add Invoice (other-panel-invoice-review), not an inline
-         expanding box. Always scoped to Material Inventory -- Back always
-         returns there. -->
-    <div id="other-panel-material-pull" style="display:none">
+    <!-- Physical count entry: every active material, full count every
+         month per the locked design -- no partial subset. -->
+    <div id="other-panel-stock-count" style="display:none">
       <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid var(--c-border-hair);background:var(--c-surface);position:sticky;top:0;z-index:1">
-        <button onclick="showOtherPanel('material-inventory')" style="background:none;border:none;font-size:14px;font-weight:600;color:var(--c-navy);cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
-        <span id="mp-title" style="font-size:15px;font-weight:700;color:var(--c-navy);flex:1;margin-left:2px">Pull Material for Job</span>
+        <button onclick="showOtherPanel('stock-close')" style="background:none;border:none;font-size:14px;font-weight:600;color:var(--c-navy);cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
+        <span id="cnt-period-title" style="font-size:15px;font-weight:700;color:var(--c-navy);flex:1;margin-left:2px">Physical Count</span>
+      </div>
+      <div style="padding:12px 16px 0">
+        <p style="font-size:12px;color:var(--c-ink-soft);margin:0 0 4px;line-height:1.5">Count what's actually on the shelf for every material. Values update automatically -- you're entering quantity only.</p>
+        <input type="text" id="cnt-search" placeholder="Search materials..." oninput="cntRenderList()"
+               style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin:10px 0">
+      </div>
+      <div id="cnt-list" style="padding:0 16px"></div>
+      <div style="padding:16px">
+        <button id="cnt-submit" onclick="cntSubmit()" style="width:100%;background:var(--c-navy);color:#fff;border:none;border-radius:10px;padding:13px;font-size:14px;font-weight:700;cursor:pointer">Save Count</button>
+      </div>
+    </div>
+
+    <!-- Close review: completeness gate, variance list, confirm. -->
+    <div id="other-panel-stock-close-review" style="display:none">
+      <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid var(--c-border-hair);background:var(--c-surface);position:sticky;top:0;z-index:1">
+        <button onclick="showOtherPanel('stock-close')" style="background:none;border:none;font-size:14px;font-weight:600;color:var(--c-navy);cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
+        <span id="rev-period-title" style="font-size:15px;font-weight:700;color:var(--c-navy);flex:1;margin-left:2px">Review &amp; Close</span>
       </div>
 
-      <div style="padding:16px">
-        <label id="mp-job-label" style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Builder &amp; Job *</label>
-        <div style="position:relative">
-          <input type="text" id="mp-job-combo" autocomplete="off" placeholder="e.g. CRESCENT_RIDGE-WEGNER"
-                 oninput="this.value=this.value.toUpperCase().replace(/\s+/g,'_'); mpJobFilter(this.value)"
-                 onfocus="mpJobFilter(this.value)"
-                 onblur="mpCheckJobLink()"
-                 style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:12px">
-          <div id="mp-job-dropdown" style="display:none;position:absolute;left:0;right:0;top:100%;background:var(--c-surface);border:1px solid var(--c-border);border-radius:8px;margin-top:4px;max-height:220px;overflow-y:auto;z-index:20;box-shadow:0 4px 12px rgba(0,0,0,0.12)"></div>
-        </div>
+      <div id="rev-loading" style="display:none"><div class="loading"><div class="spinner"></div><p>Loading...</p></div></div>
 
-        <!-- QuickBooks link-gate: same idea as the Add Invoice screen's link
-             gate (irCheckLinkGate/irRenderLinkGate), scoped to just the job
-             since Pull/Return has no vendor involved. Nothing below is shown
-             until the selected job resolves to a real QBO Customer Id. -->
-        <div id="mp-link-gate"></div>
+      <div id="rev-incomplete" style="display:none;margin:16px;padding:14px 16px;background:#FDECEA;border-radius:10px">
+        <div style="font-size:13px;font-weight:700;color:#9B2C1C;margin-bottom:6px">Count incomplete</div>
+        <div id="rev-missing-list" style="font-size:12.5px;color:#9B2C1C;line-height:1.6"></div>
+        <button onclick="showOtherPanel('stock-count')" style="margin-top:10px;background:none;border:1px solid #9B2C1C;color:#9B2C1C;border-radius:7px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer">Finish Counting</button>
+      </div>
 
-        <div id="mp-form-body" style="display:none">
-          <div style="overflow-x:auto">
-            <table style="width:100%;border-collapse:collapse;min-width:340px">
-              <thead>
-                <tr style="text-align:left">
-                  <th style="font-size:10px;color:var(--c-ink-soft);padding:0 4px 6px">Material</th>
-                  <th style="font-size:10px;color:var(--c-ink-soft);padding:0 4px 6px;width:70px">Qty</th>
-                  <th id="mp-cost-col-header" style="display:none;font-size:10px;color:var(--c-ink-soft);padding:0 4px 6px;width:90px">Cost/Unit</th>
-                  <th style="width:28px"></th>
-                </tr>
-              </thead>
-              <tbody id="mp-line-rows"></tbody>
-            </table>
+      <div id="rev-body" style="display:none;padding:16px">
+        <div style="display:flex;gap:8px;margin-bottom:16px">
+          <div style="flex:1;background:var(--c-surface);border:1px solid var(--c-border-hair);border-radius:10px;padding:10px 12px">
+            <div style="font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--c-ink-faint);text-transform:uppercase">Ledger Value</div>
+            <div id="rev-ledger-value" style="font-size:18px;font-weight:800;color:var(--c-navy);margin-top:3px">--</div>
           </div>
-          <button onclick="mpAddLine()" style="background:none;border:1.5px dashed var(--c-border);color:var(--c-navy);border-radius:8px;padding:8px;font-size:12px;font-weight:600;cursor:pointer;width:100%;margin:4px 0 12px">+ Add Material</button>
-
-          <label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Notes (optional)</label>
-          <input type="text" id="mp-notes" placeholder="Notes" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">
-          <div id="mp-total" style="font-size:12px;font-weight:700;color:var(--c-navy);text-align:right;margin-bottom:4px;display:none"></div>
-        </div>
-
-        <!-- Pull-for-job confirm step: shown after "Pull Material" instead of
-             posting immediately -- previewMaterialPull looks up each item's
-             currently-recorded cost (QBO Item.PurchaseCost) so the reviewer
-             sees an estimated $ impact before committing. Return-from-job
-             skips this -- its cost is already visible/entered on the form
-             itself (the running Total), so there's nothing extra to preview. -->
-        <div id="mp-confirm-view" style="display:none">
-          <div style="background:var(--c-surface);border-radius:8px;padding:12px;margin-bottom:12px">
-            <div style="font-size:11px;font-weight:600;color:var(--c-ink-soft);margin-bottom:4px">Pulling for</div>
-            <div id="mp-confirm-job" style="font-size:14px;font-weight:700;color:var(--c-navy)"></div>
+          <div style="flex:1;background:var(--c-surface);border:1px solid var(--c-border-hair);border-radius:10px;padding:10px 12px">
+            <div style="font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--c-ink-faint);text-transform:uppercase">Flagged</div>
+            <div id="rev-flagged-count" style="font-size:18px;font-weight:800;margin-top:3px">--</div>
           </div>
-          <div id="mp-confirm-lines"></div>
-          <div id="mp-confirm-total" style="font-size:14px;font-weight:700;color:var(--c-navy);text-align:right;margin:12px 0 4px"></div>
-          <p style="font-size:11px;color:var(--c-ink-soft);margin:0 0 12px">Estimated from each item's currently-recorded cost in QuickBooks -- QuickBooks computes the exact FIFO cost when this actually posts, which may differ slightly.</p>
         </div>
 
-        <div id="mp-status" style="font-size:12px;color:var(--c-danger);margin-bottom:4px"></div>
-        <div style="display:flex;gap:8px;margin-top:4px">
-          <button id="mp-save-btn" onclick="handleMaterialFormPrimaryAction()" style="flex:1;background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:700;cursor:pointer">Pull Material</button>
-          <button id="mp-cancel-btn" onclick="handleMaterialFormSecondaryAction()" style="flex:1;background:var(--c-bg);color:var(--c-ink-soft);border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+        <div id="rev-lines"></div>
+
+        <div style="margin-top:16px">
+          <label id="rev-note-label" style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">Note</label>
+          <textarea id="rev-note" rows="2" placeholder="Optional"
+                    style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:12px;font-family:inherit;resize:vertical"></textarea>
         </div>
+        <div id="rev-error" style="display:none;background:#FDECEA;color:#9B2C1C;border-radius:9px;padding:10px 12px;margin-bottom:12px;font-size:12.5px;line-height:1.5"></div>
+        <button id="rev-confirm" onclick="revConfirm()" style="width:100%;background:var(--c-navy);color:#fff;border:none;border-radius:10px;padding:13px;font-size:14px;font-weight:700;cursor:pointer">Confirm Close</button>
+      </div>
+    </div>
+
+    <!-- Closed period detail: drill-down from the history list. -->
+    <div id="other-panel-stock-close-detail" style="display:none">
+      <div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid var(--c-border-hair);background:var(--c-surface);position:sticky;top:0;z-index:1">
+        <button onclick="showOtherPanel('stock-close')" style="background:none;border:none;font-size:14px;font-weight:600;color:var(--c-navy);cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
+        <span id="det-period-title" style="font-size:15px;font-weight:700;color:var(--c-navy);flex:1;margin-left:2px">Closed Period</span>
+      </div>
+      <div id="det-summary" style="padding:16px"></div>
+      <div style="padding:0 16px 16px">
+        <div style="font-size:13px;font-weight:700;color:var(--c-navy);margin-bottom:8px">Materials at Close</div>
+        <div id="det-list"></div>
       </div>
     </div>
 
@@ -3558,8 +3571,8 @@ function applyRole(role, skipNav) {
   sd('other-card-missing-inv', has(['admin']));
   sd('other-card-vendor-spend', has(['admin', 'office']));
   sd('other-card-material-report', has(['admin', 'office']));
-  sd('other-card-material-inventory', has(['admin', 'office', 'runner']));
   sd('other-card-stock-ledger', has(['admin', 'office', 'runner', 'site_manager']));
+  sd('other-card-stock-close', has(['admin']));
   sd('other-card-inventory', has(['admin', 'office']));
   // Moved here from the Log tab's quick-tile grid -- gated by canReceivePO
   // (not HR-only) to match who could reach them there before the move.
@@ -3682,7 +3695,7 @@ function applyRole(role, skipNav) {
   }
 
   // Runner-only rollout: Runner's whole feature set (Receive PO, Quality
-  // Check, Cleanup Log, Runner Request, Material Inventory) becomes quick-
+  // Check, Cleanup Log, Runner Request) becomes quick-
   // action tiles on one Home screen, reached via the nav-dashboard slot
   // (normally hidden for runner since canDash is false). nav-receive/
   // nav-other are hidden entirely -- their tabs still exist in the DOM
@@ -4160,8 +4173,6 @@ var RUNNER_HOME_TILES = [
     action: function(){ openFormOverlay('cleanup-overlay'); } },
   { label: 'Runner Request',     swatch: 'ts-navy', path: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4',
     action: function(){ openFormOverlay('materialrequest-overlay'); } },
-  { label: 'Material Inventory', swatch: 'ts-teal', path: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4',
-    action: function(){ showOtherPanel('material-inventory'); } },
   { label: 'Credit Card',        swatch: 'ts-amber', path: 'M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z',
     action: function(){ openFormOverlay('creditcard-overlay'); } }
 ];
@@ -8226,7 +8237,7 @@ function showOtherPanel(name) {
   var activeTab = document.querySelector('.tab.active');
   if (activeTab) activeTab.style.display = 'none';
   document.getElementById('other-home').style.display = 'none';
-  ['pricing', 'contacts', 'inventory', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'material-inventory', 'material-pull', 'stock-ledger', 'stock-move', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project', 'quickbooks', 'invoice-review', 'portal-storage', 'my-asana-tasks', 'warranty'].forEach(function(p) {
+  ['pricing', 'contacts', 'inventory', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'stock-ledger', 'stock-move', 'stock-close', 'stock-count', 'stock-close-review', 'stock-close-detail', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project', 'quickbooks', 'invoice-review', 'portal-storage', 'my-asana-tasks', 'warranty'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
     if (el) el.style.display = p === name ? '' : 'none';
   });
@@ -8238,8 +8249,11 @@ function showOtherPanel(name) {
   if (name === 'missing-inv') loadMissingInvoices();
   if (name === 'vendor-spend') openVendorSpendPanel();
   if (name === 'material-report') openMaterialReportPanel();
-  if (name === 'material-inventory') openMaterialInventoryPanel();
   if (name === 'stock-ledger') openStockLedgerPanel();
+  if (name === 'stock-close') openStockClosePanel();
+  if (name === 'stock-count') openStockCountPanel();
+  if (name === 'stock-close-review') openStockCloseReviewPanel();
+  if (name === 'stock-close-detail') openStockCloseDetailPanel();
   if (name === 'sop') loadSops();
   if (name === 'pto') loadPTOPanel();
   if (name === 'timeclock') loadTimeClock();
@@ -8265,7 +8279,7 @@ function resetOtherPanels() {
   // always wins over the .tab/.tab.active CSS class rule.
   document.querySelectorAll('.tab').forEach(function(t) { t.style.display = ''; });
   document.getElementById('other-home').style.display = '';
-  ['pricing', 'contacts', 'inventory', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'material-inventory', 'material-pull', 'stock-ledger', 'stock-move', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project', 'quickbooks', 'invoice-review', 'portal-storage', 'my-asana-tasks', 'warranty'].forEach(function(p) {
+  ['pricing', 'contacts', 'inventory', 'reconcile', 'job-cost', 'missing-inv', 'vendor-spend', 'material-report', 'stock-ledger', 'stock-move', 'stock-close', 'stock-count', 'stock-close-review', 'stock-close-detail', 'sop', 'pto', 'timeclock', 'emp-mgr', 'pto-overview', 'payroll', 'new-project', 'quickbooks', 'invoice-review', 'portal-storage', 'my-asana-tasks', 'warranty'].forEach(function(p) {
     var el = document.getElementById('other-panel-' + p);
     if (el) el.style.display = 'none';
   });
@@ -9173,12 +9187,11 @@ function irCreateBill() {
 
 
 // ── Stock Ledger ──────────────────────────────────────────────────────────────
-// The app's own inventory subledger. Distinct from the Material Inventory
-// screen above: that one reads on-hand from QuickBooks, this one owns both
-// quantity and FIFO cost itself and never calls QuickBooks. Moves land as
-// 'pending' -- posting to the books is a separate step that does not exist yet,
-// which is deliberate: the warehouse should be provably correct before any
-// accounting integration is wired to it.
+// The app's own inventory subledger. It owns both quantity and FIFO cost
+// itself and never calls QuickBooks. Moves land as 'pending' -- posting to
+// the books is a separate step that does not exist yet, which is deliberate:
+// the warehouse should be provably correct before any accounting integration
+// is wired to it.
 
 var SL = { testMode: false, materials: [], moves: [], mode: 'receive', lines: [], loaded: false,
            catMode: 'pricing', candidates: [], selected: {} };
@@ -9711,438 +9724,258 @@ function slAddSelectedMaterials() {
   });
 }
 
-// ── Material Inventory ────────────────────────────────────────────────────────
-function openMaterialInventoryPanel() {
-  loadMaterialInventory();
-}
+// ── Month-End Close ─────────────────────────────────────────────────────────────
+// A full physical count reconciled against the Stock Ledger, on the locked
+// $25-or-2% tolerance. Compares count vs ledger only for now -- nothing posts
+// to QuickBooks yet, so there is no QBO leg to reconcile against.
 
-function fmtMatQty(n) {
-  return (Math.round((n || 0) * 100) / 100).toString();
-}
+var SC = { period: null, materials: [], review: null };
 
-function loadMaterialInventory() {
-  document.getElementById('mi-loading').style.display = 'block';
-  gasCall('getMaterialInventory', {}, function(data) {
-    document.getElementById('mi-loading').style.display = 'none';
-    G.materialInventory = data.materials || [];
-    renderMaterialOnHand(data.materials || []);
-    renderMaterialLog(data.recentLog || []);
+function openStockClosePanel() {
+  document.getElementById('sc-nothing').style.display = 'none';
+  document.getElementById('sc-status-card').style.display = 'none';
+  document.getElementById('sc-loading').style.display = '';
+  gasCall('getStockCloseHistory', {}, function(hist) {
+    scRenderHistory((hist && hist.closes) || []);
+  }, function() {});
+
+  gasCall('getStockCountSheet', {}, function(data) {
+    document.getElementById('sc-loading').style.display = 'none';
+    if (!data || data.error || !data.period) {
+      document.getElementById('sc-nothing').style.display = '';
+      return;
+    }
+    SC.period = data.period;
+    SC.materials = data.materials || [];
+    document.getElementById('sc-status-card').style.display = '';
+    document.getElementById('sc-period').textContent = data.period;
+    slShow('sc-current-badge', !!data.isCurrentPeriod);
+
+    var pct = data.totalActive ? Math.round((data.countedSoFar / data.totalActive) * 100) : 0;
+    document.getElementById('sc-count-progress').textContent = data.countedSoFar + ' of ' + data.totalActive + ' materials';
+    document.getElementById('sc-count-bar').style.width = pct + '%';
+
+    var btn = document.getElementById('sc-review-btn');
+    var ready = data.countedSoFar === data.totalActive && data.totalActive > 0;
+    btn.style.opacity = ready ? '1' : '.55';
   }, function() {
-    document.getElementById('mi-loading').style.display = 'none';
-    document.getElementById('mi-onhand-list').innerHTML = '<div class="empty">\u26a0\ufe0f Could not load inventory.</div>';
+    document.getElementById('sc-loading').style.display = 'none';
+    document.getElementById('sc-nothing').style.display = '';
   });
 }
 
-function renderMaterialOnHand(materials) {
-  var el = document.getElementById('mi-onhand-list');
-  if (!materials.length) {
-    el.innerHTML = '<div class="empty-state"><div class="empty-icon">\ud83d\udce6</div><p>No materials logged yet.</p></div>';
+function scRenderHistory(closes) {
+  var el = document.getElementById('sc-history-list');
+  if (!closes.length) {
+    el.innerHTML = '<div style="font-size:13px;color:var(--c-ink-soft);padding:8px 2px">No periods closed yet.</div>';
     return;
   }
-  el.innerHTML = materials.map(function(m) {
-    var color = m.onHand <= 0 ? 'var(--c-danger)' : 'var(--c-navy)';
-    // Stocked materials mapped to a real QBO Inventory Item show a small
-    // source tag -- their on-hand number comes live from QuickBooks, not
-    // this sheet's own In/Out sum, which is worth being visible about.
-    var sourceTag = m.source === 'quickbooks'
-      ? '<span style="font-size:10px;font-weight:600;color:var(--c-navy);background:var(--sh-blue-bg,#e8f0fe);border-radius:4px;padding:1px 6px;margin-left:6px">QuickBooks</span>'
-      : '';
-    return '<div class="po-item">' +
-      '<div class="row-between">' +
-        '<span class="po-num">' + esc(m.name) + sourceTag + '</span>' +
-        '<span style="font-weight:700;color:' + color + '">' + fmtMatQty(m.onHand) + (m.unit ? ' ' + esc(m.unit) : '') + '</span>' +
-      '</div>' +
-    '</div>';
+  el.innerHTML = closes.map(function(c) {
+    var flagged = c.materialsFlagged > 0;
+    return '' +
+      '<div onclick="scOpenDetail(\'' + c.period + '\')" style="background:var(--c-surface);border:1px solid var(--c-border-hair);border-radius:10px;padding:12px 13px;margin-bottom:8px;cursor:pointer">' +
+        '<div style="display:flex;align-items:center;gap:8px">' +
+          '<span style="font-size:13.5px;font-weight:700;color:var(--c-navy);flex:1">' + slEsc(c.period) + '</span>' +
+          '<span style="font-size:14px;font-weight:800;color:var(--c-navy)">' + slMoney(c.ledgerValue) + '</span>' +
+        '</div>' +
+        '<div style="display:flex;gap:12px;margin-top:5px;font-size:11.5px;color:' + (flagged ? 'var(--c-danger)' : 'var(--c-ink-soft)') + '">' +
+          '<span>' + c.materialsCounted + ' counted</span>' +
+          (flagged ? '<span>' + c.materialsFlagged + ' flagged (' + slMoney(c.varianceTotalValue) + ')</span>' : '<span>no flags</span>') +
+        '</div>' +
+      '</div>';
   }).join('');
 }
 
-function renderMaterialLog(log) {
-  var el = document.getElementById('mi-log-list');
-  if (!log.length) {
-    el.innerHTML = '<div class="empty">No activity yet.</div>';
+function scOpenDetail(period) {
+  SC.detailPeriod = period;
+  showOtherPanel('stock-close-detail');
+}
+
+// ── Count entry ───────────────────────────────────────────────────────────────
+
+function openStockCountPanel() {
+  document.getElementById('cnt-period-title').textContent = 'Physical Count' + (SC.period ? ' -- ' + SC.period : '');
+  document.getElementById('cnt-search').value = '';
+  cntRenderList();
+}
+
+function cntRenderList() {
+  var q = (document.getElementById('cnt-search').value || '').trim().toLowerCase();
+  var el = document.getElementById('cnt-list');
+  var matches = SC.materials.filter(function(m) { return !q || m.materialName.toLowerCase().indexOf(q) !== -1; });
+
+  if (!matches.length) {
+    el.innerHTML = '<div style="font-size:13px;color:var(--c-ink-soft);padding:14px 2px">Nothing matches that search.</div>';
     return;
   }
-  var isAdmin = effRoleTokens(G.role || '').indexOf('admin') !== -1;
-  el.innerHTML = log.map(function(r) {
-    var badgeClass = r.type === 'In' ? 'badge-approved' : 'badge-denied';
-    var dateStr = r.date ? new Date(r.date).toLocaleDateString() : '';
-    var delBtn = isAdmin ? '<button onclick="deleteMaterialLog(' + r._rowIndex + ')" style="background:none;border:none;cursor:pointer;font-size:13px;padding:0 0 0 8px">\ud83d\uddd1\ufe0f</button>' : '';
-    return '<div class="po-item">' +
-      '<div class="row-between">' +
-        '<span class="po-num">' + esc(r.material) + '</span>' +
-        '<span class="badge ' + badgeClass + '">' + esc(r.type) + '</span>' +
-      '</div>' +
-      '<div class="po-sub">' + fmtMatQty(r.qty) + (r.unit ? ' ' + esc(r.unit) : '') + (r.jobRef ? ' \u00b7 ' + esc(r.jobRef) : '') + ' \u00b7 ' + dateStr + ' \u00b7 ' + esc(r.loggedBy) + delBtn + '</div>' +
-      (r.notes ? '<div class="po-note">' + esc(r.notes) + '</div>' : '') +
-    '</div>';
+
+  el.innerHTML = matches.map(function(m) {
+    var val = m.countedQty != null ? m.countedQty : '';
+    return '' +
+      '<div style="background:var(--c-surface);border:1px solid ' + (m.alreadyCounted ? 'var(--c-navy)' : 'var(--c-border-hair)') + ';border-radius:10px;padding:11px 13px;margin-bottom:8px">' +
+        '<div style="display:flex;align-items:center;gap:10px">' +
+          '<span style="flex:1;min-width:0">' +
+            '<span style="display:block;font-size:13px;font-weight:600;color:var(--c-ink)">' + slEsc(m.materialName) + '</span>' +
+            '<span style="display:block;font-size:11px;color:var(--c-ink-faint);margin-top:2px">ledger: ' + slQty(m.ledgerQty) + ' ' + slEsc(m.unit) + '</span>' +
+          '</span>' +
+          '<input type="number" step="any" inputmode="decimal" placeholder="Count" value="' + slEsc(val) + '"' +
+            ' data-material="' + slEsc(m.materialId) + '"' +
+            ' class="cnt-input"' +
+            ' style="width:90px;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:8px 10px;font-size:14px;text-align:right;font-weight:700">' +
+        '</div>' +
+      '</div>';
   }).join('');
 }
 
-// Pull and Return share the same full-screen panel (other-panel-material-pull,
-// same pattern as Add Invoice/other-panel-invoice-review) -- G.matFormMode
-// ('pull' | 'return') drives which columns show and which endpoint
-// submitMaterialPullOrReturn posts to. Both only offer materials already
-// tracked as a real QBO Inventory Item; a material that isn't stocked yet
-// needs to become one via a normal stock PO first. G.matFormLines holds one
-// row per material, same multi-line pattern as the invoice review screen
-// (irRenderLineRows) so multiple materials can go out/come back for one
-// job in a single submission instead of one at a time.
-function showMaterialFormCommon_(mode) {
-  G.matFormMode = mode;
-  G.mpConfirmMode = false;
-  G.matPullIdemKey = null;
-  G.matFormLines = [{ qboItemId: '', qty: '', unitCost: '' }];
-  G.mpLinkGate = null;
-  document.getElementById('mp-job-combo').value = '';
-  document.getElementById('mp-job-combo').disabled = false;
-  document.getElementById('mp-notes').value = '';
-  document.getElementById('mp-status').textContent = '';
-  document.getElementById('mp-link-gate').innerHTML = '';
-  document.getElementById('mp-form-body').style.display = 'none';
-  document.getElementById('mp-confirm-view').style.display = 'none';
-  document.getElementById('mp-cancel-btn').textContent = 'Cancel';
-  mpRenderLineRows();
-  showOtherPanel('material-pull');
-}
-
-function showMaterialPullForm() {
-  showMaterialFormCommon_('pull');
-  document.getElementById('mp-title').textContent = 'Pull Material for Job';
-  document.getElementById('mp-cost-col-header').style.display = 'none';
-  document.getElementById('mp-total').style.display = 'none';
-  document.getElementById('mp-job-label').textContent = 'Builder & Job *';
-  document.getElementById('mp-save-btn').textContent = 'Pull Material';
-}
-
-function showMaterialReturnForm() {
-  showMaterialFormCommon_('return');
-  document.getElementById('mp-title').textContent = 'Return Material from Job';
-  document.getElementById('mp-cost-col-header').style.display = '';
-  document.getElementById('mp-total').style.display = '';
-  document.getElementById('mp-job-label').textContent = 'Returning From (Builder & Job) *';
-  document.getElementById('mp-save-btn').textContent = 'Return Material';
-}
-
-// One <option> list, shared by every row's material <select> -- built once
-// per form-open rather than per row.
-function mpMaterialOptions_(selectedId) {
-  var pullable = (G.materialInventory || []).filter(function(m) { return m.qboItemId; });
-  if (!pullable.length) return '<option value="">No stocked materials yet</option>';
-  return '<option value="">— Select —</option>' + pullable.map(function(m) {
-    return '<option value="' + esc(m.qboItemId) + '" data-name="' + esc(m.name) + '"' + (m.qboItemId === selectedId ? ' selected' : '') + '>' +
-      esc(m.name) + ' (' + fmtMatQty(m.onHand) + ' on hand)</option>';
-  }).join('');
-}
-
-function mpRenderLineRows() {
-  var isReturn = G.matFormMode === 'return';
-  var tbody = document.getElementById('mp-line-rows');
-  tbody.innerHTML = G.matFormLines.map(function(l, i) {
-    return '<tr>' +
-      '<td style="padding:4px 4px 4px 0"><select onchange="mpUpdateLine(' + i + ",'qboItemId',this.value)\" style=\"width:100%;font-size:12px;padding:6px 4px\">" + mpMaterialOptions_(l.qboItemId) + '</select></td>' +
-      '<td style="padding:4px"><input type="number" min="0" step="any" value="' + (l.qty !== '' && l.qty != null ? l.qty : '') + '" oninput="mpUpdateLine(' + i + ",'qty',this.value)\" style=\"width:100%;font-size:12px;padding:6px 4px;box-sizing:border-box\"></td>" +
-      (isReturn ? '<td style="padding:4px"><input type="number" min="0" step="0.01" value="' + (l.unitCost !== '' && l.unitCost != null ? l.unitCost : '') + '" oninput="mpUpdateLine(' + i + ",'unitCost',this.value)\" style=\"width:100%;font-size:12px;padding:6px 4px;box-sizing:border-box\"></td>" : '') +
-      '<td style="text-align:center"><button onclick="mpRemoveLine(' + i + ')" style="background:none;border:none;color:var(--c-danger);cursor:pointer;font-size:14px" title="Remove">✕</button></td>' +
-    '</tr>';
-  }).join('');
-  mpUpdateTotal();
-}
-
-function mpAddLine() {
-  G.matFormLines.push({ qboItemId: '', qty: '', unitCost: '' });
-  mpRenderLineRows();
-}
-
-function mpRemoveLine(i) {
-  G.matFormLines.splice(i, 1);
-  if (!G.matFormLines.length) G.matFormLines.push({ qboItemId: '', qty: '', unitCost: '' });
-  mpRenderLineRows();
-}
-
-function mpUpdateLine(i, field, value) {
-  if (field === 'qty' || field === 'unitCost') value = value === '' ? '' : parseFloat(value);
-  G.matFormLines[i][field] = value;
-  if (field === 'qty' || field === 'unitCost') mpUpdateTotal();
-}
-
-function mpUpdateTotal() {
-  var el = document.getElementById('mp-total');
-  if (G.matFormMode !== 'return') return;
-  var total = G.matFormLines.reduce(function(s, l) {
-    var qty = parseFloat(l.qty), cost = parseFloat(l.unitCost);
-    return s + (!isNaN(qty) && !isNaN(cost) ? qty * cost : 0);
-  }, 0);
-  el.textContent = 'Total: $' + total.toFixed(2);
-}
-
-// Same fuzzy Builder&Job combo picker as New PO (cJobFilter/cSelectJobCombo,
-// G.jobComboMap) -- separate ids/functions so this form's dropdown state
-// stays independent of the New PO form's.
-function mpJobFilter(q) {
-  var drop = document.getElementById('mp-job-dropdown');
-  if (!drop || !G.jobComboMap) return;
-  q = (q || '').trim();
-  var combos = Object.keys(G.jobComboMap);
-  var filtered = fuzzySearch(combos, function(c){ return [{ text: c.toLowerCase(), weight: 1 }]; }, q, { limit: 60 });
-  drop.innerHTML = '';
-  if (!filtered.length) { drop.style.display = 'none'; return; }
-  filtered.forEach(function(c) {
-    var d = document.createElement('div');
-    d.textContent = c;
-    d.style.cssText = 'padding:11px 14px;font-size:14px;color:var(--c-ink);cursor:pointer;border-bottom:1px solid var(--c-border-soft)';
-    d.addEventListener('mousedown', function(e) { e.preventDefault(); mpSelectJobCombo(c); });
-    d.addEventListener('touchend',  function(e) { e.preventDefault(); mpSelectJobCombo(c); });
-    drop.appendChild(d);
+function cntSubmit() {
+  var inputs = document.querySelectorAll('.cnt-input');
+  var lines = [];
+  var incomplete = false;
+  inputs.forEach(function(inp) {
+    var v = inp.value.trim();
+    if (v === '') { incomplete = true; return; }
+    var qty = parseFloat(v);
+    if (isNaN(qty) || qty < 0) { incomplete = true; return; }
+    lines.push({ materialId: inp.getAttribute('data-material'), countedQty: qty });
   });
-  drop.style.display = '';
+
+  // A search filter can hide rows -- merge with whatever's already saved for
+  // materials not currently on screen so a filtered view can't blank them out.
+  var seen = {};
+  lines.forEach(function(l) { seen[l.materialId] = true; });
+  SC.materials.forEach(function(m) {
+    if (!seen[m.materialId] && m.countedQty != null) lines.push({ materialId: m.materialId, countedQty: m.countedQty });
+  });
+
+  if (!lines.length) { showToast('Enter at least one count.'); return; }
+
+  var btn = document.getElementById('cnt-submit');
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+  gasCall('submitPhysicalCount', { lines: lines }, function(res) {
+    btn.disabled = false;
+    btn.textContent = 'Save Count';
+    if (!res || !res.success) { showToast((res && res.error) || 'Could not save the count.'); return; }
+    showToast('Count saved.');
+    showOtherPanel('stock-close');
+  }, function() {
+    btn.disabled = false;
+    btn.textContent = 'Save Count';
+    showToast('Could not reach the server. Nothing was saved.');
+  });
 }
 
-function mpSelectJobCombo(combo) {
-  var inp  = document.getElementById('mp-job-combo');
-  var drop = document.getElementById('mp-job-dropdown');
-  if (inp)  inp.value = combo;
-  if (drop) drop.style.display = 'none';
-  mpCheckJobLink();
-}
+// ── Review & confirm ────────────────────────────────────────────────────────────
 
-// Same idea as the Add Invoice screen's link gate (irCheckLinkGate/
-// irRenderLinkGate), scoped to just the job -- Pull/Return has no vendor
-// step, so there's nothing to check there. Nothing in #mp-form-body is
-// shown until the selected job resolves to a real QBO Customer Id; a
-// missing link can be fixed inline instead of only surfacing after
-// picking materials and hitting Pull/Return.
-function mpCheckJobLink() {
-  var combo = document.getElementById('mp-job-combo').value.trim();
-  var match = G.jobComboMap && G.jobComboMap[combo];
-  var gateEl = document.getElementById('mp-link-gate');
-  var bodyEl = document.getElementById('mp-form-body');
+function openStockCloseReviewPanel() {
+  document.getElementById('rev-period-title').textContent = 'Review & Close' + (SC.period ? ' -- ' + SC.period : '');
+  document.getElementById('rev-incomplete').style.display = 'none';
+  document.getElementById('rev-body').style.display = 'none';
+  document.getElementById('rev-error').style.display = 'none';
+  document.getElementById('rev-note').value = '';
+  document.getElementById('rev-loading').style.display = '';
 
-  if (!match) {
-    G.mpLinkGate = null;
-    gateEl.innerHTML = '';
-    bodyEl.style.display = 'none';
-    return;
-  }
+  gasCall('getStockCloseReview', {}, function(review) {
+    document.getElementById('rev-loading').style.display = 'none';
+    if (!review || review.error) { showToast((review && review.error) || 'Could not load the review.'); showOtherPanel('stock-close'); return; }
+    SC.review = review;
 
-  G.mpLinkGateJob = match;
-  gateEl.innerHTML = '<div style="font-size:12px;color:var(--c-ink-soft)">Checking QuickBooks link…</div>';
-  bodyEl.style.display = 'none';
-
-  gasCall('getQuickBooksLinkStatusForInvoice', { vendor: '', builder: match.builder, jobRef: match.job }, function(res) {
-    if (!res.success) {
-      gateEl.innerHTML = '<div style="font-size:12px;color:var(--c-danger)">' + esc(res.error || 'Could not check QuickBooks link.') + '</div>';
+    if (!review.readyToClose) {
+      document.getElementById('rev-incomplete').style.display = '';
+      document.getElementById('rev-missing-list').textContent = review.missingMaterials.join(', ');
       return;
     }
-    G.mpLinkGate = { qbCustomerId: res.qbCustomerId || '', projectFound: res.projectFound };
-    mpRenderLinkGate_();
-  }, function(err) {
-    gateEl.innerHTML = '<div style="font-size:12px;color:var(--c-danger)">' + esc(abortAwareError(err, 'Could not check QuickBooks link.')) + '</div>';
-  });
-}
 
-function mpRenderLinkGate_() {
-  var match = G.mpLinkGateJob;
-  var gate = G.mpLinkGate;
-  var gateEl = document.getElementById('mp-link-gate');
-  var bodyEl = document.getElementById('mp-form-body');
-  if (!match || !gate) return;
+    document.getElementById('rev-body').style.display = '';
+    document.getElementById('rev-ledger-value').textContent = slMoney(review.ledgerValue);
+    var flagEl = document.getElementById('rev-flagged-count');
+    flagEl.textContent = review.materialsFlagged;
+    flagEl.style.color = review.materialsFlagged ? 'var(--c-danger)' : 'var(--c-navy)';
 
-  if (gate.qbCustomerId) {
-    gateEl.innerHTML = '<div style="background:var(--sh-green-bg);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--c-navy);margin-bottom:12px">✓ Job <b>' + esc(match.builder) + ' / ' + esc(match.job) + '</b> is linked (QB Customer Id ' + esc(gate.qbCustomerId) + ')</div>';
-    bodyEl.style.display = '';
-    return;
-  }
+    slShow('rev-note-label', review.materialsFlagged > 0);
+    document.getElementById('rev-note-label').textContent = review.materialsFlagged > 0
+      ? 'Note (required -- explains the flagged variance' + (review.materialsFlagged === 1 ? '' : 's') + ')'
+      : 'Note';
 
-  bodyEl.style.display = 'none';
-  if (!gate.projectFound) {
-    gateEl.innerHTML = '<div style="background:var(--sh-red-bg,#fde8e8);border-radius:8px;padding:12px;font-size:12px;color:var(--c-navy);margin-bottom:12px">No Projects sheet row found for <b>' + esc(match.builder) + ' / ' + esc(match.job) + '</b> -- add the project first (New Project), then come back here.</div>';
-    return;
-  }
-
-  gateEl.innerHTML =
-    '<div style="background:var(--c-surface);border-radius:8px;padding:12px;margin-bottom:12px">' +
-      '<div style="font-size:13px;font-weight:700;color:var(--c-navy);margin-bottom:6px">Job: ' + esc(match.builder) + ' / ' + esc(match.job) + '</div>' +
-      '<label style="font-size:11px;font-weight:600;color:var(--c-ink-soft);display:block;margin-bottom:4px">QuickBooks Customer/Sub-customer Id</label>' +
-      '<input type="text" id="mp-link-job-id" placeholder="e.g. 87" style="width:100%;box-sizing:border-box;border:1.5px solid var(--c-border);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:8px">' +
-      '<button onclick="mpSaveJobLink()" id="mp-link-save-btn" style="width:100%;background:var(--c-navy);color:#fff;border:none;border-radius:8px;padding:10px;font-size:13px;font-weight:700;cursor:pointer">Save Job Link</button>' +
-      '<div id="mp-link-status" style="font-size:12px;color:var(--c-danger);margin-top:6px"></div>' +
-    '</div>';
-}
-
-function mpSaveJobLink() {
-  var match = G.mpLinkGateJob;
-  if (!match) return;
-  var qbCustomerId = document.getElementById('mp-link-job-id').value.trim();
-  var status = document.getElementById('mp-link-status');
-  if (!qbCustomerId) { if (status) status.textContent = 'QuickBooks Customer/Sub-customer Id is required.'; return; }
-
-  var btn = document.getElementById('mp-link-save-btn');
-  if (btn) { btn.textContent = 'Saving…'; btn.disabled = true; }
-
-  gasCall('saveProjectQuickBooksCustomerId', { builder: match.builder, jobRef: match.job, qbCustomerId: qbCustomerId }, function(res) {
-    if (!res.success) {
-      if (status) status.textContent = res.error || 'Could not save job link.';
-      if (btn) { btn.textContent = 'Save Job Link'; btn.disabled = false; }
-      return;
-    }
-    G.mpLinkGate.qbCustomerId = qbCustomerId;
-    mpRenderLinkGate_();
-  }, function(err) {
-    if (status) status.textContent = abortAwareError(err, 'Could not save job link.');
-    if (btn) { btn.textContent = 'Save Job Link'; btn.disabled = false; }
-  });
-}
-
-// Pull-for-job's primary button routes through a confirm/estimate step
-// first (showMaterialPullPreview); Return-from-job posts directly, same as
-// before, since its cost is already visible/entered on the form itself.
-function handleMaterialFormPrimaryAction() {
-  if (G.matFormMode === 'pull' && !G.mpConfirmMode) {
-    showMaterialPullPreview();
-  } else {
-    submitMaterialPullOrReturn();
-  }
-}
-
-// Cancel goes back to the material line editor while in the confirm step
-// (so materials/qty can still be adjusted); otherwise it leaves the screen
-// entirely, same as before.
-function handleMaterialFormSecondaryAction() {
-  if (G.mpConfirmMode) {
-    cancelMaterialPullPreview();
-  } else {
-    showOtherPanel('material-inventory');
-  }
-}
-
-function showMaterialPullPreview() {
-  var status = document.getElementById('mp-status');
-  if (!G.mpLinkGate || !G.mpLinkGate.qbCustomerId) { status.textContent = 'Pick a linked job first.'; return; }
-
-  var lines = [];
-  G.matFormLines.forEach(function(l) {
-    if (l.qboItemId && l.qty > 0) lines.push({ qboItemId: l.qboItemId, qty: l.qty });
-  });
-  if (!lines.length) { status.textContent = 'Add at least one material with a quantity.'; return; }
-  status.textContent = '';
-
-  var btn = document.getElementById('mp-save-btn');
-  if (btn) { btn.textContent = 'Checking…'; btn.disabled = true; }
-
-  gasCall('previewMaterialPull', { lines: lines }, function(res) {
-    if (btn) { btn.textContent = 'Pull Material'; btn.disabled = false; }
-    if (!res.success) { status.textContent = res.error || 'Could not preview this pull.'; return; }
-    renderMaterialPullPreview_(res);
-  }, function(err) {
-    if (btn) { btn.textContent = 'Pull Material'; btn.disabled = false; }
-    status.textContent = abortAwareError(err, 'Could not connect');
-  });
-}
-
-function renderMaterialPullPreview_(res) {
-  G.mpConfirmMode = true;
-  document.getElementById('mp-form-body').style.display = 'none';
-  document.getElementById('mp-link-gate').style.display = 'none';
-  document.getElementById('mp-confirm-view').style.display = '';
-  document.getElementById('mp-status').textContent = '';
-  document.getElementById('mp-job-combo').disabled = true; // locked while the estimate is showing
-
-  var combo = document.getElementById('mp-job-combo').value.trim();
-  var match = G.jobComboMap && G.jobComboMap[combo];
-  document.getElementById('mp-confirm-job').textContent = match ? (match.builder + ' / ' + match.job) : combo;
-
-  document.getElementById('mp-confirm-lines').innerHTML = (res.lines || []).map(function(l) {
-    return '<div class="po-item"><div class="row-between">' +
-      '<span class="po-num">' + esc(l.materialName) + '</span>' +
-      '<span>' + fmtMatQty(l.qty) + ' × $' + l.estUnitCost.toFixed(2) + ' = $' + l.estLineTotal.toFixed(2) + '</span>' +
-    '</div></div>';
-  }).join('');
-  document.getElementById('mp-confirm-total').textContent = 'Estimated Total: $' + res.estGrandTotal.toFixed(2);
-
-  document.getElementById('mp-save-btn').textContent = 'Confirm and Post to QuickBooks';
-  document.getElementById('mp-cancel-btn').textContent = 'Back';
-}
-
-function cancelMaterialPullPreview() {
-  G.mpConfirmMode = false;
-  document.getElementById('mp-confirm-view').style.display = 'none';
-  document.getElementById('mp-link-gate').style.display = '';
-  document.getElementById('mp-form-body').style.display = '';
-  document.getElementById('mp-status').textContent = '';
-  document.getElementById('mp-save-btn').textContent = 'Pull Material';
-  document.getElementById('mp-cancel-btn').textContent = 'Cancel';
-  document.getElementById('mp-job-combo').disabled = false;
-}
-
-function submitMaterialPullOrReturn() {
-  var isReturn = G.matFormMode === 'return';
-  var combo = document.getElementById('mp-job-combo').value.trim();
-  var notes = document.getElementById('mp-notes').value.trim();
-  var status = document.getElementById('mp-status');
-  var busyLabel = isReturn ? 'Returning…' : 'Posting…';
-  var idleLabel = isReturn ? 'Return Material' : (G.mpConfirmMode ? 'Confirm and Post to QuickBooks' : 'Pull Material');
-
-  // Defense in depth -- #mp-form-body is only ever shown once mpCheckJobLink
-  // confirms a real QBO Customer Id, but this is the actual gate: the server
-  // re-checks the same thing regardless, this just avoids a wasted round-trip.
-  if (!G.mpLinkGate || !G.mpLinkGate.qbCustomerId) {
-    status.textContent = 'Pick a linked job first.';
-    return;
-  }
-
-  // Build the lines payload from G.matFormLines, pulling each row's
-  // material name off its <select>'s data-name (set in mpMaterialOptions_)
-  // rather than re-looking it up server-side.
-  var rows = document.querySelectorAll('#mp-line-rows tr');
-  var lines = [];
-  for (var i = 0; i < G.matFormLines.length; i++) {
-    var l = G.matFormLines[i];
-    if (!l.qboItemId || !l.qty || l.qty <= 0) continue;
-    var sel = rows[i] && rows[i].querySelector('select');
-    var opt = sel && sel.selectedOptions[0];
-    lines.push({
-      qboItemId: l.qboItemId,
-      materialName: opt ? opt.getAttribute('data-name') : '',
-      qty: l.qty,
-      unitCost: isReturn ? (l.unitCost === '' || l.unitCost == null ? NaN : l.unitCost) : undefined
-    });
-  }
-
-  if (!lines.length) { status.textContent = 'Add at least one material with a quantity.'; return; }
-  if (isReturn && lines.some(function(l) { return isNaN(l.unitCost) || l.unitCost < 0; })) {
-    status.textContent = 'Enter the cost per unit for every material.';
-    return;
-  }
-  var match = G.jobComboMap && G.jobComboMap[combo];
-  if (!match) { status.textContent = 'Pick a job from the list (Builder & Job).'; return; }
-  status.textContent = '';
-
-  if (!G.matPullIdemKey) G.matPullIdemKey = newIdemKey();
-  var btn = document.getElementById('mp-save-btn');
-  if (btn) { btn.textContent = busyLabel; btn.disabled = true; }
-
-  var fn = isReturn ? 'returnMaterialFromJob' : 'pullMaterialForJob';
-  var reqPayload = { lines: lines, builder: match.builder, jobRef: match.job, notes: notes, idempotencyKey: G.matPullIdemKey };
-
-  gasCall(fn, reqPayload, function(res) {
-    if (btn) { btn.textContent = idleLabel; btn.disabled = false; }
-    if (res.success) {
-      G.matPullIdemKey = null;
-      showOtherPanel('material-inventory');
-      if (isReturn) {
-        showToast('Returned from ' + match.builder + ' / ' + match.job + (res.creditWarning ? ' — ' + res.creditWarning : ''));
-      } else {
-        var summary = (res.lines || []).map(function(l) { return l.materialName + ': ' + fmtMatQty(l.onHandAfter) + ' left'; }).join(', ');
-        showToast('Pulled for ' + match.builder + ' / ' + match.job + (summary ? ' — ' + summary : ''));
-      }
+    var el = document.getElementById('rev-lines');
+    if (!review.lines.length) {
+      el.innerHTML = '<div style="font-size:13px;color:var(--c-ink-soft);padding:8px 2px">Every count matched the ledger exactly.</div>';
     } else {
-      status.textContent = res.error || ('Could not ' + (isReturn ? 'return' : 'pull') + ' material.');
+      el.innerHTML = review.lines.map(function(l) {
+        var sign = l.varianceQty > 0 ? '+' : '';
+        return '' +
+          '<div style="display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--c-border-hair)">' +
+            '<span style="flex:1;min-width:0;font-size:12.5px;font-weight:600;color:var(--c-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + slEsc(l.materialName) + '</span>' +
+            '<span style="font-size:12px;color:var(--c-ink-soft)">' + slQty(l.ledgerQty) + ' &rarr; ' + slQty(l.countedQty) + '</span>' +
+            '<span style="font-size:13px;font-weight:800;min-width:64px;text-align:right;color:' + (l.flagged ? 'var(--c-danger)' : 'var(--c-ink-faint)') + '">' + sign + slMoney(l.varianceValue) + '</span>' +
+          '</div>';
+      }).join('');
     }
-  }, function(err) {
-    if (btn) { btn.textContent = idleLabel; btn.disabled = false; }
-    status.textContent = abortAwareError(err, 'Could not connect');
-  }, { timeoutMs: 45000 });
+  }, function() {
+    document.getElementById('rev-loading').style.display = 'none';
+    showToast('Could not load the review.');
+    showOtherPanel('stock-close');
+  });
 }
+
+function revConfirm() {
+  var note = document.getElementById('rev-note').value.trim();
+  var errEl = document.getElementById('rev-error');
+  errEl.style.display = 'none';
+
+  var btn = document.getElementById('rev-confirm');
+  btn.disabled = true;
+  btn.textContent = 'Closing...';
+  gasCall('confirmStockClose', { note: note }, function(res) {
+    btn.disabled = false;
+    btn.textContent = 'Confirm Close';
+    if (!res || !res.success) {
+      errEl.style.display = '';
+      errEl.textContent = (res && res.error) || 'Could not close the period.';
+      return;
+    }
+    showToast(res.period + ' closed.');
+    SC.period = null;
+    showOtherPanel('stock-close');
+  }, function() {
+    btn.disabled = false;
+    btn.textContent = 'Confirm Close';
+    errEl.style.display = '';
+    errEl.textContent = 'Could not reach the server. Nothing was closed.';
+  });
+}
+
+// ── Closed period detail ─────────────────────────────────────────────────────────
+
+function openStockCloseDetailPanel() {
+  var period = SC.detailPeriod;
+  document.getElementById('det-period-title').textContent = period || 'Closed Period';
+  document.getElementById('det-summary').innerHTML = '';
+  document.getElementById('det-list').innerHTML = '<div style="font-size:13px;color:var(--c-ink-soft);padding:8px 2px">Loading...</div>';
+
+  gasCall('getStockPeriodDetail', { period: period }, function(data) {
+    var materials = (data && data.materials) || [];
+    var total = materials.reduce(function(s, m) { return s + m.value; }, 0);
+    document.getElementById('det-summary').innerHTML =
+      '<div style="background:var(--c-surface);border:1px solid var(--c-border-hair);border-radius:10px;padding:12px 14px">' +
+        '<div style="font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--c-ink-faint);text-transform:uppercase">Total Value at Close</div>' +
+        '<div style="font-size:19px;font-weight:800;color:var(--c-navy);margin-top:3px">' + slMoney(total) + '</div>' +
+      '</div>';
+
+    document.getElementById('det-list').innerHTML = materials.length
+      ? materials.map(function(m) {
+          return '<div style="display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--c-border-hair)">' +
+            '<span style="flex:1;min-width:0;font-size:12.5px;font-weight:600;color:var(--c-ink)">' + slEsc(m.materialName) + '</span>' +
+            '<span style="font-size:12.5px;color:var(--c-ink-soft)">' + slQty(m.qty) + '</span>' +
+            '<span style="font-size:13px;font-weight:700;min-width:70px;text-align:right;color:var(--c-navy)">' + slMoney(m.value) + '</span>' +
+          '</div>';
+        }).join('')
+      : '<div style="font-size:13px;color:var(--c-ink-soft);padding:8px 2px">No detail recorded.</div>';
+  }, function() {
+    document.getElementById('det-list').innerHTML = '<div style="font-size:13px;color:var(--c-danger);padding:8px 2px">Could not load this period.</div>';
+  });
+}
+
 
 /** Decodes a base64 PDF and triggers a browser download -- shared by any feature that generates a PDF server-side. */
 function downloadBase64Pdf_(base64, filename) {
@@ -10156,15 +9989,6 @@ function downloadBase64Pdf_(base64, filename) {
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
-
-function deleteMaterialLog(rowIndex) {
-  if (!confirm('Delete this log entry?')) return;
-  gasCall('deleteMaterialLogEntry', { rowIndex: rowIndex }, function(res) {
-    if (res.success) { showToast('Entry deleted'); loadMaterialInventory(); }
-    else { showToast('Error: ' + (res.error || 'Delete failed')); }
-  }, function(err) { showToast('Error: ' + abortAwareError(err, 'Could not connect')); }, { timeoutMs: 45000 });
-}
-
 
 // ── Job Cost Summary ──────────────────────────────────────────────────────────
 var G_sops = null;

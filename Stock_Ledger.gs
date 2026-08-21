@@ -382,8 +382,7 @@ function readStockLedgerMoves_(afterSeq) {
 /**
  * Appends validated moves and hands back the rows as written. Takes the
  * script lock and re-derives on-hand INSIDE it, so two runners pulling the
- * same material at the same moment cannot both pass the on-hand check --
- * the race the previewMaterialPull / pushMaterialPull pair allows today.
+ * same material at the same moment cannot both pass the on-hand check.
  *
  * Rows land as 'pending'. Posting to QuickBooks happens afterwards and
  * stamps the txn id, so an Intuit outage can never lose the fact that
@@ -470,8 +469,7 @@ function nextStockSeq_(sheet) {
  * layers. Replays from the most recent snapshot forward rather than from
  * the beginning of time -- that bound is the whole reason the monthly close
  * writes a snapshot, and it is what keeps this fast enough to call on every
- * screen load instead of round-tripping to QuickBooks the way
- * getWarehouseItemsOnHand_ does today.
+ * screen load instead of round-tripping to QuickBooks.
  */
 function getStockPosition_() {
   var snap = readLatestStockSnapshot_();
