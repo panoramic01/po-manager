@@ -3053,10 +3053,7 @@ function handleGoogleCredential(response) {
       if (result.config) {
         localStorage.setItem('panoramic_ops_config', JSON.stringify(result.config));
       }
-      if (result.sessionToken) {
-        localStorage.setItem('panoramic_ops_token', result.sessionToken);
-        G.sessionToken = result.sessionToken;
-      }
+      adoptSessionToken(result.sessionToken);
       document.getElementById('login-screen').classList.add('hidden');
       G.config = { statusOptions: [], vendorOptions: [] };
       bootWithEmail(result.email);
@@ -3080,6 +3077,13 @@ function newIdemKey() {
   return 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2);
 }
 
+/** Single place that persists a session token, whether it came from a login response or a sliding renewal. */
+function adoptSessionToken(token) {
+  if (!token || token === G.sessionToken) return;
+  G.sessionToken = token;
+  try { localStorage.setItem('panoramic_ops_token', token); } catch (e) { /* private mode / full quota -- token still lives in G for this session */ }
+}
+
 function gasCall(action, payload, onSuccess, onFailure, opts) {
   opts = opts || {};
   var fullPayload = Object.assign({ callerEmail: G.userEmail, sessionToken: G.sessionToken }, payload || {});
@@ -3097,6 +3101,17 @@ function gasCall(action, payload, onSuccess, onFailure, opts) {
     })
     .then(function(r) { clearTimeout(timer); return r.json(); })
     .then(function(data) {
+      // Any response may carry a renewed token (see maybeRenewSessionToken_ on
+      // the server) -- adopting it here keeps an active user signed in forever.
+      if (data && data.sessionToken) adoptSessionToken(data.sessionToken);
+      // A dead token is not something an individual caller can recover from:
+      // the old behaviour was to toast "your session has expired" on every
+      // write, with nothing that ever cleared the stale token. Bounce to the
+      // login screen once, centrally, instead of a permanent dead end.
+      if (data && data.code === 'AUTH_REQUIRED') {
+        showLoginScreen('Your session has expired. Please sign in again.');
+        return;
+      }
       if (!onSuccess) return;
       try { onSuccess(data); }
       catch(ex) {
@@ -3292,10 +3307,7 @@ function submitLogin() {
       if (result.config) {
         localStorage.setItem('panoramic_ops_config', JSON.stringify(result.config));
       }
-      if (result.sessionToken) {
-        localStorage.setItem('panoramic_ops_token', result.sessionToken);
-        G.sessionToken = result.sessionToken;
-      }
+      adoptSessionToken(result.sessionToken);
       document.getElementById('login-screen').classList.add('hidden');
       document.getElementById('login-password').value = '';
       G.config = { statusOptions: [], vendorOptions: [] };
@@ -3318,6 +3330,10 @@ function submitLogin() {
 
 function switchAccount() {
   localStorage.removeItem('panoramic_ops_email');
+  // Signing out has to discard the credential too, not just the email --
+  // otherwise a still-valid token sits in localStorage after "Sign Out".
+  localStorage.removeItem('panoramic_ops_token');
+  G.sessionToken = '';
   document.getElementById('login-email').value    = '';
   document.getElementById('login-password').value = '';
   document.getElementById('login-error').style.display = 'none';

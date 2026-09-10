@@ -289,6 +289,15 @@ function doPost(e) {
       logError_(action, result.error, payload);
     }
 
+    // Sliding session renewal: piggyback a fresh token on any response to a
+    // caller whose still-valid token is running down, so an active user never
+    // reaches the 30-day cliff. Object responses only -- getSheetData and
+    // friends return bare arrays, and the login actions mint their own token.
+    if (result && typeof result === 'object' && !Array.isArray(result) && !result.sessionToken) {
+      var renewed = maybeRenewSessionToken_(payload.sessionToken);
+      if (renewed) result.sessionToken = renewed;
+    }
+
     return ContentService
       .createTextOutput(JSON.stringify(result))
       .setMimeType(ContentService.MimeType.JSON);
@@ -1131,6 +1140,12 @@ function getRoleByEmail(email) {
 
 var SESSION_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
+// Once a still-valid token has less than this much life left, doPost hands the
+// client a freshly signed one (see maybeRenewSessionToken_). Keeps anyone who
+// uses the app at least monthly permanently signed in, so the 30-day TTL only
+// ever logs out accounts that have genuinely gone idle.
+var SESSION_TOKEN_RENEW_WHEN_REMAINING_MS = 15 * 24 * 60 * 60 * 1000; // half the TTL
+
 function getSessionSecret_() {
   var props  = PropertiesService.getScriptProperties();
   var secret = props.getProperty('SESSION_SECRET');
@@ -1155,6 +1170,15 @@ function issueSessionToken_(email) {
  * doesn't match its signature (forged / tampered / signed with a stale secret).
  */
 function verifySessionEmail_(token) {
+  var parsed = parseSessionToken_(token);
+  return parsed ? parsed.email : null;
+}
+
+/**
+ * Shared implementation behind verifySessionEmail_ and maybeRenewSessionToken_:
+ * returns { email, expires } for a token that is genuine and unexpired, else null.
+ */
+function parseSessionToken_(token) {
   try {
     if (!token || token.indexOf('.') === -1) return null;
     var dot  = token.indexOf('.');
@@ -1167,10 +1191,24 @@ function verifySessionEmail_(token) {
     var email   = body.substring(0, pipe).toLowerCase().trim();
     var expires = parseInt(body.substring(pipe + 1), 10);
     if (!email || !expires || Date.now() > expires) return null;
-    return email;
+    return { email: email, expires: expires };
   } catch (e) {
     return null;
   }
+}
+
+/**
+ * Sliding renewal. Given the token the client sent, returns a freshly signed
+ * replacement once the old one is inside its last
+ * SESSION_TOKEN_RENEW_WHEN_REMAINING_MS, or null when there is nothing to do
+ * (no token, invalid/expired token, or plenty of life left). doPost attaches
+ * the result to the response and the client swaps it in.
+ */
+function maybeRenewSessionToken_(token) {
+  var parsed = parseSessionToken_(token);
+  if (!parsed) return null;
+  if ((parsed.expires - Date.now()) > SESSION_TOKEN_RENEW_WHEN_REMAINING_MS) return null;
+  return issueSessionToken_(parsed.email);
 }
 
 /**
