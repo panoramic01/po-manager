@@ -1997,6 +1997,70 @@ function findStagingRowIndex_(sheet, stagingId) {
   return -1;
 }
 
+// ─── Live QuickBooks Id refresh for open staging rows ────────────────────────
+// A staging row snapshots its QB Customer/Vendor Id once, at upload. Office
+// uploads without linking them (see irCheckLinkGate), so admin fixes the
+// Projects sheet / QB Vendor Map afterward -- and before this, that fix never
+// reached invoices already in the queue, which then had to be redone. Every
+// read of an open row (not Posted/Rejected) now re-pulls from those two
+// sheets and writes back whatever changed. A blank live value never clears an
+// existing snapshot.
+
+/** Reads Projects col E and QB Vendor Map once into keyed lookups, first match wins (same as getProjectQuickBooksId_/getQuickBooksVendorId_). */
+function loadLiveQuickBooksIdLookup_() {
+  var customerByJob = {};
+  var projects = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(PROJECTS_SHEET_NAME);
+  if (projects && projects.getLastRow() >= 2) {
+    projects.getRange(2, 1, projects.getLastRow() - 1, 5).getValues().forEach(function(r) {
+      var key = stagingJobKey_(r[0], r[1]);
+      var id = (r[4] || '').toString().trim();
+      if (id && !(key in customerByJob)) customerByJob[key] = id;
+    });
+  }
+  var vendorByName = {};
+  var vendorMap = ensureSheetWithHeaders_(QB_VENDOR_MAP_SHEET, QB_VENDOR_MAP_HEADERS);
+  if (vendorMap.getLastRow() >= 2) {
+    vendorMap.getRange(2, 1, vendorMap.getLastRow() - 1, 2).getValues().forEach(function(r) {
+      var key = (r[0] || '').toString().trim().toLowerCase();
+      var id = (r[1] || '').toString().trim();
+      if (id && !(key in vendorByName)) vendorByName[key] = id;
+    });
+  }
+  return { customerByJob: customerByJob, vendorByName: vendorByName };
+}
+
+function stagingJobKey_(builder, jobRef) {
+  return (builder || '').toString().trim().toLowerCase() + '|' + (jobRef || '').toString().trim().toLowerCase();
+}
+
+/** Returns a copy of one raw staging row with live Ids applied, writing any change back to sheet row `sheetRow`. */
+function refreshStagingRowQuickBooksIds_(sheet, sheetRow, row, lookup) {
+  var status = row[QB_STAGING_COL['Status']];
+  if (status === 'Posted' || status === 'Rejected') return row;
+  var next = row.slice();
+  var liveCustomer = lookup.customerByJob[stagingJobKey_(row[QB_STAGING_COL['Builder']], row[QB_STAGING_COL['Job Ref']])] || '';
+  var liveVendor = lookup.vendorByName[(row[QB_STAGING_COL['Vendor']] || '').toString().trim().toLowerCase()] || '';
+  [['QB Customer Id', liveCustomer], ['QB Vendor Id', liveVendor]].forEach(function(pair) {
+    var col = QB_STAGING_COL[pair[0]];
+    if (pair[1] && pair[1] !== (row[col] || '').toString().trim()) {
+      sheet.getRange(sheetRow, col + 1).setValue(pair[1]);
+      next[col] = pair[1];
+    }
+  });
+  return next;
+}
+
+/** Applies refreshStagingRowQuickBooksIds_ to every row of a sheet-row-2-based data block. Best-effort: a lookup failure returns the rows unchanged. */
+function syncStagingQuickBooksIds_(sheet, data) {
+  try {
+    var lookup = loadLiveQuickBooksIdLookup_();
+    return data.map(function(row, i) { return refreshStagingRowQuickBooksIds_(sheet, i + 2, row, lookup); });
+  } catch (e) {
+    console.error('syncStagingQuickBooksIds_ failed, showing snapshot Ids: ' + e);
+    return data;
+  }
+}
+
 /**
  * Lists staging rows, optionally filtered by status and/or PO number.
  * Owner-gated, same as the rest of the QuickBooks-facing workflow.
@@ -2009,7 +2073,7 @@ function getInvoiceStaging(payload) {
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) return { rows: [] };
 
-    var data = sheet.getRange(2, 1, lastRow - 1, QB_STAGING_HEADERS.length).getValues();
+    var data = syncStagingQuickBooksIds_(sheet, sheet.getRange(2, 1, lastRow - 1, QB_STAGING_HEADERS.length).getValues());
     var statusFilter = payload.status ? [].concat(payload.status) : null;
     var poFilter = (payload.poNumber || '').toString().trim();
 

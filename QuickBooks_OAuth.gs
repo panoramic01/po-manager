@@ -715,7 +715,11 @@ function createQuickBooksBill(payload) {
     var rowIdx = findStagingRowIndex_(sheet, stagingId);
     if (rowIdx === -1) return { success: false, error: 'Staging row not found' };
 
-    var rowValues = sheet.getRange(rowIdx, 1, 1, QB_STAGING_HEADERS.length).getValues()[0];
+    // Re-pull QB Customer/Vendor Id from the Projects sheet / QB Vendor Map
+    // right before posting, so an Id fixed there after upload is picked up
+    // here instead of the stale upload-time snapshot failing the checks below.
+    var rowValues = refreshStagingRowQuickBooksIds_(sheet, rowIdx,
+      sheet.getRange(rowIdx, 1, 1, QB_STAGING_HEADERS.length).getValues()[0], loadLiveQuickBooksIdLookup_());
     var staging = stagingRowToObject_(rowValues);
 
     // Idempotency: already posted, hand back the existing Bill rather than

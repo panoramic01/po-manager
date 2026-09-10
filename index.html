@@ -10440,10 +10440,47 @@ function loadMissingInvoices() {
 // that keeps this to Admin/aidan. Tapping a row jumps straight into the same
 // Invoice Review detail screen Office used, where Approve + Create Bill in
 // QuickBooks are available.
+// 'Approved' rows stay in the queue too: approving and posting are separate
+// steps, so a Bill that failed to post (e.g. a missing QB Id) would otherwise
+// drop out of sight with nothing left to act on it from. A function, not a
+// var, because applyRole() can reach refreshPendingApprovalBadge() during
+// boot before this far down the script has run.
+function paQueueStatuses_() { return ['Pending Approval', 'Approved']; }
+
+// Which QB links an open invoice still lacks -- the server refreshes these
+// from the Projects sheet / QB Vendor Map on every load (see
+// syncStagingQuickBooksIds_), so this reflects the sheets as they are now.
+function paMissingLinks_(row) {
+  var missing = [];
+  if (!row.qbCustomerId && String(row.jobRef || '').trim().toUpperCase() !== 'WAREHOUSE') missing.push('QB Customer Id');
+  if (!row.qbVendorId) missing.push('QB Vendor Id');
+  return missing;
+}
+
+// Takes an invoice out of the queue without posting it (e.g. to re-upload it
+// or just drop it). Marks it Rejected rather than deleting the sheet row, so
+// the QB Invoice Staging audit trail stays intact.
+function removePendingApprovalInvoice(stagingId, btn) {
+  if (!confirm('Remove this invoice from the approval list? It will not be sent to QuickBooks.')) return;
+  if (btn) { btn.disabled = true; btn.textContent = 'Removing…'; }
+  gasCall('saveInvoiceStagingReview', { stagingId: stagingId, reject: true }, function(res) {
+    if (!res.success) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Remove'; }
+      showToast(res.error || 'Remove failed');
+      return;
+    }
+    showToast('Invoice removed from the approval list');
+    loadPendingApprovalInvoices();
+  }, function(err) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Remove'; }
+    showToast(friendlyUploadError(err));
+  });
+}
+
 function loadPendingApprovalInvoices() {
   document.getElementById('pa-loading').style.display = 'block';
   document.getElementById('pa-results').style.display = 'none';
-  gasCall('getInvoiceStaging', { status: 'Pending Approval' }, function(res) {
+  gasCall('getInvoiceStaging', { status: paQueueStatuses_() }, function(res) {
     document.getElementById('pa-loading').style.display = 'none';
     updatePendingApprovalBadge_(res && res.rows);
     if (res.error) {
@@ -10460,12 +10497,16 @@ function loadPendingApprovalInvoices() {
     } else {
       html = '<div style="background:var(--c-surface);border-radius:12px;padding:4px 16px;box-shadow:0 1px 4px rgba(0,0,0,0.08)">'
            + rows.map(function(row) {
+               var missing = paMissingLinks_(row);
                return '<div onclick="openPendingApprovalInvoice(\'' + esc(row.stagingId) + '\')" style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--c-border-soft);gap:8px;cursor:pointer">'
                  + '<div style="flex:1;min-width:0">'
                  + '<div style="font-size:13px;font-weight:600;color:var(--c-ink)">' + esc(row.vendor || '—') + '</div>'
                  + '<div style="font-size:11px;color:var(--c-ink-soft)">PO #' + esc(row.poNumber) + ' · ' + esc(row.builder || '—') + ' / ' + esc(row.jobRef || '—') + (row.reviewedBy ? ' · sent by ' + esc(row.reviewedBy) : '') + '</div>'
+                 + (row.status === 'Approved' ? '<div style="font-size:11px;font-weight:600;color:var(--bd-green-fg)">Approved — not in QuickBooks yet</div>' : '')
+                 + (missing.length ? '<div style="font-size:11px;color:var(--c-danger)">Missing ' + esc(missing.join(' + ')) + '</div>' : '')
                  + '</div>'
                  + '<span style="font-size:13px;font-weight:700;color:var(--c-ink);white-space:nowrap">$' + (parseFloat(row.invoiceTotal) || 0).toFixed(2) + '</span>'
+                 + '<button onclick="event.stopPropagation();removePendingApprovalInvoice(\'' + esc(row.stagingId) + '\', this)" style="background:none;border:1px solid var(--c-border);color:var(--c-danger);border-radius:6px;padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">Remove</button>'
                  + '</div>';
              }).join('')
            + '</div>';
@@ -10491,7 +10532,7 @@ function updatePendingApprovalBadge_(rows) {
 // visible without opening the tile first -- reuses the same list endpoint
 // since getInvoiceStaging has no separate count-only mode.
 function refreshPendingApprovalBadge() {
-  gasCall('getInvoiceStaging', { status: 'Pending Approval' }, function(res) {
+  gasCall('getInvoiceStaging', { status: paQueueStatuses_() }, function(res) {
     if (res && !res.error) updatePendingApprovalBadge_(res.rows);
   }, function() {});
 }
