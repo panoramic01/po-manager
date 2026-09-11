@@ -2671,7 +2671,9 @@ function extractInvoiceLineItems(payload) {
       return {
         success: false, blocked: true,
         error: 'This invoice (PO ' + poNumber + (vendorInvoice ? ', Vendor Invoice# ' + vendorInvoice : '') +
-               ') was already posted to QuickBooks as Bill ' + dup.qbBillId + '. It was not re-extracted.',
+               ') was already posted to QuickBooks as ' +
+               (isVendorCreditRef_(dup.qbBillId) ? 'Vendor Credit ' + dup.qbBillId.slice(VENDOR_CREDIT_REF_PREFIX.length) : 'Bill ' + dup.qbBillId) +
+               '. It was not re-extracted.',
         existingStagingId: dup.stagingId, qbBillId: dup.qbBillId
       };
     }
@@ -3740,6 +3742,15 @@ function getJobCostSummary_(jobRef) {
  * already authorized the caller. Returns { connected:false } if QuickBooks
  * was never connected, so the dashboard can just hide the comparison.
  */
+/** One batched "SELECT Id, TotalAmt FROM <entity> WHERE Id IN (...)" -- { success, rows } or { success:false, error }. */
+function queryQuickBooksTotalsById_(entity, ids) {
+  var query = "SELECT Id, TotalAmt FROM " + entity + " WHERE Id IN (" +
+    ids.map(function(id) { return "'" + id.replace(/'/g, "") + "'"; }).join(',') + ")";
+  var res = quickbooksApiGet_('/query?query=' + encodeURIComponent(query));
+  if (!res.success) return { success: false, error: res.error };
+  return { success: true, rows: (res.data && res.data.QueryResponse && res.data.QueryResponse[entity]) || [] };
+}
+
 function getQuickBooksJobTotal_(jobRef) {
   try {
     if (!getQuickBooksService_().hasAccess()) return { connected: false };
@@ -3764,19 +3775,29 @@ function getQuickBooksJobTotal_(jobRef) {
     var ids = Object.keys(billIds);
     if (!ids.length) return { connected: true, total: 0, billCount: 0, poCount: 0 };
 
-    var query = "SELECT Id, TotalAmt FROM Bill WHERE Id IN (" +
-      ids.map(function(id) { return "'" + id.replace(/'/g, "") + "'"; }).join(',') + ")";
-    var res = quickbooksApiGet_('/query?query=' + encodeURIComponent(query));
-    if (!res.success) return { connected: true, error: res.error };
-
-    var bills = (res.data && res.data.QueryResponse && res.data.QueryResponse.Bill) || [];
+    // Credit memos post as VendorCredits (ref stored as 'VC-<id>', see
+    // vendorCreditRef_ in QuickBooks_OAuth.gs) and reduce the job total.
+    var creditIds = ids.filter(isVendorCreditRef_).map(function(ref) { return ref.slice(VENDOR_CREDIT_REF_PREFIX.length); });
+    var plainBillIds = ids.filter(function(ref) { return !isVendorCreditRef_(ref); });
+    var bills = [], credits = [];
+    if (plainBillIds.length) {
+      var billRes = queryQuickBooksTotalsById_('Bill', plainBillIds);
+      if (!billRes.success) return { connected: true, error: billRes.error };
+      bills = billRes.rows;
+    }
+    if (creditIds.length) {
+      var creditRes = queryQuickBooksTotalsById_('VendorCredit', creditIds);
+      if (!creditRes.success) return { connected: true, error: creditRes.error };
+      credits = creditRes.rows;
+    }
     var total = 0;
     bills.forEach(function(b) { total += parseFloat(b.TotalAmt) || 0; });
+    credits.forEach(function(c) { total -= parseFloat(c.TotalAmt) || 0; });
 
-    // billCount < expectedBillCount means a Bill this app posted no longer
-    // exists in QuickBooks (voided/deleted there directly) -- surfaced to
-    // the caller rather than silently under-totaling.
-    return { connected: true, total: total, billCount: bills.length, expectedBillCount: ids.length, poCount: poCount };
+    // billCount < expectedBillCount means a Bill/credit this app posted no
+    // longer exists in QuickBooks (voided/deleted there directly) --
+    // surfaced to the caller rather than silently under-totaling.
+    return { connected: true, total: total, billCount: bills.length + credits.length, expectedBillCount: ids.length, poCount: poCount };
   } catch (e) {
     return { connected: true, error: e.toString() };
   }

@@ -687,6 +687,27 @@ function applyWarehouseNonMaterialAllocation_(lineItems) {
   return materialLines;
 }
 
+// A Posted credit memo's 'QB Bill Id' cell holds its VendorCredit Id with
+// this prefix -- QBO Ids are only unique per entity type, so a bare number
+// could collide with a real Bill's Id in getQuickBooksJobTotal_'s lookup.
+var VENDOR_CREDIT_REF_PREFIX = 'VC-';
+function vendorCreditRef_(id) { return VENDOR_CREDIT_REF_PREFIX + id; }
+function isVendorCreditRef_(ref) { return (ref || '').toString().indexOf(VENDOR_CREDIT_REF_PREFIX) === 0; }
+
+/**
+ * Returns a sign-flipped copy of one built Bill line for a VendorCredit:
+ * Amount negated, UnitPrice kept positive, and Qty taking Amount's sign so
+ * Qty x UnitPrice still equals Amount (a credit memo lists returns as -22 @
+ * 139.92 = -3078.24, which becomes 22 @ 139.92 = 3078.24).
+ */
+function flipLineForVendorCredit_(line) {
+  var amount = Math.round(-line.Amount * 100) / 100;
+  var detail = Object.assign({}, line.ItemBasedExpenseLineDetail);
+  if (typeof detail.Qty === 'number' && !isNaN(detail.Qty)) detail.Qty = Math.abs(detail.Qty) * (amount < 0 ? -1 : 1);
+  if (typeof detail.UnitPrice === 'number' && !isNaN(detail.UnitPrice)) detail.UnitPrice = Math.abs(detail.UnitPrice);
+  return Object.assign({}, line, { Amount: amount, ItemBasedExpenseLineDetail: detail });
+}
+
 // ─── QuickBooks Bill creation (write path) ───────────────────────────────────
 /**
  * Creates a Bill in QuickBooks from an Approved staging row. Owner-gated,
@@ -803,17 +824,28 @@ function createQuickBooksBill(payload) {
       return { success: false, error: 'No line items to bill (everything is skipped).' };
     }
 
+    // A credit memo (returned material) nets negative, and QBO rejects any
+    // Bill whose total is below zero ("Enter a transaction amount that is 0
+    // or greater") -- it has to post as a VendorCredit instead, with every
+    // amount flipped positive. Its Id goes in the same 'QB Bill Id' column
+    // with a VC- prefix (see vendorCreditRef_) so no sheet column is added
+    // and a credit can never be mistaken for a Bill with the same Id.
+    var netTotal = billLines.reduce(function(s, l) { return s + l.Amount; }, 0);
+    var isCredit = netTotal < 0;
+    var entity = isCredit ? 'VendorCredit' : 'Bill';
+
     var billPayload = {
       VendorRef: { value: staging.qbVendorId },
       // A blank vendorInvoice used to leave this key entirely absent,
       // which fails with "value must not be null : DocNumber" on a QBO
       // company that has custom transaction numbers enabled (confirmed).
       // Falls back to a timestamp-based number rather than leaving it unset.
-      DocNumber: staging.vendorInvoice || ('BILL-' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyMMdd-HHmmss')),
-      Line: billLines
+      // String() because Sheets hands a numeric invoice # back as a Number.
+      DocNumber: String(staging.vendorInvoice || ('BILL-' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyMMdd-HHmmss'))),
+      Line: isCredit ? billLines.map(flipLineForVendorCredit_) : billLines
     };
 
-    var postRes = quickbooksApiPost_('/bill', billPayload);
+    var postRes = quickbooksApiPost_(isCredit ? '/vendorcredit' : '/bill', billPayload);
     if (!postRes.success) {
       // Leave Status at 'Approved' (not reverted) so this can be fixed and retried without redoing the whole review.
       // sentPayload included for debugging "Invalid Reference Id" faults --
@@ -822,7 +854,9 @@ function createQuickBooksBill(payload) {
       return { success: false, error: postRes.error, sentPayload: billPayload };
     }
 
-    var qbBillId = postRes.data && postRes.data.Bill && postRes.data.Bill.Id;
+    var txnId = postRes.data && postRes.data[entity] && postRes.data[entity].Id;
+    var qbBillId = txnId ? (isCredit ? vendorCreditRef_(txnId) : txnId) : '';
+    var txnLabel = (isCredit ? 'Vendor Credit ' : 'Bill ') + txnId;
     var postedAt = new Date();
     sheet.getRange(rowIdx, QB_STAGING_COL['Status'] + 1).setValue('Posted');
     sheet.getRange(rowIdx, QB_STAGING_COL['QB Bill Id'] + 1).setValue(qbBillId || '');
@@ -834,19 +868,19 @@ function createQuickBooksBill(payload) {
     // the Bill itself is already posted and Approved->Posted at this point,
     // so a Drive/attachment hiccup surfaces as a warning, not a failure.
     var attachmentWarning;
-    if (qbBillId && staging.invoiceFileUrl) {
+    if (txnId && staging.invoiceFileUrl) {
       try {
         var invoiceFileId = extractDriveFileId_(staging.invoiceFileUrl);
         if (!invoiceFileId) {
-          attachmentWarning = 'Bill ' + qbBillId + ' created, but the invoice file link could not be read to attach it.';
+          attachmentWarning = txnLabel + ' created, but the invoice file link could not be read to attach it.';
         } else {
-          var attachRes = quickbooksUploadAttachment_(DriveApp.getFileById(invoiceFileId).getBlob(), 'Bill', qbBillId);
+          var attachRes = quickbooksUploadAttachment_(DriveApp.getFileById(invoiceFileId).getBlob(), entity, txnId);
           if (!attachRes.success) {
-            attachmentWarning = 'Bill ' + qbBillId + ' created, but attaching the invoice PDF failed: ' + attachRes.error;
+            attachmentWarning = txnLabel + ' created, but attaching the invoice PDF failed: ' + attachRes.error;
           }
         }
       } catch (attachErr) {
-        attachmentWarning = 'Bill ' + qbBillId + ' created, but attaching the invoice PDF failed: ' + attachErr.toString();
+        attachmentWarning = txnLabel + ' created, but attaching the invoice PDF failed: ' + attachErr.toString();
       }
     }
 

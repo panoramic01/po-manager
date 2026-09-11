@@ -8675,7 +8675,7 @@ function irOpenDetail(stagingId) {
     // reached 'Approved' -- defense in depth alongside the server-side gate.
     if (row.status === 'Posted') {
       billBtn.style.display = 'none';
-      statusEl.textContent = 'Posted to QuickBooks — Bill ' + row.qbBillId + '.';
+      statusEl.textContent = 'Posted to QuickBooks — ' + (String(row.qbBillId).indexOf('VC-') === 0 ? 'Vendor Credit ' + String(row.qbBillId).slice(3) : 'Bill ' + row.qbBillId) + '.';
     } else if (row.status === 'Approved') {
       billBtn.style.display = G.isAidan ? '' : 'none';
       statusEl.textContent = G.isAidan ? 'Approved — ready to create the Bill in QuickBooks.' : 'Approved by admin.';
@@ -9166,6 +9166,17 @@ function irUpdateBalanceCheck() {
     el.style.background = 'var(--c-bg)';
     el.style.color = 'var(--c-ink-soft)';
   }
+  var billBtn = document.getElementById('ir-create-bill-btn');
+  if (billBtn && !billBtn.disabled) billBtn.textContent = irCreateBillLabel_();
+}
+
+// Mirrors createQuickBooksBill: an invoice netting below $0 (a credit memo /
+// return) posts to QuickBooks as a Vendor Credit, since QBO rejects Bills
+// with a negative total.
+function irCreateBillLabel_() {
+  var net = G_ir.lineItems.filter(function(li) { return !li.skip; })
+    .reduce(function(s, li) { return s + (parseFloat(li.amount) || 0); }, 0);
+  return net < 0 ? 'Create Vendor Credit in QuickBooks' : 'Create Bill in QuickBooks';
 }
 
 function irSaveDraft(btn) {
@@ -9228,7 +9239,7 @@ function irCreateBill() {
   btn.textContent = 'Creating…';
   gasCall('createQuickBooksBill', { stagingId: G_ir.stagingId }, function(res) {
     btn.disabled = false;
-    btn.textContent = 'Create Bill in QuickBooks';
+    btn.textContent = irCreateBillLabel_();
     if (!res.success) {
       showToast(res.error || 'Failed to create Bill');
       if (res.sentPayload) {
@@ -9245,7 +9256,7 @@ function irCreateBill() {
     irBackToPO();
   }, function(err) {
     btn.disabled = false;
-    btn.textContent = 'Create Bill in QuickBooks';
+    btn.textContent = irCreateBillLabel_();
     showToast(friendlyUploadError(err));
   }, { timeoutMs: 45000 });
 }
