@@ -3073,7 +3073,7 @@ function newIdemKey() {
   return 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2);
 }
 
-var LOGIN_ERROR_REASON_MAX_LEN = 80;
+var LOGIN_ERROR_REASON_MAX_LEN = 140;
 
 /**
  * Login failure text that keeps the underlying reason visible. "Could not
@@ -3111,6 +3111,23 @@ function adoptSessionToken(token) {
   try { localStorage.setItem('panoramic_ops_token', token); } catch (e) { /* private mode / full quota -- token still lives in G for this session */ }
 }
 
+/**
+ * r.json() on a non-JSON body only says "The string did not match the expected
+ * pattern" (Safari), hiding what actually answered -- a Google "unusual traffic"
+ * page, a network filter's block page, a Wi-Fi captive portal. Keep the
+ * SyntaxError type callers already expect, but name the page that came back.
+ */
+function parseGasResponse(r) {
+  return r.text().then(function(text) {
+    try { return JSON.parse(text); }
+    catch (e) {
+      var titleMatch = /<title[^>]*>([^<]*)<\/title>/i.exec(text);
+      var what = titleMatch ? titleMatch[1].trim() : text.replace(/\s+/g, ' ').trim();
+      throw new SyntaxError('Got a web page instead of data (HTTP ' + r.status + '): ' + (what || 'empty response'));
+    }
+  });
+}
+
 function gasCall(action, payload, onSuccess, onFailure, opts) {
   opts = opts || {};
   var fullPayload = Object.assign({ callerEmail: G.userEmail, sessionToken: G.sessionToken }, payload || {});
@@ -3126,7 +3143,7 @@ function gasCall(action, payload, onSuccess, onFailure, opts) {
       redirect: 'follow',
       signal: ctrl ? ctrl.signal : undefined
     })
-    .then(function(r) { clearTimeout(timer); return r.json(); })
+    .then(function(r) { clearTimeout(timer); return parseGasResponse(r); })
     .then(function(data) {
       // Any response may carry a renewed token (see maybeRenewSessionToken_ on
       // the server) -- adopting it here keeps an active user signed in forever.
