@@ -3049,11 +3049,7 @@ function handleGoogleCredential(response) {
   btnWrap.classList.add('busy');
   gasCall('verifyGoogleLogin', { credential: response.credential }, function(result) {
     if (result.success) {
-      localStorage.setItem('panoramic_ops_email', result.email);
-      if (result.config) {
-        localStorage.setItem('panoramic_ops_config', JSON.stringify(result.config));
-      }
-      adoptSessionToken(result.sessionToken);
+      persistLoginResult(result);
       document.getElementById('login-screen').classList.add('hidden');
       G.config = { statusOptions: [], vendorOptions: [] };
       bootWithEmail(result.email);
@@ -3066,7 +3062,7 @@ function handleGoogleCredential(response) {
   }, function(e) {
     statusEl.style.display = 'none';
     btnWrap.classList.remove('busy');
-    errEl.textContent = 'Could not connect. Check your connection and try again.';
+    errEl.textContent = loginFailureMessage(e);
     errEl.style.display = 'block';
     console.error('verifyGoogleLogin failed:', e);
   });
@@ -3075,6 +3071,37 @@ function handleGoogleCredential(response) {
 function newIdemKey() {
   if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
   return 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2);
+}
+
+var LOGIN_ERROR_REASON_MAX_LEN = 80;
+
+/**
+ * Login failure text that keeps the underlying reason visible. "Could not
+ * connect" alone covered timeouts, blocked requests (iOS reports these as
+ * "TypeError: Load failed") and exceptions thrown after a successful login,
+ * so a screenshot from a user couldn't tell them apart.
+ */
+function loginFailureMessage(err) {
+  var reason = err ? ((err.name || 'Error') + ': ' + (err.message || '')).slice(0, LOGIN_ERROR_REASON_MAX_LEN) : 'unknown';
+  if (err && err.name === 'AbortError') return 'The server took too long to respond. Tap Sign In again. (' + reason + ')';
+  return 'Could not connect. Check your connection and try again. (' + reason + ')';
+}
+
+/**
+ * Stores a successful login. The email/config writes are best-effort: a full or
+ * blocked localStorage used to throw here, which gasCall turned into a
+ * misleading "Could not connect" even though the server had accepted the login.
+ * Without the cache, bootWithEmail just fetches config over the network instead.
+ */
+function persistLoginResult(result) {
+  try {
+    localStorage.setItem('panoramic_ops_email', result.email);
+    // Cache the config returned by the login so bootWithEmail skips the second GAS call
+    if (result.config) localStorage.setItem('panoramic_ops_config', JSON.stringify(result.config));
+  } catch (e) {
+    console.error('Could not cache login in localStorage:', e);
+  }
+  adoptSessionToken(result.sessionToken);
 }
 
 /** Single place that persists a session token, whether it came from a login response or a sliding renewal. */
@@ -3302,12 +3329,7 @@ function submitLogin() {
     btn.textContent = 'Sign In';
     errEl.style.display = 'none';
     if (result.success) {
-      localStorage.setItem('panoramic_ops_email', result.email);
-      // Cache the config returned by verifyLogin so bootWithEmail skips the second GAS call
-      if (result.config) {
-        localStorage.setItem('panoramic_ops_config', JSON.stringify(result.config));
-      }
-      adoptSessionToken(result.sessionToken);
+      persistLoginResult(result);
       document.getElementById('login-screen').classList.add('hidden');
       document.getElementById('login-password').value = '';
       G.config = { statusOptions: [], vendorOptions: [] };
@@ -3322,7 +3344,7 @@ function submitLogin() {
     clearTimeout(slowMsg);
     btn.disabled = false;
     btn.textContent = 'Sign In';
-    errEl.textContent = 'Could not connect. Check your connection and try again.';
+    errEl.textContent = loginFailureMessage(e);
     errEl.style.display = 'block';
     console.error('verifyLogin failed:', e);
   });
