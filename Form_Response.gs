@@ -1,6 +1,26 @@
 function onFormSubmit(e) {
+  // FROZEN. This path numbers a PO by counting the rows already in the
+  // quarter, which now collides with what Talos issues -- see
+  // PO_CREATION_FROZEN in PO_Manager_Code.gs. Guarded before anything is read
+  // off the response so a submission can never reach a setValue().
+  if (poCreationBlocked_()) {
+    var who = (e && e.namedValues && e.namedValues["Job Reference"])
+      ? e.namedValues["Job Reference"][0]
+      : "(unknown job)";
+    if (NOTIFICATIONS_ENABLED) {
+      MailApp.sendEmail(
+        "aidan@panoramicbuildingllc.com",
+        "⚠️ PO form submission ignored - creation is frozen",
+        "Someone submitted the PO request form for '" + who + "'.\n\n" +
+        "New POs are created in Talos now, so no row was written here.\n" +
+        "The form itself should be turned off to stop this happening again."
+      );
+    }
+    return;
+  }
+
   var sheet = e.source.getSheetByName("PO Database");
-  
+
 
   // --- get form responses ---
   var builder = e.namedValues["Builder Name"] 

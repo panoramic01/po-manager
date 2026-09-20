@@ -107,6 +107,34 @@ function onFormSubmitReceived(e) {
   // PATH B — NO PO: CREATE NEW PO
   // ====================================================
 
+  // FROZEN. This branch mints a number from getLastRow() + 1, which now
+  // collides with what Talos issues -- see PO_CREATION_FROZEN in
+  // PO_Manager_Code.gs. PATH A above is untouched: a receipt logged against an
+  // existing PO still works, which is the whole point of keeping this form on.
+  //
+  // The runner gets told, rather than the submission vanishing: they are
+  // standing at a delivery with material in front of them and need to know the
+  // note did not land anywhere.
+  // Called directly, not behind a typeof guard: every .gs in an Apps Script
+  // project shares one global scope, so this resolves. If it ever did not, the
+  // trigger throws and no row is written -- which is the right way to fail.
+  if (poCreationBlocked_()) {
+    if (NOTIFICATIONS_ENABLED) {
+      MailApp.sendEmail(
+        recipientList,
+        "⚠️ Received note not recorded - no PO number given",
+        "This form was submitted without a PO number, which used to create a " +
+        "new PO here. New POs are created in Talos now, so nothing was written.\n\n" +
+        "Job: " + job + "\n" +
+        "Vendor: " + vendor + "\n" +
+        "Notes: " + notes + "\n" +
+        (imageLink ? "Photo: " + imageLink + "\n" : "") +
+        "\nRaise the order in Talos, then log the delivery against it there."
+      );
+    }
+    return;
+  }
+
   // --- build PO number (YY-QQ-ROW) ---
   var year = Utilities.formatDate(now, Session.getScriptTimeZone(), "yy");
   var quarter = Math.ceil((now.getMonth() + 1) / 3);

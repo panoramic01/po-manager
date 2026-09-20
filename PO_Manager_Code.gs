@@ -83,6 +83,40 @@ function filterValidRoles_(roleList) {
   return roleList.filter(function(r) { return VALID_EMPLOYEE_ROLES.indexOf(r) !== -1; });
 }
 
+/**
+ * PO CREATION IS CLOSED. Talos issues PO numbers now, from 26-03-1769 up.
+ *
+ * WHY. Every number this app mints is derived from the sheet's own geometry --
+ * createPO and the received-form's PATH B both use `getLastRow() + 1`, and
+ * Form_Response counts the rows already in the quarter. The highest number in
+ * the sheet is 26-03-1766, so the next PO written here would be 26-03-1769 or
+ * thereabouts: exactly the number Talos is about to issue, on a different
+ * order, for a different vendor. Nothing on either side would notice. The two
+ * systems would simply disagree about what 26-03-1769 is, and the only way to
+ * find out would be to compare them by hand.
+ *
+ * WHAT STAYS OPEN, DELIBERATELY. Editing, status changes, receiving against an
+ * existing PO, invoice upload and every report keep working. The orders still
+ * in flight here have to be closed out here, and this app is the only place
+ * that can do it. Only the four paths that MINT A NEW NUMBER refuse:
+ * createPO, createSubPO, Form_Response's onFormSubmit, and PATH B of
+ * Received_Form_Response.
+ *
+ * Flip PO_CREATION_FROZEN to false to reopen, but read the paragraph above
+ * first -- the collision is silent and it is not recoverable by looking at
+ * either system alone.
+ */
+var PO_CREATION_FROZEN = true;
+var PO_FROZEN_MESSAGE =
+  "New POs are created in Talos now. This app is close-out only — you can " +
+  "still edit, receive and complete the POs already here.";
+
+/** Returns a refusal object when creation is frozen, or null when it is open. */
+function poCreationBlocked_() {
+  if (!PO_CREATION_FROZEN) return null;
+  return { success: false, error: PO_FROZEN_MESSAGE, code: "PO_CREATION_FROZEN" };
+}
+
 var STATUS_OPTIONS = [
   "Pending Pickup",
   "Pending Delivery",
@@ -412,6 +446,11 @@ function getFirstName(fullName) {
  */
 function createPO(data) {
   try {
+    // Before authorizeCaller and before the script lock: a frozen call should
+    // cost nothing and never hold the lock other callers are waiting on.
+    var frozen = poCreationBlocked_();
+    if (frozen) return frozen;
+
     var auth = authorizeCaller(data, ['admin', 'office', 'site_manager']);
     if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
 
@@ -503,6 +542,11 @@ function createPO(data) {
  */
 function createSubPO(data) {
   try {
+    // See createPO. A sub-PO mints a new number too (the next free letter),
+    // so it is frozen on the same terms.
+    var frozen = poCreationBlocked_();
+    if (frozen) return frozen;
+
     var auth = authorizeCaller(data, ['admin', 'office', 'site_manager']);
     if (!auth.ok) return { success: false, error: auth.error, code: auth.code };
 
