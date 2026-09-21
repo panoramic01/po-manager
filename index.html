@@ -289,6 +289,10 @@
       cursor: pointer; box-shadow: var(--c-shadow-sm); display: flex; flex-direction: column;
       align-items: center; gap: 10px;
     }
+    /* PO creation moved to Talos -- see PO_CREATION_FROZEN. Entry points stay
+       visible (so nobody hunts for them) but read as switched off. */
+    .po-frozen, .po-frozen:hover { opacity: 0.45; filter: grayscale(1); cursor: not-allowed !important; }
+    .po-frozen-banner { background: var(--c-surface); border: 1px dashed var(--c-border); border-radius: 12px; padding: 14px 16px; margin: 16px; font-size: 13px; color: var(--c-ink-soft); line-height: 1.45; }
     .tile-swatch { width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
     .tile-swatch svg { width: 22px; height: 22px; }
     .tile-label { font-size: 13px; font-weight: 600; color: var(--c-navy); }
@@ -749,7 +753,7 @@
         <div class="card-title" style="margin-bottom:0">Recent Orders</div>
         <div style="display:flex;gap:8px">
           <button class="btn btn-sm btn-secondary" onclick="viewAllOrders()">View All</button>
-          <button class="btn btn-sm btn-primary" onclick="showTabDirect('create', null)">Create New</button>
+          <button class="btn btn-sm btn-primary po-frozen" title="New POs are created in Talos now" onclick="showTabDirect('create', null)">Create New</button>
         </div>
       </div>
       <div id="dash-recent-content"></div>
@@ -797,9 +801,10 @@
       <button onclick="showTabDirect('dashboard', document.getElementById('nav-dashboard'))" style="background:none;border:none;font-size:14px;font-weight:600;color:var(--c-navy);cursor:pointer;padding:4px 8px 4px 0;display:flex;align-items:center;gap:4px"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>Back</button>
       <span style="font-size:16px;font-weight:700;color:var(--c-navy)">New Purchase Order</span>
     </div>
+    <div class="po-frozen-banner"><strong>PO creation is closed.</strong> New POs are created in Talos now. You can still edit, receive and complete the POs already in this app.</div>
 
     <!-- Form -->
-    <div class="card" id="create-form-card">
+    <div class="card po-frozen" id="create-form-card" style="pointer-events:none">
       <div class="card-title" style="display:none">New Purchase Order</div>
 
       <div class="form-group" style="display:flex;align-items:center;gap:8px;background:var(--c-surface);border-radius:8px;padding:10px 12px">
@@ -833,7 +838,7 @@
         <label class="form-label">Notes</label>
         <textarea class="form-control" id="c-notes" placeholder="Details about this order…"></textarea>
       </div>
-      <button class="btn btn-primary" id="create-btn" onclick="submitCreate()">Create PO</button>
+      <button class="btn btn-primary" id="create-btn" onclick="submitCreate()" disabled>Create PO</button>
     </div>
 
     <!-- Success screen (shown after PO is created) -->
@@ -2685,7 +2690,7 @@
     <h2 id="po-detail-title">PO</h2>
     <div style="display:flex;gap:8px;flex-shrink:0">
       <button class="po-detail-edit-btn" id="po-detail-addinvoice-btn" onclick="irStartUploadForPO(G.detailPO)" title="Add Invoice" style="display:none">Inv</button>
-      <button class="po-detail-edit-btn" id="po-detail-subpo-btn" onclick="openSubPOForm(G.detailPO)" title="Create Sub-PO">+B</button>
+      <button class="po-detail-edit-btn po-frozen" id="po-detail-subpo-btn" onclick="openSubPOForm(G.detailPO)" title="Sub-POs are created in Talos now">+B</button>
       <button class="po-detail-edit-btn" id="po-detail-edit-btn" onclick="editFromPODetail()" title="Edit PO">&#9998;</button>
       <button class="cleanup-close" onclick="closePODetail()">Close</button>
     </div>
@@ -2963,6 +2968,21 @@ function saveJokeScreenshot() {
   };
   logo.onerror = finish;
   logo.src = './panoramic-logo.png';
+}
+
+// ── PO creation freeze ──────────────────────────────────────────────────────
+// New POs are issued by Talos now. The backend refuses every path that mints a
+// PO number (PO_CREATION_FROZEN in PO_Manager_Code.gs); this is the matching
+// client-side switch so nobody fills in a form only to have it bounce.
+// Editing, receiving and closing out existing POs are untouched.
+var PO_CREATION_FROZEN = true;
+var PO_FROZEN_MESSAGE = 'New POs are created in Talos now.';
+
+/** Returns true (and tells the user why) when PO creation is switched off. */
+function poCreationFrozen() {
+  if (!PO_CREATION_FROZEN) return false;
+  showToast(PO_FROZEN_MESSAGE);
+  return true;
 }
 
 // ── State ────────────────────────────────────────────────────────────────────
@@ -3823,6 +3843,7 @@ function applyRole(role, skipNav) {
 
 // Internal tab switch with no permission check (used by applyRole and boot)
 function showTabDirect(name, btn) {
+  if (name === 'create' && poCreationFrozen()) return;
   document.querySelectorAll('.tab').forEach(function(t){ t.classList.remove('active'); });
   document.querySelectorAll('.nav-btn').forEach(function(b){ b.classList.remove('active'); });
   document.getElementById('tab-'+name).classList.add('active');
@@ -4040,7 +4061,7 @@ function renderDashboard() {
 
 var HOME_QUICK_ACTIONS = [
   { label: 'Office Notes',  swatch: 'ts-navy',  path: 'M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z', action: function(){ openOfficeNotes(); } },
-  { label: 'New PO',        swatch: 'ts-solid', path: 'M12 4v16m8-8H4', action: function(){ showTabDirect('create', null); } },
+  { label: 'New PO',        swatch: 'ts-solid', path: 'M12 4v16m8-8H4', frozen: PO_CREATION_FROZEN, action: function(){ showTabDirect('create', null); } },
   { label: 'Quality Check', swatch: 'ts-teal',  path: 'M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11', action: function(){ openQualityCheck(); } },
   { label: 'Job Dashboard', swatch: 'ts-navy',  path: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z', action: function(){ showOtherPanel('job-cost'); } }
 ];
@@ -4049,7 +4070,7 @@ function renderHomeQuickActions() {
   var el = document.getElementById('home-quick-actions');
   if (!el) return;
   el.innerHTML = HOME_QUICK_ACTIONS.map(function(t, i) {
-    return '<div class="tile" onclick="HOME_QUICK_ACTIONS['+i+'].action()">' +
+    return '<div class="tile'+(t.frozen ? ' po-frozen' : '')+'"'+(t.frozen ? ' title="'+esc(PO_FROZEN_MESSAGE)+'"' : '')+' onclick="HOME_QUICK_ACTIONS['+i+'].action()">' +
       '<span class="tile-swatch '+t.swatch+'"><svg width="20" height="20" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="'+t.path+'"/></svg></span>' +
       '<span class="tile-label">'+esc(t.label)+'</span></div>';
   }).join('');
@@ -4276,7 +4297,7 @@ function initRunnerHomeTab() {
 // PTO/attention data (admin/HR-only) -- see the tab-sitemanagerhome comment
 // in the markup for why this isn't just shared with aidan's Home.
 var SM_HOME_QUICK_ACTIONS = [
-  { label: 'New PO',        swatch: 'ts-solid', path: 'M12 4v16m8-8H4', action: function(){ showTabDirect('create', null); } },
+  { label: 'New PO',        swatch: 'ts-solid', path: 'M12 4v16m8-8H4', frozen: PO_CREATION_FROZEN, action: function(){ showTabDirect('create', null); } },
   { label: 'Quality Check', swatch: 'ts-teal',  path: 'M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11', action: function(){ openQualityCheck(); } },
   { label: 'Office Notes',  swatch: 'ts-navy',  path: 'M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z', action: function(){ openOfficeNotes(); } },
   { label: 'Runner Request', swatch: 'ts-navy', path: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4', action: function(){ openFormOverlay('materialrequest-overlay'); } }
@@ -4286,7 +4307,7 @@ function renderSMHomeQuickActions() {
   var el = document.getElementById('sm-home-quick-actions');
   if (!el) return;
   el.innerHTML = SM_HOME_QUICK_ACTIONS.map(function(t, i) {
-    return '<div class="tile" onclick="SM_HOME_QUICK_ACTIONS['+i+'].action()">' +
+    return '<div class="tile'+(t.frozen ? ' po-frozen' : '')+'"'+(t.frozen ? ' title="'+esc(PO_FROZEN_MESSAGE)+'"' : '')+' onclick="SM_HOME_QUICK_ACTIONS['+i+'].action()">' +
       '<span class="tile-swatch '+t.swatch+'"><svg width="20" height="20" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="'+t.path+'"/></svg></span>' +
       '<span class="tile-label">'+esc(t.label)+'</span></div>';
   }).join('');
@@ -4304,7 +4325,7 @@ function initSiteManagerHomeTab() {
 var OFFICE_HOME_TILES = [
   { label: 'Receive PO',    swatch: 'ts-teal',  path: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
     action: function(){ showTabDirect('receive', document.getElementById('nav-dashboard')); } },
-  { label: 'New PO',        swatch: 'ts-solid', path: 'M12 4v16m8-8H4',
+  { label: 'New PO',        swatch: 'ts-solid', path: 'M12 4v16m8-8H4', frozen: PO_CREATION_FROZEN,
     action: function(){ showTabDirect('create', null); } },
   { label: 'Quality Check', swatch: 'ts-teal',  path: 'M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11',
     action: function(){ openQualityCheck(); } },
@@ -4316,7 +4337,7 @@ function renderOfficeHomeQuickActions() {
   var el = document.getElementById('office-home-quick-actions');
   if (!el) return;
   el.innerHTML = OFFICE_HOME_TILES.map(function(t, i) {
-    return '<div class="tile" onclick="OFFICE_HOME_TILES['+i+'].action()">' +
+    return '<div class="tile'+(t.frozen ? ' po-frozen' : '')+'"'+(t.frozen ? ' title="'+esc(PO_FROZEN_MESSAGE)+'"' : '')+' onclick="OFFICE_HOME_TILES['+i+'].action()">' +
       '<span class="tile-swatch '+t.swatch+'"><svg width="20" height="20" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="'+t.path+'"/></svg></span>' +
       '<span class="tile-label">'+esc(t.label)+'</span></div>';
   }).join('');
@@ -4826,6 +4847,7 @@ function toggleWarehousePO(checked) {
 }
 
 function submitCreate() {
+  if (poCreationFrozen()) return;
   var isWarehouse = !!document.getElementById('c-warehouse-toggle').checked;
   var vendor = getVendorValue('c-vendor', 'c-vendor-other');
   var builder, job;
@@ -4917,6 +4939,7 @@ function clearCreate() {
 }
 
 function showCreateForm() {
+  if (poCreationFrozen()) return;
   G.createIdemKey = null;
   document.getElementById('create-form-card').style.display    = 'block';
   document.getElementById('create-success-card').style.display = 'none';
@@ -5921,6 +5944,7 @@ function editFromPODetail() {
 // ...C, etc.), inheriting Builder/Job from the parent and reusing the same
 // field set as the main Create PO form for everything else.
 function openSubPOForm(poNum) {
+  if (poCreationFrozen()) return;
   var po = G.pos.find(function(p){ return p.poNum === poNum; });
   if (!po) return;
   G.detailMode = 'subpo';
@@ -5989,6 +6013,7 @@ function initSubPOFileDrops() {
 }
 
 function submitCreateSubPO(parentPoNum) {
+  if (poCreationFrozen()) return;
   var vendor = getVendorValue('sp-vendor', 'sp-vendor-other');
   if (!vendor) { showToast('Vendor is required'); return; }
 
